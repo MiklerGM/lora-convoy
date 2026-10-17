@@ -23,6 +23,7 @@ coverage. Each rider wants to:
 | Privacy | only the group can read or forge its positions | |
 | Group setup | the organiser states the number of riders; slots, frame and radio mode follow from it | [06](06-own-protocol.md) |
 | Route sharing | nice to have: send a route or a change to it during the ride | via points fit one packet ([06](06-own-protocol.md)) |
+| Route safety | a shared route is never silently altered off-road: exact or within 2 m, never snapped, integrity-checked | [06](06-own-protocol.md) |
 
 ## Non-goals, for now
 

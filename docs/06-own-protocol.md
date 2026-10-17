@@ -141,7 +141,8 @@ acceptable for "ride via these points".
   over 3 157 km.
 
 GPX's megabytes are XML text, timestamps and dense points, not information. Simplified, then
-written as binary deltas:
+written as binary deltas. The coarse tolerances (50–500 m) are **for mapped roads only**; see the
+off-road rules below.
 
 | Douglas-Peucker tolerance | Multi-day route (4 920 km) | Trans-Morocco (3 157 km) | Per 200 km |
 |---|---|---|---|
@@ -159,15 +160,32 @@ That is 100–300 times smaller than the GPX, where gzip manages about 5. Their 
 received track with a point every 1–4 km can be turned back into a road-following route on each
 phone. A day's route is then 2–4 packets, under a second on air at SF7/250.
 
-**Off-road needs care.** Snapping only works where the track is in OSM and the routing profile
-allows it; otherwise it pulls the route onto tarmac. A remedy is to **simplify against the router**:
+**Off-road, coarse points and snapping are dangerous.** A simplified line can cut a switchback,
+and snapping can move the route onto a neighbouring trail, onto tarmac, or towards a drop. The
+coarse rows above are for mapped roads only. Rules:
 
-1. the sender simplifies coarsely;
-2. it snaps the result with its own OsmAnd, exactly as the receivers will;
-3. it puts points back wherever the snapped line leaves the original.
+1. **Off-road, and anywhere not on a mapped road, the track goes out exact or near-exact, and is
+   never snapped.** Douglas-Peucker guarantees the simplified line never strays from the original
+   by more than its tolerance. At 2 m, which is less than a GPS's own error, it only drops redundant
+   points along straight runs. The receiving app draws exactly what was sent. Measured on the
+   Trans-Morocco Trail, per 200 km:
 
-Roads end up with a point every few km, and pistes keep their dense line. Riders on different map
-versions can still diverge slightly.
+   | Off-road track | Size | On air once: SF7/250 · SF9/250 · SF10/125 |
+   |---|---|---|
+   | every point, on a 1.1 m grid | 13.3 kB, 58 packets | 11 · 35 · 128 s |
+   | at most 2 m from the original | 5.9 kB, 26 packets | 5 · 16 · 58 s |
+   | at most 5 m from the original | 4.1 kB, 18 packets | 3.5 · 11 · 40 s |
+
+   All of these fit the 10 % duty cycle, so there is no reason to compress further.
+2. **Coarse points with road snapping are an optimisation, never the default.** They are used only
+   for segments the sender has verified:
+   1. it snaps the coarse points with its own OsmAnd, exactly as the receivers will;
+   2. the result stays within about 10 m of the original over the whole segment.
+
+   Anything else goes out dense.
+3. **Integrity.** A route carries a hash of its decoded geometry. Each rider's app says "exact
+   route received" or "road-snapped approximation", and never shows a partial route as complete.
+4. **Before the ride, hand the full GPX over phone to phone.** LoRa is for changes on the way.
 
 **The hard part is delivering it to everyone**, not airtime: in a broadcast, each rider misses
 different packets. Slots make this natural:
