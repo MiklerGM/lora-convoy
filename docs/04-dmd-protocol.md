@@ -27,6 +27,14 @@ It works for two or three riders close together.
 - It runs on inexpensive EBYTE modules in transparent mode, with a long-range PHY (SF11/500).
 - On the rides, positions crossed both ways between our devices and a NOR7E.
 
+> **Review (Codex, 2026-10-17):** [code][calc] The coordinate resolution is latitude-dependent:
+> `Codec.kt` uses 46 603.375 counts/degree latitude and 23 301.6875 longitude, giving about
+> 2.39 m north–south and `4.78 × cos(latitude)` m east–west (3.38 m at 45°).
+> Nine EU channel choices also cannot guarantee different frequencies for different groups.
+> Sources: [`Codec.kt`](https://github.com/MiklerGM/dmd2-lora-bridge/blob/2234b5a4077479bf4145c86d76d4061af515bd6f/android/app/src/main/java/com/thorkracing/dmdLora/protocol/Codec.kt)
+> and [`docs/PROTOCOL.md`, §3](https://github.com/MiklerGM/dmd2-lora-bridge/blob/2234b5a4077479bf4145c86d76d4061af515bd6f/docs/PROTOCOL.md)
+> at commit `2234b5a4077479bf4145c86d76d4061af515bd6f`.
+
 ## Where it breaks
 
 1. **It does not scale** [calc]. Every packet retells everyone heard (up to nine riders), and the
@@ -41,6 +49,14 @@ It works for two or three riders close together.
    | 5 | 120 B | 642 ms | 3.5 s | 92 % | 18 % |
    | 9 | 195 B | 990 ms | 5.5 s | 162 % | 18 % |
 
+   > **Review (Codex, 2026-10-17):** [calc] This table does not show quadratic load: with packet
+   > airtime approximately `a + bN` and the stated interval `1 + 0.5N`, offered load is
+   > `N(a + bN)/(1 + 0.5N)`, approximately linear as N grows, until the nine-record cap.
+   > Saturation remains a real concern; the “square” description applies to a fixed interval.
+   > These are **offered** airtime sums, not measured busy time or delivery probabilities;
+   > overlapping transmissions can make the sum exceed 100%. The same calibrated model
+   > already exceeds 100% at **six riders** (139 B, 723.6 ms, 4 s interval: 108.54%), not first at nine.
+
    From nine riders the offered load exceeds the channel, so most packets collide. On 09-29, with
    three devices, each of ours received about 45 % of the other's packets; 49 % on 10-02 [bench].
    That is consistent with the table, though those days had other losses too: an E220 on 3V3
@@ -52,11 +68,20 @@ It works for two or three riders close together.
    from a fresh one. The result is frozen dots on everyone's map.
 4. **Relaying is broken.** The stock relay decrements the TTL but leaves the CRC stale, and in our
    logs relaying crowded out the device's own transmissions. Our bridge stopped relaying (TTL 1).
+
+   > **Review (Codex, 2026-10-17):** [code] Distinguish the stock defect from current bridge
+   > behavior: `Codec.decode()` retries CRC with `TTL+1` and accepts that single-hop stock relay,
+   > while `TX_TTL=1` avoids requesting further relays. The wire format also **does carry a
+   > three-byte position age**, though no absolute fix time; the freshness problem is the
+   > producers' inconsistent age semantics, not an absent age field. Source:
+   > [`Codec.kt`, `decode()` / `encodeGroup()`](https://github.com/MiklerGM/dmd2-lora-bridge/blob/2234b5a4077479bf4145c86d76d4061af515bd6f/android/app/src/main/java/com/thorkracing/dmdLora/protocol/Codec.kt),
+   > commit `2234b5a4077479bf4145c86d76d4061af515bd6f`.
 5. **No acknowledgement or retry**, so chat is unreliable; our bridge sends each line three times.
 6. **No real protection.**
    - The body is XORed with a repeating pad derived from the group ID.
    - The group selector and the sender's CRC travel in clear.
    - Nothing is authenticated: anyone who knows a group's ID can read and forge positions.
+
 7. **The PHY is EBYTE's black box.** Low data rate optimisation is forced on, and the two sync
    symbols are a non-standard pair (40 and 36). Other chips interoperate only by imitating that;
    we found it with an RTL-SDR.
@@ -65,6 +90,12 @@ It works for two or three riders close together.
 9. **Regulation, for information.** A NOR7E asks for up to 30 dBm with listen-before-talk off on
    868.125 MHz, and one device is on air 16–21 % of the time [calc]. That part of the band allows
    25 mW and 1 %.
+
+   > **Review (Codex, 2026-10-17):** [docs] The EU limit is **ERP**, whereas “asks for 30 dBm”
+   > is a configuration request, not measured radiated power. Inference: the modeled duty cycle
+   > is incompatible with the stated 1% duty-cycle access option if actually transmitted,
+   > but this alone is not a measured compliance verdict on a NOR7E. Source:
+   > [Commission Decision (EU) 2025/105, Annex, row 48](https://eur-lex.europa.eu/eli/dec_impl/2025/105/oj/eng/pdf).
 
 ## Lessons for anything we build
 
