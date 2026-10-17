@@ -24,6 +24,33 @@ Packet intervals or RSSI alone cannot answer it.
 | E5 | MeshAnd with two Meshtastic nodes | whether it is a usable baseline; what is missing |
 | E6 | Load: 5, 10 and 20 senders on one channel, each logging the sequence numbers it sends. Variants: relays on and off; hidden transmitters (senders out of each other's range); other traffic on the channel; one rider stopped, so smart position sends less | whether the baseline meets the freshness target, and at what group size it stops; the numbers [06](06-own-protocol.md) has to beat |
 
+Review (Codex qwen, 2026-10-17): E6 is the right experiment and it is currently
+under-specified in four ways that would change its result. [inference]
+
+- **Add a signed-versus-unsigned Meshtastic run.** Signing roughly doubles a position's airtime
+  (58 → 106.6 ms, [03](03-alternatives.md)), so a baseline measured unsigned is not the baseline
+  [06](06-own-protocol.md) has to beat, which claims authenticated positions. Without this variant
+  the comparison is unfair in the wrong direction. [calc]
+- **Add the half-duty skip as an observed failure mode.** Positions are gated by channel load,
+  while nodeinfo and telemetry stop at **half** the duty allowance
+  (`airtime.cpp:319-335`, `airtime.h:232`; not called from `PositionModule.cpp`). On `EU_868`
+  that is 5 %. E6 should log "TX air util. >x% Skip send" and the `DUTY_CYCLE_LIMIT` NAKs
+  separately, because they are different failures with different thresholds. [code]
+- **Add the guard-time measurement** that [06](06-own-protocol.md) needs: per board, the PPS
+  alignment error and the RX wake-to-sync latency. The 10 ms guard is currently a guess worth
+  about 24 % of SF7/250 capacity. [calc]
+- **Give it numeric pass criteria.** "whether the baseline meets the freshness target" has no
+  target until Q2 of [01](01-goals.md) is answered, so E6 cannot currently fail. Write the
+  criteria as the two headline numbers above (delivered share, 95th-percentile shown-fix age) at
+  each of 5, 10 and 20 senders, before it runs — otherwise the result will be read as whatever the
+  reader hoped for. [inference]
+
+One caution on the "each radio sends as often as several riders would" trick: it gets the offered
+load right, but a real convoy's collisions depend on which riders can hear each other, and a
+single radio cannot be in two places. The hidden-transmitter variant is listed, which is good; I
+would make it mandatory rather than a variant, since it is the geometry that decides whether
+flooding holds a column together. [inference]
+
 E1's two radios cannot show what twenty riders do; E6 can. With fewer radios than riders, each
 radio can send as often as several riders would. The channel load is then right but the geometry
 is not, so hidden transmitters still need real separation.
@@ -43,6 +70,21 @@ same terms, and these tests besides:
 - **Regulation:** each transmitter's complete duty ledger over an hour (positions, relays, routes,
   retries, control), and measured radiated power and occupied bandwidth against the sub-band's
   limits ([02](02-radio-basics.md)).
+
+Review (Codex qwen, 2026-10-17): this is the right test and the only place the repository
+commits to measuring rather than modelling. Two additions. It should measure **ERP**, not
+transmit-power settings — a configured 22 dBm plus an antenna gain is over the 25 mW ERP cap in
+868.0–868.6 MHz, and [02](02-radio-basics.md) already makes the point that a power setting proves
+nothing. And it needs a **bandwidth** check against the mode actually used, including the case
+[06](06-own-protocol.md) raises of two 125 kHz channels inside one 250 kHz allocation: occupied
+bandwidth with oscillator error at both edges is what decides whether that is two channels or one
+over-limit emission. [docs]
+
+For the ledger itself, note that Meshtastic's own counters are not enough: its hourly TX share is
+60 one-minute buckets of our own transmission (`airtime.h:87,198`), which is close but is a
+rolling window rather than a ledger, and it does not attribute airtime to positions versus routes
+versus retries. A device that has to prove compliance needs its own per-category counter. [code,
+inference]
 
 `tools/cross_check.py` checks the arithmetic and the route geometry offline, against an independent
 derivation and known counterexamples. None of the tests above can be settled without radios.
