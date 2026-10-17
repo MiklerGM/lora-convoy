@@ -113,6 +113,29 @@ checks the share already used; it does not reserve the next packet's airtime, an
 `override_duty_cycle` switches the check off [code: firmware `develop` at `fad52bb`]. That is an
 implementation to test, not a proof of compliance.
 
+Review (Codex qwen, 2026-10-17): confirmed in `develop` at `fad52bb`, and two things to
+add. The rolling hour is 60 one-minute buckets of our own transmission (`airtime.h:87,198`,
+`airtime.cpp:62,215-226`), and the channel-load view is a separate rolling 60 s in six 10 s
+buckets (`airtime.h:81`, `airtime.cpp:114-116`) — so the two limits are measured over different
+windows, which matters when reading a "skip send" log line. [code]
+
+There is a **second, stricter gate that this section does not mention**, and its exact scope
+matters for a convoy. `AirTime::isTxAllowedAirUtil()` (`airtime.cpp:319-335`) refuses a send once
+the hourly TX share passes `effectiveDutyCycle × polite_duty_cycle_percent / 100`, with
+`polite_duty_cycle_percent = 50` (`airtime.h:232`). On `EU_868` that is **5 %**, not 10 %. It is
+called by `NodeInfoModule.cpp:246`, `DeviceTelemetry.cpp:32`, `EnvironmentTelemetry.cpp:469`,
+`HealthTelemetry.cpp:85`, `MeshBeaconModule.cpp:619` and `NeighborInfoModule.cpp:133` — but
+**not** by `PositionModule.cpp`, whose only gate is the channel-load one at `:578`. So in
+practice: nodeinfo and telemetry thin out at half the allowance while positions keep going, and
+positions are stopped only by the hard abort in `Router.cpp:485-510` at the **full** duty cycle,
+which returns `DUTY_CYCLE_LIMIT` and pushes the user-visible "Duty cycle limit exceeded. You can
+send again in N mins". A companion built on the node's BLE API will therefore see a rider's
+telemetry go quiet well before their positions do; that is a real failure mode for E6. [code]
+
+The hard abort also confirms the paragraph's point that the next packet's airtime is not reserved:
+the check compares the share already used, so a packet can always overshoot the limit by one
+packet. [code]
+
 Meshtastic's European regions:
 
 | Region | In 2.7.26? | Band | Duty cycle | Presets | Note |
@@ -128,6 +151,25 @@ specifies four 200 kHz windows, for data networks, with adaptive power control o
 Its 10 % allowance is for **fixed** terrestrial network access points. Meshtastic gives 10 % to
 the router roles (`getEffectiveDutyCycle()`), but setting a moving bike's radio to a router role
 does not make it a fixed access point.
+
+Review (Codex qwen, 2026-10-17): this is right, and the frequency part is better than the
+paragraph suggests — Meshtastic's `EU_866` channel plan lands exactly in the four legal windows,
+so the frequencies are not the problem. With `RDEF(EU_866, 865.6, 867.6, …)` and
+`PROFILE_LITE = {…, spacing 0.4, padding 0.0375}` (`RadioInterface.cpp:92,152`), the centre is
+`865.6 + 125/2000 + 0.0375 + n × 0.6` MHz (`:1391`) and the slot count is
+`round((867.6 − 865.6 + 0.4) / 0.6) = 4` (`:1349-1350`), giving centres **865.7, 866.3, 866.9,
+867.5 MHz**. Each 125 kHz channel then occupies 865.6375–865.7625, 866.2375–866.3625,
+866.8375–866.9625 and 867.4375–867.5625 MHz, each inside one of row 47b's windows
+(865.6–865.8, 866.2–866.4, 866.8–867.0, 867.4–867.6) with at least 37.5 kHz to spare. [code, docs]
+
+What is left is the part the paragraph names, and it is not small. Row 47b makes **Adaptive Power
+Control required** (or an equivalent mitigation), and I can find no adaptive power control anywhere
+in the firmware: a case-insensitive search for "adaptive power" and "APC" across `develop` at
+`fad52bb` returns nothing, and the region definition fixes the power at 27 dBm
+(`RadioInterface.cpp:152`). [code] So `EU_866` needs an equivalent mitigation to be argued for,
+plus the 2.5 % mobile cap and note [g]'s "only available for data networks". The practical reading
+stays as written: `EU_866` is the wrong region for a moving convoy, but for the reason of APC and
+the mobile cap, not the frequencies. [inference]
 
 ## Channel load and collisions
 
@@ -186,3 +228,27 @@ forest, buildings or hills, so the last column is a guess, not a calculation:
 
 The mode should be chosen on measured delivery and position age ([07](07-experiments.md), E2), and
 a rider whose path fails is shown with an explicitly stale last-known position.
+
+Review (Codex qwen, 2026-10-17): the table reproduces exactly with my own calculation
+(143 dB → 4.51 km, 148 → 6.01, 153.5 → 8.25; each −14 dB → 2.01, 2.69, 3.69 km), and the "six
+more dB buys about 1.4×" rule of thumb above is right for a 40 dB/decade model
+(10^(6/40) = 1.41). [calc]
+
+The gap is the one this section names and then does not close: every budget here is quoted at
+**22 dBm into 0 dBi antennas**, which is neither of the two sub-bands' permitted ERP. Row 54 allows
+**500 mW = 27 dBm ERP** in 869.40–869.65 MHz and row 48 only **25 mW = 14 dBm ERP** in
+868.0–868.6 MHz, so the same mode is worth ±5 dB depending on where it is used. Redoing the same
+model at the permitted ERP, no margin / with the 14 dB margin: [calc]
+
+| Mode | at 27 dBm ERP (869.4–869.65) | at 22 dBm (as tabulated) | at 14 dBm ERP (868.0–868.6) |
+|---|---|---|---|
+| SF7/250 | 148 dB: 6.0 / 2.7 km | 143 dB: 4.5 / 2.0 km | 135 dB: 2.9 / 1.3 km |
+| SF9/250 | 153 dB: 8.0 / 3.6 km | 148 dB: 6.0 / 2.7 km | 140 dB: 3.8 / 1.7 km |
+| SF10/125 | 158.5 dB: 11.0 / 4.9 km | 153.5 dB: 8.3 / 3.7 km | 145.5 dB: 5.2 / 2.3 km |
+
+Two consequences for the documents. The range quoted for a mode is not a property of the mode, so
+[06](06-own-protocol.md)'s "range like MediumFast" for SF9/250 should say at which ERP; and the
+868.0–868.6 column is the honest answer to "could we use the other band" — it costs about 5 dB,
+which is roughly a third of the distance, on top of its 1 % duty cycle. Antenna gain is worth
+saying out loud too: 5 dB of antenna is 1.33× distance in this model, and ERP is where it gets
+counted ([02](02-radio-basics.md) already notes ETSI §5.2). [calc]
