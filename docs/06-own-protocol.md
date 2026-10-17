@@ -187,6 +187,30 @@ coarse rows above are for mapped roads only. Rules:
    route received" or "road-snapped approximation", and never shows a partial route as complete.
 4. **Before the ride, hand the full GPX over phone to phone.** LoRa is for changes on the way.
 
+**A route is geometry plus intent, sent separately.** The same GPX can be ridden in either
+direction, joined part-way, or used one segment (one day) at a time, and the plan changes on the
+road. So:
+
+- **Geometry** is the big part: segments, each marked exact or road-snapped. It is sent once and
+  cached by its hash. A rider who missed it asks for it again by that hash.
+- **Intent** is one small message, about 13 bytes:
+
+  | Field | Contents |
+  |---|---|
+  | route | the geometry's hash, ~6 bytes |
+  | segment or range | which part of the route, typically one day |
+  | direction | forward or reverse |
+  | start | from the beginning, from the nearest point, or from a given point |
+  | snapping | allowed or not; only ever on verified road segments |
+  | version | which revision of the plan this is |
+
+  "We turn back", "tomorrow is segment 3" or "join at the nearest point" is then a few bytes, not
+  a new route.
+- **In OsmAnd** [code], `navigateGpx` offers no reverse, start point or segment choice
+  (`NavigateGpxParams`: `passWholeRoute`, snapping, `force`). Our app builds the GPX it hands over
+  (reversed, cut to the segment, from the chosen point), so that does not matter. Whether
+  `passWholeRoute = false` joins at the nearest point is to be checked.
+
 **The hard part is delivering it to everyone**, not airtime: in a broadcast, each rider misses
 different packets. Slots make this natural:
 
