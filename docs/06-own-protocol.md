@@ -134,6 +134,41 @@ Even the worst case fits the 10 % duty cycle comfortably. Via points are by far 
 risk is that riders whose maps or routing profiles differ get slightly different routes, which is
 acceptable for "ride via these points".
 
+**Measured on two real routes** (2026-10-17, `tools/route_size.py`) [calc]:
+
+- the owner's multi-day route: 4.0 MB of GPX, 0.84 MB gzipped, 48 967 points over 4 920 km;
+- the public Trans-Morocco Trail map v3.9, mostly off-road: 6.9 MB, 1.15 MB gzipped, 99 503 points
+  over 3 157 km.
+
+GPX's megabytes are XML text, timestamps and dense points, not information. Simplified, then
+written as binary deltas:
+
+| Douglas-Peucker tolerance | Multi-day route (4 920 km) | Trans-Morocco (3 157 km) | Per 200 km |
+|---|---|---|---|
+| 10 m | 54 kB, 236 packets | 49 kB, 214 packets | ~2.2–3.1 kB, 10–14 packets |
+| 50 m | 28 kB, 124 packets | 21 kB, 93 packets | ~1.2–1.4 kB, 6 packets |
+| 100 m | 20 kB | 13 kB | ~0.8 kB, 4 packets |
+| 200 m | 13 kB | 7.8 kB | ~0.5 kB, 3 packets |
+| 500 m | 6.7 kB | 3.6 kB | ~0.25 kB, 2 packets |
+
+That is 100–300 times smaller than the GPX, where gzip manages about 5. Their 135 and 174 waypoints
+(fuel, camps) fit in 4–5 packets at 6 bytes each.
+
+**Coarse points work because OsmAnd re-snaps them to roads.** Its AIDL `navigateGpx` takes
+`snapToRoad`, `snapToRoadMode` and `snapToRoadThreshold` (`NavigateGpxParams`) [code], so a
+received track with a point every 1–4 km can be turned back into a road-following route on each
+phone. A day's route is then 2–4 packets, under a second on air at SF7/250.
+
+**Off-road needs care.** Snapping only works where the track is in OSM and the routing profile
+allows it; otherwise it pulls the route onto tarmac. A remedy is to **simplify against the router**:
+
+1. the sender simplifies coarsely;
+2. it snaps the result with its own OsmAnd, exactly as the receivers will;
+3. it puts points back wherever the snapped line leaves the original.
+
+Roads end up with a point every few km, and pistes keep their dense line. Riders on different map
+versions can still diverge slightly.
+
 **The hard part is delivering it to everyone**, not airtime: in a broadcast, each rider misses
 different packets. Slots make this natural:
 

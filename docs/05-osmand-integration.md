@@ -16,7 +16,9 @@ For routes, other groups are needed, and neither is granted by default, so the r
 once [code]:
 
 - `importGpx`, `showGpx`: the `TRACKS_EDIT` group;
-- `navigateGpx`: the `NAVIGATION` group.
+- `navigateGpx`: the `NAVIGATION` group. Its parameters (`NavigateGpxParams`) include `snapToRoad`,
+  `snapToRoadMode`, `snapToRoadThreshold` and `passWholeRoute`, so a sparse track can be snapped to
+  roads by OsmAnd itself ([06](06-own-protocol.md), route sharing).
 
 A layer point (`AMapPoint`) carries `id`, `shortName`, `fullName`, `typeName`, `layerId`, `color`,
 `location`, a list of `details` strings and a `params` map.

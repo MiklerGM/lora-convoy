@@ -28,7 +28,8 @@ protocol, with OsmAnd as the map.
 | 06 | [**Our own protocol**](docs/06-own-protocol.md) | What a purpose-built design could do better, and at what cost |
 | 07 | [Experiments](docs/07-experiments.md) | What to measure, and the log |
 
-`tools/airtime.py` produces every time-on-air, duty-cycle and capacity figure in these documents:
+`tools/airtime.py` produces every time-on-air, duty-cycle and capacity figure in these documents,
+and `tools/route_size.py` the route sizes (GPX in, simplified binary sizes and LoRa packets out):
 `python3 tools/airtime.py` prints the tables, `python3 tools/airtime.py 56 7 250` one packet.
 
 ## Conventions

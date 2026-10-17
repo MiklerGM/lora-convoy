@@ -1,0 +1,3 @@
+*.gpx
+*.gpx.gz
+__pycache__/

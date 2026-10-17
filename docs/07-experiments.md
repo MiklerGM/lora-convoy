@@ -24,6 +24,9 @@
 
 - **2026-10-15** [bench]: the dmd2-lora-bridge firmware on the L1 sent a group position every ~2 s,
   each 314 ms on air: the reference for [04](04-dmd-protocol.md).
+- **2026-10-17** [calc]: route sizes from two real GPX files (a 4 920 km multi-day route, the
+  3 157 km Trans-Morocco Trail map): 4–7 MB of GPX become 21–65 kB of binary deltas at 5–50 m
+  tolerance, and 0.25–0.8 kB per 200 km at 100–500 m for road snapping ([06](06-own-protocol.md)).
 - **2026-10-16:**
   - The L1 went back to stock and was updated to Meshtastic 2.7.26 from the official release. The
     over-the-air update from the phone app had stopped in the bootloader, so it was copied over USB.
