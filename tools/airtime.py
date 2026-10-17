@@ -16,7 +16,8 @@ def symbol_time(sf, bw_khz):
 
 def time_on_air(payload, sf, bw_khz, cr=5, preamble=16, crc=True, implicit=False, ldro=None):
     """Seconds on air for one packet. cr is the coding rate's denominator: 5 for 4/5 ... 8 for 4/8.
-    Low data rate optimisation follows the chip's rule (symbols over 16 ms) unless given."""
+    Low data rate optimisation is assumed on for symbols over 16 ms unless given; it is a
+    configured PHY choice, and Semtech recommends it from 16.38 ms."""
     ts = symbol_time(sf, bw_khz)
     de = (ts > 0.016) if ldro is None else ldro
     bits = 8 * payload - 4 * sf + 28 + 16 * crc - 20 * implicit
@@ -28,7 +29,8 @@ def bitrate(sf, bw_khz, cr=5):
     return sf * bw_khz * 1e3 / 2 ** sf * 4 / cr
 
 
-# Link budget at 22 dBm (transmit power + SX1262 sensitivity), as Meshtastic publishes them.
+# Link budget at 22 dBm (transmit power minus SX1262 sensitivity in dBm), as Meshtastic publishes
+# them; antenna gains and installation losses not included.
 MODES = [("SF7/250", 7, 250, 143), ("SF8/250", 8, 250, 145.5), ("SF9/250", 9, 250, 148),
          ("SF10/250", 10, 250, 150.5), ("SF9/125", 9, 125, 151), ("SF10/125", 10, 125, 153.5)]
 
@@ -36,9 +38,10 @@ MODES = [("SF7/250", 7, 250, 143), ("SF8/250", 8, 250, 145.5), ("SF9/250", 9, 25
 def plan(riders, target_s, duty=0.10, guard=0.010, packet=24):
     """The longest-range mode whose slot frame gives every rider a position every target_s or
     faster without passing the duty cycle: what a group set up for this many riders would use.
-    Returns (mode, budget dB, spare slots, seconds between a rider's positions) or None."""
-    # **Review (Codex, 2026-10-17):** [calc] This budgets only one position per rider;
-    # route/control/relay TX must share that sender's duty allowance (see docs/06 review).
+    Returns (mode, budget dB, spare slots, seconds between a rider's positions) or None.
+    Budgets each rider's own positions only: relays, routes and control share the same duty
+    allowance and must be added. Unlike the capacity table, it reserves no further 20 % of the
+    frame, and the duty-cycle stretch of a small group is idle time the frame must include."""
     spare = max(1, round(riders / 10))
     best = None
     for name, sf, bw, budget in MODES:
@@ -71,11 +74,9 @@ def tables():
         t = time_on_air(pos, sf, bw, cr)
         print(f"  {region:9} {name:11} {t * 1000:5.0f}ms {t / 30:12.1%} {t * 20 / 10:26.0%} {t * 20 / 30:6.0%}")
 
-    print("\nMeshCore EU/UK Narrow (869.618 MHz, SF8/62.5, CR 4/8), a 37-byte channel datagram")
-    # **Review (Codex, 2026-10-17):** [code][calc] Upstream SF8 uses 32 preamble symbols:
-    # 37 B therefore takes 508.928 ms, not either example below. See docs/03 pinned source.
-    for pre in (16, 8):
-        print(f"  preamble {pre:2}: {time_on_air(37, 8, 62.5, 8, pre) * 1000:.0f} ms")
+    # MeshCore sets a 32-symbol preamble at SF8 and below (RadioLibWrappers.h, preambleLengthForSF).
+    print("\nMeshCore EU/UK Narrow (869.618 MHz, SF8/62.5, CR 4/8, 32-symbol preamble), 37-byte datagram:"
+          f" {time_on_air(37, 8, 62.5, 8, 32) * 1000:.0f} ms")
 
     print("\nDMD stock (EBYTE E220, SF11/500, CR 4/5, LDRO forced on), base64 packet + 8-byte EBYTE header")
     ts = symbol_time(11, 500)
@@ -117,8 +118,8 @@ def tables():
         packets = math.ceil(size / 230)
         times = [packets * time_on_air(min(size, 230) + 16, sf, bw, preamble=8)
                  for _, sf, bw, _ in (MODES[0], MODES[2], MODES[5])]
-        # **Review (Codex, 2026-10-17):** [calc] A partial last packet is charged as full;
-        # these are upper bounds, excluding manifests, feedback and retries, not delivery times.
+        # Upper bounds on airtime: a partial last packet is charged as full; manifests,
+        # feedback and retries are not included. Not delivery times.
         print(f"  {what:36} {size / 1000:4.2f} kB, {packets:2} packets, on air once: "
               f"SF7/250 {times[0]:4.1f} s, SF9/250 {times[1]:4.1f} s, SF10/125 {times[2]:4.1f} s")
 

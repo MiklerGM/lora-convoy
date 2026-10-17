@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-"""Review (Codex, 2026-10-17): independent [calc] checks and [code] counterexamples.
+"""Independent cross-checks of the other tools, written by Codex in its 2026-10-17 review.
 
-Run: python3 -I tools/review_checks.py
+Run: python3 -I tools/cross_check.py
 SF7–12 derivation: coded blocks plus preamble/header in quarter-symbol units.
 Primary reference: Lora-net/sx126x_driver src/sx126x.c,
 commit a10c5dfdf89788c6ac805e9fe98889de44175aa2, functions
 sx126x_get_lora_time_on_air_numerator / sx126x_get_lora_time_on_air_in_ms:
 https://github.com/Lora-net/sx126x_driver/blob/a10c5dfdf89788c6ac805e9fe98889de44175aa2/src/sx126x.c
-Existing tools reviewed at fe4c836018fe91683540dc30c5e24aca1e9ce1cb.
-Counterexamples assert existing limitations; passing is not a safety approval.
+The route checks started as the review's counterexamples against route_size.py at
+fe4c836018fe91683540dc30c5e24aca1e9ce1cb; they now assert that those cases are handled.
+Passing is not a safety approval of any route.
 """
 from fractions import Fraction
 from pathlib import Path
@@ -61,25 +62,27 @@ def check():
             actual = airtime.time_on_air(payload, sf, bw / 1000, preamble=8)
             assert math.isclose(actual, float(independent_toa(payload, sf, bw)), abs_tol=1e-12)
 
-    # A regex is not a GPX/XML parser: comments count; legal prefixed elements disappear.
+    # The review's counterexamples, now expected to be handled by route_size.py.
     commented = (b'<gpx xmlns="http://www.topografix.com/GPX/1/1" version="1.1" creator="review">'
                  b'<trk><trkseg><!--<trkpt lat="80" lon="170"/>--></trkseg></trk></gpx>')
-    assert route_size.read_gpx(commented)[0] == [[(80.0, 170.0)]]
+    assert route_size.read_gpx(commented) == ([], [])
     prefixed = (b'<g:gpx xmlns:g="http://www.topografix.com/GPX/1/1" version="1.1" creator="review">'
                 b'<g:trk><g:trkseg>'
                 b'<g:trkpt lat="45" lon="7"/></g:trkseg></g:trk></g:gpx>')
-    assert route_size.read_gpx(prefixed) == ([], [])
-    assert route_size.read_gpx(b'<trkseg><trkpt lat="91" lon="181"/></trkseg>')[0] == [[(91.0, 181.0)]]
+    assert route_size.read_gpx(prefixed) == ([[(45.0, 7.0)]], [])
+    try:
+        route_size.read_gpx(b'<trkseg><trkpt lat="91" lon="181"/></trkseg>')
+        raise AssertionError("out-of-range coordinate accepted")
+    except ValueError:
+        pass
 
     points = [(45.0000049, 7), (45.000022, 7.0001), (45.0000049, 7.0002)]
-    assert route_size.simplify(points, 2) == [0, 2]
-    decoded_lat = round(points[0][0] * 1e5) / 1e5
-    error = (points[1][0] - decoded_lat) * 111320
-    assert error > 2
+    kept, error = route_size.compress(points, 2)
+    assert error <= 2, error                    # was 2.449 m after rounding
     out_and_back = [(45, 7), (45, 7.002), (45, 7.001), (45, 7.003)]
-    assert route_size.simplify(out_and_back, 2) == [0, 3]
-    print(f"Reproduced GPX comment/namespace errors, {error:.3f} m error, and lost backtracking.")
-    print("Independent airtime checks and review counterexamples passed.")
+    assert route_size.simplify(out_and_back, 2) == [0, 1, 2, 3]   # was reduced to [0, 3]
+    print(f"GPX comments, prefixes and ranges handled; rounded error {error:.3f} m; backtracking kept.")
+    print("Independent airtime checks and route checks passed.")
 
 
 if __name__ == "__main__":
