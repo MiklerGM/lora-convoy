@@ -92,6 +92,23 @@ Rules:
 - **Drift** [calc]: two clocks at ±20 ppm eat a 10 ms guard between them in 250 s without
   resynchronising. A radio transmits only while its timing uncertainty fits inside the guard, and
   goes quiet otherwise.
+
+  Review (Codex qwen, 2026-10-17): the drift arithmetic is right (10 ms / 40 ppm = 250 s),
+  and I think the 10 ms guard is far too large, because drift is not what it has to cover. Over a
+  1.2 s frame, two clocks at ±20 ppm separate by 1.2 s × 40 ppm = **48 µs**, about 200 times less
+  than the guard. The real budget components are elsewhere: PPS alignment error inside the GPS
+  module (typically tens of ns to a few µs for a good receiver, but a phone or a cheap module
+  driven by serial messages is much worse), the radio's RX-to-sync latency, and the time from
+  detecting the slot boundary to starting the transmit. [calc, inference]
+
+  The cost of guessing wrong is capacity. At SF7/250 a 24-byte packet is 30.848 ms, so a 10 ms
+  guard is **32 % overhead**; a 2 ms guard makes the slot 32.848 ms and lifts the group from
+  19.58 to 24.35 positions/s, which is 20 riders every 0.821 s instead of 1.021 s — about 24 %
+  more cadence for free. At SF9/250 the same change is 7.09 → 7.63/s. [calc]
+
+  So: state the guard as a sum of named components instead of a round 10 ms, and measure the two
+  unknown ones on our boards before the frame is fixed. That belongs in E6 as an explicit
+  measurement (PPS accuracy and RX wake latency per board), not as an assumption. [inference]
 - **Other groups can still collide** with us; see the open questions.
 
 ### Range
@@ -104,6 +121,35 @@ in forest (a guess), 2–4.5 km on an open road at SF7, up to about 6 km at SF9
 ### Packet sketch, about 24 bytes
 
 With a fixed length, the LoRa header can be implicit, saving airtime.
+
+Review (Codex qwen, 2026-10-17): three things about this sketch, in order of how much they
+matter.
+
+**The fields do not add up to 24, and the missing byte is the one the security rules need.** The
+rows sum to 17 bytes, plus a 4–8 byte tag, so the packet is 21–25 bytes depending on the tag.
+More importantly, the security rules below say the CCM nonce is "group, slot, **session** and
+counter", and the open questions ask how a receiver learns a sender's session after a reboot —
+but there is no session field in the table. Either the session rides in the packet (costing 1–4
+bytes, so the budget is not 24 yet) or it is inferred from a control message, which is a
+reception dependency on the critical path of every packet after a reboot. Worth deciding before
+the length is fixed, because it interacts with the tag length that is also still open. [inference]
+
+**Drop `speed` and `course`.** Two bytes for a quantity the receiver can compute from two
+consecutive fixes of the same rider, and at 6.6 % of a 30.848 ms slot those two bytes are not
+free. They are also the least trustworthy fields in the packet: a stale GPS keeps repeating a speed
+that is no longer true, which is exactly the failure [05](05-osmand-integration.md) warns about
+for prediction. If the intent is to let a receiver extrapolate between fixes, [05] already says
+why that should be marked as prediction rather than measured. Spend the bytes on the session
+field above. [inference]
+
+**"the LoRa header can be implicit, saving airtime" is true at 250 kHz and false at 125 kHz.**
+Recomputing with the implicit-header flag: 24 bytes takes 28.288 ms instead of 30.848 ms at
+SF7/250 (8.3 %), 51.456 instead of 56.576 at SF8/250 (9.0 %), 92.672 instead of 102.912 at
+SF9/250 (10.0 %) — and **exactly the same 370.688 ms at SF10/125**, because the 20 bits saved do
+not cross a symbol boundary there. [calc] That matters because `plan()` recommends SF10/125 for
+exactly the small-group, long-range cases, so for those the implicit header buys nothing and the
+costs stay: every node must know every packet length in advance, which is what makes the typed
+route and relay slots below awkward.
 
 | Bytes | Field |
 |---|---|
@@ -132,6 +178,24 @@ With a fixed length, the LoRa header can be implicit, saving airtime.
   or a rider leaves. Route and control messages are authenticated too.
 - **The 16-bit fix time unwraps unambiguously only within half its range,** 9 h 6 min
   (RFC 1982, §3.2).
+
+Review (Codex qwen, 2026-10-17): the security rules here are unusually careful for a notes
+document, and I agree with all of them. Two additions.
+
+**Authentication is not correctness.** A valid MAC proves the packet came from a genuine member's
+radio; it says nothing about whether that member's GPS is sane. A member's own broken or
+antenna-jammed fix, or a phone feeding a wrong position over BLE, passes the MAC and puts a
+plausible-looking false rider on everyone's map. Receivers should therefore keep the last fix per
+slot and reject or flag the obvious impossibilities — an implied speed far above the riding
+envelope, a jump of kilometres, a fix time in the future — and mark the rider "position
+implausible" rather than either trusting it or silently dropping it. Cheap, and it is the only
+defence against the most likely source of a false position, which is not an attacker. [inference]
+
+**Say what a replay window is.** "receivers keep replay state per sender" is right but unbounded:
+a 3-byte counter at 1 Hz wraps in about 152 days, so replay state can be a small window, and the
+window size is what bounds the damage if someone records and rebroadcasts a ride. One line with a
+number (say, accept the next N counters) would make this testable in [07](07-experiments.md).
+[inference]
 
 ## Sizing the group at creation
 
@@ -289,6 +353,20 @@ and cut to the segment.
   cannot fit a 41 ms position slot. Neither can a 70-byte relay packet (64 ms). The frame needs
   typed, larger slots, or smaller fragments, and cadence, per-rider duty and feedback overhead then
   have to be recomputed.
+
+  Review (Codex qwen, 2026-10-17): the recomputation, so the size of this is visible. A
+  position slot is 30.848 ms plus the 10 ms guard = 40.848 ms, so a 192.128 ms route packet is
+  **4.70 position slots**, and one route packet per frame costs **23.5 % of a 20-rider frame** at
+  SF7/250. [calc] The frame would go from 20 riders every 1.021 s to every 1.26 s for one route
+  packet per frame, and a 5 kB route is 22 packets.
+
+  The worse case is the one `plan()` recommends for small groups. At SF10/125 a route packet is
+  2213.888 ms, and the 10-rider plan there uses a 4.2 s frame — so **one route packet is 52.7 %
+  of the whole frame**, and it is 0.615 % of a rider's hour in one shot. [calc] Route transfer at
+  the long-range modes is not a side feature that rides on spare capacity; it dominates the
+  channel. That strengthens rule 5 below (hand the GPX over phone to phone before the ride) from
+  advice to the only workable answer, and suggests route packets should get a temporary mode
+  switch — a faster SF for a burst — rather than typed slots in the long-range frame. [inference]
 - **Feedback rides in the position packet:** the route version and a "have it all" bit (in the
   sketch above), or a small bitmap of missing parts. "No feedback heard" is tracked separately from
   "complete".
@@ -337,6 +415,14 @@ these. Moving between frequencies in one band does not start a fresh duty allowa
 A short preamble saves airtime. Bike-powered nodes can listen all the time, so no receive duty
 cycling is needed in v1.
 
+Review (Codex qwen, 2026-10-17): worth a number, since it is free. Each preamble symbol is
+one symbol, so cutting from 8 to 5 symbols saves 3 symbols: 1.536 ms of 30.848 ms at SF7/250
+(5.0 %) and 24.576 ms of 370.688 ms at SF10/125 (6.6 %). [calc] The limit is that a shorter
+preamble costs detection reliability, especially with a rider who just came around a corner, so
+this is an E2/E6 measurement and not a free win. Note also that the LoRa symbol count cannot go
+below the receiver's own sync requirement, and DMD's own trouble with a non-standard sync pair
+([04](04-dmd-protocol.md), item 7) is the cautionary example here. [inference]
+
 ## Hardware, firmware, app
 
 - **Radio:** an SX1262 driven directly: Heltec V3/V4, LILYGO T-Deck, Seeed Wio Tracker L1, RAK4631.
@@ -366,6 +452,27 @@ cycling is needed in v1.
 - a band shared with other networks;
 - doing the regulatory homework ourselves;
 - the security design above, done properly.
+
+Review (Codex qwen, 2026-10-17): "doing the regulatory homework ourselves" is doing a lot
+of work in six words, and the two parts with real cost are not named anywhere in the repository:
+
+- **RED conformity, not just band limits.** [02](02-radio-basics.md) covers the spectrum
+  conditions (power, duty cycle, ERP, occupied bandwidth). Those are the *usage* rules. Placing a
+  self-built radio on the market — and arguably putting a non-marketed device into service under
+  one's own name — engages Directive 2014/53/EU: essential requirements for health and safety,
+  EMC, and effective use of the spectrum, with a conformity assessment and a declaration. A
+  modified commercial radio with a CE mark already in place is a materially smaller job than a
+  board we populate ourselves, which is a real argument for the "off-the-shelf boards" requirement
+  in [01](01-goals.md) beyond convenience. I am not a lawyer and this is not legal advice; the
+  point is only that the plan currently budgets for the easy half. [docs, inference]
+- **Personal location data.** Every rider's track is personal data, and a companion that logs
+  trails (MeshAnd already keeps 30 min to 6 h of them) plus a route manifest that identifies a
+  group is a processing activity with a controller — usually the organiser. Retention, who can see
+  a logged track afterwards, and what happens to a rider's history when they leave the group are
+  design choices, and cheap to make now rather than after a ride's tracks are public. [inference]
+
+Neither changes the protocol, but both belong in the costs list so the decision to build is made
+with them visible. [inference]
 
 ## Open design questions
 
