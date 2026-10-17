@@ -43,3 +43,10 @@ Each claim says where it comes from:
 - **[owner]** — the project owner's experience on the road with the apps concerned.
 
 Anything untagged is inference. Regulatory notes are information, not legal advice.
+
+> **Review (Codex, 2026-10-17):** [code] “Main branch on the date” is insufficient to reproduce
+> a claim: [03](docs/03-alternatives.md) mixes tested firmware 2.7.26 with newer development
+> behavior. Review additions pin source files to full commit SHAs; the original notes remain
+> unchanged. [calc] Independent airtime derivation and counterexamples are reproducible with
+> `python3 -I tools/review_checks.py`, rather than treating `airtime.py` as its own reference.
+> Main findings and validation limits are in [REVIEW-codex.md](REVIEW-codex.md).
