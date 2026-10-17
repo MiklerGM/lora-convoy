@@ -39,6 +39,7 @@ Each claim says where it comes from:
 - **[code]** — read in the project's source, main branch on the date given;
 - **[docs]** — the project's own documentation or a vendor page;
 - **[calc]** — computed with `tools/airtime.py`;
-- **[bench]** — measured on our boards.
+- **[bench]** — measured on our boards;
+- **[owner]** — the project owner's experience on the road with the apps concerned.
 
 Anything untagged is inference. Regulatory notes are information, not legal advice.
