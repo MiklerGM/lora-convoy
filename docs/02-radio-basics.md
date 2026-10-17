@@ -1,0 +1,132 @@
+# 02. Radio basics: SF, bandwidth, time on air, duty cycle, capacity
+
+Everything else in these documents rests on three numbers: how long one packet occupies the air,
+how much of the hour one device may transmit, and how much of the channel the whole group fills.
+
+## LoRa parameters
+
+A LoRa symbol is a chirp that sweeps the whole bandwidth; where the sweep starts encodes the data.
+
+- **BW, bandwidth**: the width of the sweep, 62.5, 125, 250 or 500 kHz.
+- **SF, spreading factor**: how many bits one symbol carries, 5 to 12. A symbol lasts
+  `Tsym = 2^SF / BW`.
+- **CR, coding rate**: forward error correction, 4/5 to 4/8: every 4 data bits go out as 5 to 8.
+
+"SF7/250" in these documents means SF7 at 250 kHz, with CR 4/5 unless stated.
+
+| Mode | Symbol | Bit rate | Where it appears |
+|---|---|---|---|
+| SF7/250 | 0.512 ms | 10.9 kbit/s | Meshtastic ShortFast |
+| SF9/250 | 2.048 ms | 3.5 kbit/s | Meshtastic MediumFast |
+| SF11/250 | 8.192 ms | 1.07 kbit/s | Meshtastic LongFast |
+| SF11/500 | 4.096 ms | 2.1 kbit/s | DMD (EBYTE E220, "2.4k") |
+| SF8/62.5, CR 4/8 | 4.096 ms | 1.0 kbit/s | MeshCore EU/UK Narrow |
+
+Bit rate is `SF × BW / 2^SF × 4/CR`; for SF7/250 that gives the 10.94 kbit/s Meshtastic publishes.
+
+What each step costs and buys:
+
+- **+1 SF**: a symbol twice as long carries one bit more, so the rate almost halves, and the
+  receiver gains about 2.5 dB of sensitivity.
+- **Half the bandwidth**: twice the symbol time, 3 dB more sensitivity.
+- **Link budget** is transmit power plus the receiver's sensitivity. At 22 dBm on an SX1262:
+  ShortFast 143 dB, MediumFast 148 dB, LongFast 153 dB [docs]. Six more dB double the range in
+  free space, but only multiply it by about 1.4 near the ground.
+
+## Time on air
+
+From the SX126x datasheet (SF7–SF12):
+
+```
+Tpreamble = (Npreamble + 4.25) × Tsym
+Npayload  = 8 + max(ceil((8·PL − 4·SF + 28 + 16·CRC − 20·IH) / (4·(SF − 2·DE))) × CRden, 0)
+Ttotal    = Tpreamble + Npayload × Tsym
+```
+
+| Symbol | Meaning |
+|---|---|
+| PL | payload bytes |
+| CRC | 1 if the payload CRC is on |
+| IH | 1 for an implicit header (length fixed and known), 0 for explicit |
+| DE | 1 if low data rate optimisation is on; the chip needs it when a symbol exceeds 16 ms |
+| CRden | coding rate denominator, 5 to 8 |
+| 4.25 | the sync word and start-of-frame |
+
+**Worked example**: a Meshtastic position, 56 bytes, ShortFast (SF7/250, CR 4/5, 16-symbol
+preamble, explicit header, CRC on, DE off):
+
+1. `Tsym = 128 / 250 000 = 0.512 ms`.
+2. Preamble: `(16 + 4.25) × 0.512 = 10.4 ms`.
+3. `8·56 − 4·7 + 28 + 16 = 464`; `464 / (4·7) = 16.6`, rounded up to 17.
+4. `Npayload = 8 + 17 × 5 = 93` symbols, `93 × 0.512 = 47.6 ms`.
+5. Total **58 ms**. The same packet at MediumFast (SF9) takes 191 ms [calc].
+
+Rules of thumb: +1 SF almost doubles the time; half the bandwidth doubles it; CR 4/5 → 4/8
+multiplies the payload part by 1.6; bytes add roughly linearly. Short packets at low SF are
+dominated by the fixed preamble and header, so halving a packet does not halve its time.
+
+## Duty cycle
+
+On terms: the regulations' **duty cycle** is the share of time a transmitter is on air, measured
+over **one hour** (ETSI EN 300 220), and it applies to each device separately.
+
+```
+duty cycle = time on air per packet × packets per hour / 3600 s
+```
+
+The two EU 868 sub-bands that matter here:
+
+| Sub-band | Power | Duty cycle | Per hour |
+|---|---|---|---|
+| 868.0–868.6 MHz | 25 mW ERP | 1 % | 36 s |
+| 869.40–869.65 MHz | 500 mW ERP | 10 % | 360 s |
+
+Examples [calc]:
+
+- a Meshtastic position at ShortFast (58 ms) every 10 s: 360 × 0.058 = 21 s an hour, **0.6 %**;
+- DMD's stock companion, 314 ms every 1.5 s: 2400 × 0.314 = 754 s an hour, **21 %**.
+
+Meshtastic enforces its region's limit on a rolling hour and stops transmitting at it [docs].
+
+Meshtastic's European regions [docs][code]:
+
+| Region | Band | Duty cycle | Presets | Note |
+|---|---|---|---|---|
+| `EU_868` | 869.40–869.65 MHz | 10 % | 250 kHz presets, no Turbo | **one** frequency slot, 869.525 MHz, shared with the public LongFast mesh |
+| `EU_866` | 865.6–867.6 MHz | 2.5 % (10 % for routers) | Lite (125 kHz) | position intervals multiplied by 10 in firmware |
+| `EU_N_868` | 869.40–869.65 MHz | 10 % | Narrow (62.5 kHz) | |
+
+## Channel load and collisions
+
+Duty cycle is per device. **Channel load** is the sum over every transmitter on the frequency, and
+it decides how many packets collide. With random access (each sends when it likes), the chance that
+nobody overlaps a packet is roughly `e^(−2G)` for a load `G`: about 60 % at 25 % load, 37 % at
+50 %. Real LoRa does somewhat better (it listens before sending, and a stronger signal often wins
+over a weaker one), but the shape holds. That is why Meshtastic withholds positions above 25 %
+load [code]. A schedule (TDMA: everyone in their own time slot) avoids collisions inside the group
+altogether, and can fill 70–80 % of the channel.
+
+## Group capacity
+
+```
+positions per second for the group = allowed load / (time on air × copies of each packet)
+```
+
+- Meshtastic ShortFast, every packet relayed once (×2), 25 % load: 0.25 / (0.058 × 2) =
+  **2.2 positions/s**: 20 riders every ~9 s; with no relays, every ~4.6 s [calc].
+- Slots by GPS time, 24-byte packet at SF7/250 in a 41 ms slot, 80 % load: 0.8 / 0.041 =
+  **~20 positions/s**: 20 riders every second [calc].
+
+## Range, roughly
+
+A two-ray ground model (−40 dB per decade near the ground), antennas at about 1.2 m, the budgets
+above. The upper figure has no margin; the lower one keeps about 14 dB for small antennas, the
+rider's body and fading [calc]:
+
+| Preset | Budget | Flat open road, line of sight | Forest, town, hills (rough) |
+|---|---|---|---|
+| ShortFast | 143 dB | ~2–4.5 km | ~1 km |
+| MediumFast | 148 dB | ~2.7–6 km | ~1.5 km |
+| LongFast | 153 dB | ~3.5–8 km | ~2 km |
+
+Estimates only; [07](07-experiments.md) E2 measures it.
