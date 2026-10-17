@@ -26,12 +26,29 @@ A managed-flooding mesh: every node rebroadcasts a packet once unless it hears s
 first, up to a hop limit. Channels are encrypted with a shared key (AES); a channel's QR code also
 carries the region and modem preset, so a group can be configured with one scan [docs].
 
+> **Review (Codex, 2026-10-17):** [docs][code] Encryption alone does not authenticate
+> positions: legacy channel AES-CTR detects no forgery, and any shared-key holder can
+> impersonate a rider. Current firmware adds signed broadcasts and optional channel AEAD;
+> their compatibility and airtime costs belong in the comparison. See the
+> [encryption documentation](https://meshtastic.org/docs/overview/encryption/) and
+> [`src/mesh/Router.cpp`, commit `fad52bba0db68aff926aa02a55f4d2c4989f68dd`](https://github.com/meshtastic/firmware/blob/fad52bba0db68aff926aa02a55f4d2c4989f68dd/src/mesh/Router.cpp).
+
 ### Radio in Europe
 
 See [02](02-radio-basics.md). The point that matters: `EU_868` has a single 250 kHz slot, 869.525
 MHz, shared with every public LongFast node around [docs][code]. A group cannot move to another
 frequency inside that region, only to another preset or key. `EU_866` multiplies all position
 intervals by 10 in firmware (`PROFILE_LITE`, `positionThrottle = 10`) [code], which rules it out.
+
+> **Review (Codex, 2026-10-17):** [code] The multiplier applies to the **periodic**
+> interval; smart-position timing uses an unscaled `minimumTimeThreshold`. It does not
+> multiply every position interval. Current main also offers `EU_N_868` with narrow
+> presets, so the single-slot limitation is specific to `EU_868` at 250 kHz. Sources:
+> [`src/mesh/Default.cpp`](https://github.com/meshtastic/firmware/blob/fad52bba0db68aff926aa02a55f4d2c4989f68dd/src/mesh/Default.cpp),
+> [`src/modules/PositionModule.h`](https://github.com/meshtastic/firmware/blob/fad52bba0db68aff926aa02a55f4d2c4989f68dd/src/modules/PositionModule.h),
+> [`src/modules/PositionModule.cpp`](https://github.com/meshtastic/firmware/blob/fad52bba0db68aff926aa02a55f4d2c4989f68dd/src/modules/PositionModule.cpp),
+> and [`src/mesh/RadioInterface.cpp`](https://github.com/meshtastic/firmware/blob/fad52bba0db68aff926aa02a55f4d2c4989f68dd/src/mesh/RadioInterface.cpp),
+> all at commit `fad52bba0db68aff926aa02a55f4d2c4989f68dd`.
 
 ### How often a position goes out
 
@@ -52,6 +69,14 @@ intervals by 10 in firmware (`PROFILE_LITE`, `positionThrottle = 10`) [code], wh
   - an unchanged position is held to a 6 h 6 min floor, **unless the channel shares full
     precision**.
 
+> **Review (Codex, 2026-10-17):** [code] These notes mix a measured release with
+> newer source. The installed 2.7.26 tag is commit
+> [`54e0d8d0ab2ff56b3a9ce967e53f79e49af560fb`](https://github.com/meshtastic/firmware/blob/54e0d8d0ab2ff56b3a9ce967e53f79e49af560fb/src/modules/PositionModule.cpp);
+> its `PositionModule.cpp` has no six-hour stationary floor. That floor exists in
+> [current `src/modules/PositionModule.cpp`](https://github.com/meshtastic/firmware/blob/fad52bba0db68aff926aa02a55f4d2c4989f68dd/src/modules/PositionModule.cpp)
+> at `fad52bba0db68aff926aa02a55f4d2c4989f68dd`. Pin the intended fleet release before
+> treating the tuning recipe as one tested configuration (inference).
+
 ### Tuned for a group
 
 Our reading of the source, and what [MeshAnd](05-osmand-integration.md) recommends after checking
@@ -71,12 +96,31 @@ the firmware itself [docs]:
   - **Client Hidden** sends no position;
   - **TAK** sends its position once a day.
 
+> **Review (Codex, 2026-10-17):** [code][docs] `TRACKER` sleeps after sending only
+> when `power.is_power_saving` is enabled; it can maintain BLE and receive while awake.
+> Excluding that role unconditionally loses a usable alternative. See
+> [`src/modules/PositionModule.cpp`, commit `54e0d8d0ab2ff56b3a9ce967e53f79e49af560fb`](https://github.com/meshtastic/firmware/blob/54e0d8d0ab2ff56b3a9ce967e53f79e49af560fb/src/modules/PositionModule.cpp)
+> and the [role/power-saving table](https://meshtastic.org/docs/configuration/radio/device/).
+
 Capacity at 25 % load [calc]:
 
 | Preset | One relay per packet | No relays (all Client Mute) |
 |---|---|---|
 | ShortFast | 2.2 positions/s: 20 riders every ~9 s | 4.3/s: every ~4.6 s |
 | MediumFast | 0.7/s: every ~31 s | 1.3/s: every ~15 s |
+
+> **Review (Codex, 2026-10-17):** [calc][code] These are offered-airtime budgets,
+> not delivered freshness guarantees: they assume exactly zero or one relay and no
+> other traffic or losses (inference). Independently applying the SX126x equation in
+> [02](02-radio-basics.md), with 16-symbol preamble, explicit header and CRC, gives
+> 57.984 ms / 190.976 ms for 56 bytes at SF7/SF9, confirming that arithmetic.
+> Current signing adds 66 bytes and optional AEAD another 12
+> ([`src/mesh/Router.cpp`](https://github.com/meshtastic/firmware/blob/fad52bba0db68aff926aa02a55f4d2c4989f68dd/src/mesh/Router.cpp),
+> [`src/mesh/CryptoEngine.h`](https://github.com/meshtastic/firmware/blob/fad52bba0db68aff926aa02a55f4d2c4989f68dd/src/mesh/CryptoEngine.h),
+> commit `fad52bba0db68aff926aa02a55f4d2c4989f68dd`).
+> Holding the existing unsigned example constant, 122/134 bytes take 106.624/114.304 ms
+> at ShortFast: 20 riders with one relay need **17.1/18.3 s** at 25% offered load,
+> before other traffic. The 56-byte comparison is therefore release/security-specific.
 
 ### What limits it in a convoy
 
@@ -100,9 +144,32 @@ A mesh built around fixed repeaters; MIT licence, very active [docs].
 - The companion protocol over BLE (a Nordic UART service) is documented in detail. Its **Send
   Channel Data Datagram** puts up to 165 bytes of binary data with a registered `data_type` into a
   group channel, so an app could send positions in its own format and at its own rate.
+
+> **Review (Codex, 2026-10-17):** [code] Binary datagrams supply neither sender ID
+> nor timestamp. Add both, plus replay/sequence handling: identical datagram payloads
+> have identical packet hashes, so an unchanged fix can be suppressed as a duplicate
+> (inference). Shared-key group packets do not authenticate an individual rider.
+> Unlike group text, this API also accepts an explicit path; the blanket "always
+> flood" statement needs that exception. Sources:
+> [`src/helpers/BaseChatMesh.cpp`](https://github.com/meshcore-dev/MeshCore/blob/81dbae592ffad40b4212bc0b37e82b38da08f4bc/src/helpers/BaseChatMesh.cpp),
+> [`src/Packet.cpp`](https://github.com/meshcore-dev/MeshCore/blob/81dbae592ffad40b4212bc0b37e82b38da08f4bc/src/Packet.cpp),
+> and [`docs/companion_protocol.md`](https://github.com/meshcore-dev/MeshCore/blob/81dbae592ffad40b4212bc0b37e82b38da08f4bc/docs/companion_protocol.md),
+> commit `81dbae592ffad40b4212bc0b37e82b38da08f4bc`.
+
 - Radio presets come from the project's server; Europe's is **EU/UK (Narrow): 869.618 MHz, SF8,
   62.5 kHz, CR 4/8**. A 37-byte datagram there takes about 0.43 s on air [calc]. With no
   repeaters nothing is relayed, so 10 riders every 30 s fill about 15 % of the channel.
+
+> **Review (Codex, 2026-10-17):** [code][calc] Current MeshCore uses a **32-symbol**
+> preamble at SF8, not 16
+> ([`src/helpers/radiolib/RadioLibWrappers.h`, commit `81dbae592ffad40b4212bc0b37e82b38da08f4bc`](https://github.com/meshcore-dev/MeshCore/blob/81dbae592ffad40b4212bc0b37e82b38da08f4bc/src/helpers/radiolib/RadioLibWrappers.h)).
+> For 37 bytes, explicit header and CRC: `Tsym=4.096 ms`,
+> `Npayload=8+ceil(308/32)*8=88`, so `(32+4.25+88)*4.096=508.928 ms`.
+> Ten senders every 30 s offer **17.0%** load before relays/other traffic.
+> The [official preset API](https://api.meshcore.nz/api/v1/config) still lists the
+> stated EU/UK modem settings; presets are suggestions, not a firmware restriction
+> ([docs](https://docs.meshcore.io/radio_presets/)).
+
 - Apps: the official one; [MeshCore Open](https://github.com/zjs81/meshcore-open), open source
   (Flutter); the [MeshCore-Solo](https://github.com/MarekZegare4/MeshCore-Solo) firmware fork with
   live location sharing.
@@ -111,6 +178,15 @@ A mesh built around fixed repeaters; MIT licence, very active [docs].
 deciding weakness: only riders in direct range see each other, unless one carries a separate node
 running repeater firmware. On the other hand, it is careful with airtime, and its protocol suits an
 app of our own.
+
+> **Review (Codex, 2026-10-17):** [code] That limitation describes stock MeshCore.
+> The already-listed **MeshCore-Solo** fork has optional relaying on the companion's
+> own radio (`client_repeat`, off until enabled), alongside movement/heartbeat-gated
+> live position sharing. A separate repeater radio is therefore not the only option.
+> See [`examples/companion_radio/MyMesh.cpp`](https://github.com/MarekZegare4/MeshCore-Solo/blob/1f47fc56cdf1398c85b144faf21937ad04e4c46e/examples/companion_radio/MyMesh.cpp)
+> and [`examples/companion_radio/ui-core/LiveShareEngine.h`](https://github.com/MarekZegare4/MeshCore-Solo/blob/1f47fc56cdf1398c85b144faf21937ad04e4c46e/examples/companion_radio/ui-core/LiveShareEngine.h),
+> commit `1f47fc56cdf1398c85b144faf21937ad04e4c46e`. Include this fork in a
+> comparison trial before ruling MeshCore out for topology alone (inference).
 
 ## Reticulum, RNode and Sideband
 
@@ -124,6 +200,17 @@ app of our own.
   - RNode: GPL-3.0.
 - Not checked: how location reaches a whole group, packet sizes, cadence. Reticulum packets are
   heavier by design (16-byte destination hashes, signatures).
+
+> **Review (Codex, 2026-10-17):** [code] Sideband's periodic telemetry targets a
+> **collector**, rather than broadcasting to every rider; its UI minimum is five
+> minutes and its default send interval is twelve hours. A collector can return the
+> collected records, which adds a distribution step. See
+> [`sbapp/ui/telemetry.py`](https://github.com/markqvist/Sideband/blob/ef572b58e88ff4e4326d51778336922a53b2a03f/sbapp/ui/telemetry.py)
+> and [`sbapp/sideband/core.py`](https://github.com/markqvist/Sideband/blob/ef572b58e88ff4e4326d51778336922a53b2a03f/sbapp/sideband/core.py),
+> commit `ef572b58e88ff4e4326d51778336922a53b2a03f`. Reticulum's base headers are
+> 19/35 bytes, not an unavoidable signature on every packet
+> ([`RNS/Reticulum.py`, commit `e40191b3d193b46b7f2d8a44424a594cd758839b`](https://github.com/markqvist/Reticulum/blob/e40191b3d193b46b7f2d8a44424a594cd758839b/RNS/Reticulum.py)).
+> Distinguish stock Sideband's fit from a custom Reticulum application (inference).
 
 ## Amateur radio only
 
@@ -145,5 +232,38 @@ MeshCom and LoRa APRS need an amateur licence, so not every rider could use them
 | [LoraText](https://lora.paintbrushoutdoors.com/) | own radio | open source, group key, positions and pins | group tracking on its roadmap |
 | Cardo Ride Pro, calimoto, Packt Moto | mobile data | group positions | need coverage |
 
+> **Review (Codex, 2026-10-17):** [docs] Product evidence can be stronger here:
+> [SpecFive's own guide index](https://specfive.com/pages/instructions) lists a
+> Meshtastic guide for Trace, and [GroupTrack's site](https://www.grouptrack.org/)
+> claims updates every few seconds. That is a vendor claim, without a stated fleet
+> size or reception percentile; it is not a measured capacity result (inference).
+> [TrailMesh7's tag documentation](https://trailmesh7.com/tag) identifies its firmware
+> as a small **Meshtastic fork**, with peer relaying and unattended trackers; it is
+> not evidence of a separate radio protocol.
+> LoraText's [published landing page](https://lora.paintbrushoutdoors.com/)
+> confirms that named group tracking is a roadmap item, but its source-code buttons
+> currently point to GitHub's homepage; its advertised open-source licence remains
+> unverified ([deployed page content](https://lora.paintbrushoutdoors.com/assets/LandingView.b2e1522a.js)).
+
+> **Review (Codex, 2026-10-17):** [code] Missing map alternative if OsmAnd is
+> negotiable: the standalone **Meshtastic ATAK plugin** connects directly by BLE/USB,
+> avoiding the removed Android AIDL API. Its current auto-configuration explicitly
+> sets the US region and overrides duty-cycle enforcement, so it needs changes
+> before an EU trial. Sources:
+> [`README.md`](https://github.com/meshtastic/pluginmeshtastic/blob/4c4766c338d68089d160242d51652aa939b08d33/README.md)
+> and [`MeshtasticConfigManager.kt`](https://github.com/meshtastic/pluginmeshtastic/blob/4c4766c338d68089d160242d51652aa939b08d33/app/src/main/java/com/atakmap/android/pluginmeshtastic/meshtastic/MeshtasticConfigManager.kt),
+> commit `4c4766c338d68089d160242d51652aa939b08d33`. Separately, Garmin itself
+> documents up to 20 users and 13 km in its
+> [Tread announcement](https://www.garmin.com/it-IT/newsroom/tread-powerswitch-e-bc-40-offroad/)
+> [docs]; this does not verify the retailer's five-second cadence.
+
 Garmin's choice of 169.4 MHz is worth noting: a lower frequency carries further at the same
 power, and the EMEA band there allows 500 mW. It needs different radio hardware from ours.
+
+> **Review (Codex, 2026-10-17):** [docs][calc] The 500 mW figure needs its accompanying
+> restriction: EU non-specific SRDs at **169.400–169.475 MHz** have a **1% duty-cycle**
+> limit, under Annex row 37c of
+> [Commission Implementing Decision (EU) 2025/105](https://eur-lex.europa.eu/eli/dec_impl/2025/105/oj/eng/pdf).
+> That is only 75 kHz of spectrum, so the 250 kHz LoRa presets discussed above do not
+> fit (calculation). A Garmin product's compliance does not establish permission for
+> our own waveform or every EMEA country (inference).
