@@ -26,7 +26,7 @@ protocol, with OsmAnd as the map.
 | 04 | [The DMD protocol](docs/04-dmd-protocol.md) | What it does well and where it breaks |
 | 05 | [OsmAnd integration](docs/05-osmand-integration.md) | Getting other riders onto the OsmAnd map |
 | 06 | [**Our own protocol**](docs/06-own-protocol.md) | What a purpose-built design could do better, and at what cost |
-| 07 | [Experiments](docs/07-experiments.md) | What to measure, and the log |
+| 07 | [Experiments](docs/07-experiments.md) | What to measure, and the results |
 
 `tools/airtime.py` produces every time-on-air, duty-cycle and capacity figure in these documents,
 and `tools/route_size.py` the route sizes (GPX in, simplified binary sizes and LoRa packets out):
