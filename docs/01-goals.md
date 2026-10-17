@@ -25,6 +25,14 @@ coverage. Each rider wants to:
 | Route sharing | nice to have: send a route or a change to it during the ride | via points fit one packet ([06](06-own-protocol.md)) |
 | Route safety | a shared route is never silently altered off-road: exact or within 2 m, never snapped, integrity-checked | [06](06-own-protocol.md) |
 
+> **Review (Codex, 2026-10-17):** Inference: define freshness as the age of the **fix displayed
+> at the receiver**, including losses, relays and phone/BLE outages, rather than the transmission
+> interval. [calc] At 60 km/h, a 10 s old point is already 167 m behind even on a straight road.
+> Specify an acceptable delivery percentile and separate “radio last heard”, “GPS fix age” and
+> “help acknowledged”; a fresh heartbeat does not prove a fresh position or delivered help.
+> Inference: retain an agreed regroup/missing-rider procedure when the radio path fails; this
+> design has no guaranteed path to a rider beyond direct range in v1 ([06](06-own-protocol.md)).
+
 ## Non-goals, for now
 
 - voice;
