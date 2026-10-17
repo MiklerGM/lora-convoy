@@ -25,6 +25,10 @@ TOLERANCES = (5, 10, 20, 50)
 
 def read_gpx(data):
     """(lines, waypoints): each line is a list of (lat, lon) for a track segment or a route."""
+    # **Review (Codex, 2026-10-17):** [code] Regex accepts points in XML comments and misses
+    # namespace-prefixed GPX; it also accepts out-of-range coordinates. Reproductions:
+    # tools/review_checks.py; GPX schema: https://www.topografix.com/GPX/1/1/gpx.xsd .
+    # Inference: size-estimation input only; do not reuse as a received-route validator.
     lines, waypoints, current = [], [], None
     for m in TAG.finditer(data):
         closing, tag, attrs = m.group(1), m.group(2), m.group(3)
@@ -62,6 +66,8 @@ def length_km(points):
 
 def simplify(points, tolerance_m):
     """Douglas-Peucker, iterative so long tracks cannot exhaust the stack. Returns kept indices."""
+    # **Review (Codex, 2026-10-17):** [calc] The bound is in this fixed-latitude projection,
+    # before coordinate rounding; collinear backtracking can disappear. See review_checks.py.
     if len(points) < 3:
         return list(range(len(points)))
     xy = to_metres(points)
@@ -99,6 +105,9 @@ def varint_len(v):
 
 def encoded_size(points):
     """First point as two 32-bit integers, then zigzag-varint deltas, in 1e-5 degree units."""
+    # **Review (Codex, 2026-10-17):** [code] This counts bytes; it emits no decodable format
+    # or segment lengths/type/manifest/hash. [calc] Grid rounding adds up to ~0.79 m at the
+    # equator, beyond simplification error; it cannot certify the docs/06 2 m end-to-end bound.
     q = [(round(lat * 1e5), round(lon * 1e5)) for lat, lon in points]
     size = 8 + 2  # first point + point count
     for (a1, o1), (a2, o2) in zip(q, q[1:]):
