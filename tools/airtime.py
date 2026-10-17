@@ -28,6 +28,25 @@ def bitrate(sf, bw_khz, cr=5):
     return sf * bw_khz * 1e3 / 2 ** sf * 4 / cr
 
 
+# Link budget at 22 dBm (transmit power + SX1262 sensitivity), as Meshtastic publishes them.
+MODES = [("SF7/250", 7, 250, 143), ("SF8/250", 8, 250, 145.5), ("SF9/250", 9, 250, 148),
+         ("SF10/250", 10, 250, 150.5), ("SF9/125", 9, 125, 151), ("SF10/125", 10, 125, 153.5)]
+
+
+def plan(riders, target_s, duty=0.10, guard=0.010, packet=24):
+    """The longest-range mode whose slot frame gives every rider a position every target_s or
+    faster without passing the duty cycle: what a group set up for this many riders would use.
+    Returns (mode, budget dB, spare slots, seconds between a rider's positions) or None."""
+    spare = max(1, round(riders / 10))
+    best = None
+    for name, sf, bw, budget in MODES:
+        t = time_on_air(packet, sf, bw, preamble=8)
+        every = max((riders + spare) * (t + guard), t / duty)  # duty cycle can stretch the frame
+        if every <= target_s and (best is None or budget > best[1]):
+            best = (name, budget, spare, every)
+    return best
+
+
 def check():
     """Against published and measured figures: if these move, every table in the docs is wrong."""
     assert round(bitrate(7, 250)) == 10938      # Meshtastic: Short Fast 10.94 kbps
@@ -78,6 +97,24 @@ def tables():
         cap = 0.8 / slot                           # a schedule can use most of the frame
         print(f"  slots by GPS time {name}: {t * 1000:3.0f} ms + guard = {slot * 1000:3.0f} ms slot, "
               f"{cap:4.1f}/s = 20 riders every {20 / cap:3.1f} s, one rider @1s {t:.1%} duty")
+
+    print("\nGroup sized at creation: the longest-range mode that still meets the cadence")
+    for target in (2, 5, 10):
+        for n in (5, 10, 15, 20):
+            p = plan(n, target)
+            print(f"  every {target:2} s, {n:2} riders (+{p[2]} spare): {p[0]:9} {p[1]:5.1f} dB, "
+                  f"each rider every {p[3]:4.2f} s" if p else f"  every {target} s, {n} riders: none")
+
+    print("\nA route over LoRa: 230 bytes of route per packet, 16 more for header and MIC")
+    for what, points, per_point in (("20 via points, routed by each phone", 20, 6),
+                                    ("highway 200 km, ~2 points/km", 400, 2.5),
+                                    ("mountains 200 km, ~10 points/km", 2000, 2.5)):
+        size = 8 + points * per_point
+        packets = math.ceil(size / 230)
+        times = [packets * time_on_air(min(size, 230) + 16, sf, bw, preamble=8)
+                 for _, sf, bw, _ in (MODES[0], MODES[2], MODES[5])]
+        print(f"  {what:36} {size / 1000:4.2f} kB, {packets:2} packets, on air once: "
+              f"SF7/250 {times[0]:4.1f} s, SF9/250 {times[1]:4.1f} s, SF10/125 {times[2]:4.1f} s")
 
 
 if __name__ == "__main__":

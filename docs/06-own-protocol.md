@@ -85,6 +85,79 @@ Packet sketch, about 18 bytes; with a fixed length the LoRa header can be implic
 | 1 | status: help, stopped, GPS ok, battery low |
 | 4 | message authentication code (AES-CCM), nonce derived from group, slot and time, so no nonce on air |
 
+## Sizing the group at creation
+
+The organiser states **how many riders** the group will have and **how fresh** positions must be.
+Everything else follows, and goes into the group QR:
+
+- the frame is (riders + spare slots) × slot;
+- the mode is the longest-range one whose frame still gives every rider a position that often,
+  without any rider passing the 10 % duty cycle;
+- spare slots, about one per ten riders, are for late joiners. More riders than slots means a new
+  QR, or dynamic slots in a later version.
+
+`tools/airtime.py` (`plan()`) [calc]:
+
+| Positions every | 5 riders | 10 riders | 15 riders | 20 riders |
+|---|---|---|---|---|
+| ≤ 2 s | SF10/250, 150.5 dB, 1.9 s | SF9/250, 148 dB, 1.2 s | SF9/250, 148 dB, 1.9 s | SF8/250, 145.5 dB, 1.5 s |
+| ≤ 5 s | SF10/125, 153.5 dB, 3.7 s | SF10/125, 153.5 dB, 4.2 s | SF9/125, 151 dB, 3.7 s | SF9/125, 151 dB, 4.8 s |
+| ≤ 10 s | SF10/125, 153.5 dB, 3.7 s | SF10/125, 153.5 dB, 4.2 s | SF10/125, 153.5 dB, 6.5 s | SF10/125, 153.5 dB, 8.4 s |
+
+The trade-off this exposes:
+
+- **A small group buys range.** Five to ten riders at about 4 s get SF10/125, whose link budget
+  (153.5 dB) matches Meshtastic's LongFast. On LongFast itself, ten riders would get a position each
+  every ~55 s with relaying, or every ~27 s without [calc].
+- **A large group pays for cadence with range.** Twenty riders every 1.5 s need SF8/250, about
+  8 dB less budget.
+- **For very small groups the duty cycle, not the frame, sets the pace.** Five riders at
+  SF10/125 fit a 2.3 s frame, but each rider may only send every 3.7 s.
+
+The 869.40–869.65 MHz band holds two 125 kHz channels, so the group key could also pick one of them.
+
+## Sharing a route
+
+**DMD:** the LoRa format we recovered has only two packet types, positions and chat
+([04](04-dmd-protocol.md)). DMD2's route sharing therefore goes through its server, not the radio
+(inferred from the packet types, not checked against DMD2's code).
+
+**Over LoRa it is feasible** [calc]; 230 bytes of route per packet, plus 16 for header and MIC:
+
+| What is sent | Size | On air once: SF7/250 · SF9/250 · SF10/125 |
+|---|---|---|
+| **Via points only** (20); each phone's OsmAnd computes the route on its own offline map | 130 B, 1 packet | 0.1 · 0.4 · 1.4 s |
+| Simplified track, highway, 200 km (~2 points/km, 2.5 B/point after delta coding) | ~1 kB, 5 packets | 1.0 · 3.0 · 11.1 s |
+| Simplified track, mountain roads, 200 km (~10 points/km) | ~5 kB, 22 packets | 4.2 · 13.3 · 48.7 s |
+
+Even the worst case fits the 10 % duty cycle comfortably. Via points are by far the cheapest; the
+risk is that riders whose maps or routing profiles differ get slightly different routes, which is
+acceptable for "ride via these points".
+
+**The hard part is delivering it to everyone**, not airtime: in a broadcast, each rider misses
+different packets. Slots make this natural:
+
+- one route packet per frame, in a spare slot, so positions keep flowing;
+- every position packet carries the route's version and a "have it all" bit, or a small bitmap of
+  missing parts;
+- the sender repeats only what someone still lacks. Alternatively, forward error correction (a
+  fountain code): send a few extra packets, so that any N of N+k rebuild the route.
+
+**Before the ride**, a route is easier to hand over phone to phone (Wi-Fi, Bluetooth, file sharing);
+LoRa is for changes on the way ("the pass is closed, new route").
+
+**In OsmAnd** [code]:
+
+- a received route can be imported and shown (`importGpx`, `showGpx`: the `TRACKS_EDIT` group) and
+  navigated (`navigateGpx`: the `NAVIGATION` group). Neither group is granted by default, so the
+  rider allows them once;
+- via points can also go on our own layer (the `MAP` group, granted by default) with a "navigate"
+  button.
+
+**Meshtastic** has waypoints (single points with an expiry) but no route type. A route there would
+be a series of packets on a private port, without reliable delivery to the whole group: possible,
+but clumsy.
+
 ## v2: relaying
 
 Keep one or two **relay slots** per frame from the start, so relaying can be added without changing

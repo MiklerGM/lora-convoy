@@ -21,6 +21,8 @@ coverage. Each rider wants to:
 | Radio | off-the-shelf boards with an SX1262: Seeed Wio Tracker L1, Heltec V3/V4, LILYGO T-Deck, RAK | a GPS on the node is preferred: it keeps reporting if the phone dies |
 | Regulation | EU 868 MHz SRD rules: power and duty cycle per sub-band | [02](02-radio-basics.md) |
 | Privacy | only the group can read or forge its positions | |
+| Group setup | the organiser states the number of riders; slots, frame and radio mode follow from it | [06](06-own-protocol.md) |
+| Route sharing | nice to have: send a route or a change to it during the ride | via points fit one packet ([06](06-own-protocol.md)) |
 
 ## Non-goals, for now
 

@@ -12,6 +12,12 @@ All of these belong to the `MAP` permission group, which OsmAnd **grants to a co
 default** (`AidlPermissionGroup.java`, `grantedByDefault = true`). Navigation calls such as
 `registerForNavUpdates` are a separate group, not granted by default.
 
+For routes, other groups are needed, and neither is granted by default, so the rider allows each
+once [code]:
+
+- `importGpx`, `showGpx`: the `TRACKS_EDIT` group;
+- `navigateGpx`: the `NAVIGATION` group.
+
 A layer point (`AMapPoint`) carries `id`, `shortName`, `fullName`, `typeName`, `layerId`, `color`,
 `location`, a list of `details` strings and a `params` map.
 
