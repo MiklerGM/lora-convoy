@@ -56,3 +56,19 @@ which.
 
 These documents were reviewed by Codex on 2026-10-17. Its findings have been folded into the text;
 its original annotations are in the repository history, commits `62f3fca` to `75ae2c1`.
+
+Review (Codex qwen, 2026-10-17): I re-derived every time-on-air and capacity figure in
+these documents from the Semtech formula with exact rationals, independently of `tools/airtime.py`
+and `tools/cross_check.py`. All of them reproduce: 56 B SF7/250 pre16 = 57.984 ms, SF9 =
+190.976 ms; 24 B pre8 = 30.848 / 56.576 / 102.912 ms at SF7/SF8/SF9/250 and 370.688 ms at
+SF10/125; 246 B = 192.128 ms at SF7/250, 604.672 ms at SF9/250, 2213.888 ms at SF10/125; MeshCore
+37 B SF8/62.5 CR 4/8 with a 32-symbol preamble = 508.928 ms; the slot caps 19.58 / 12.02 / 7.09
+per second and the 20-rider frames 1.021 / 1.664 / 2.823 s; the SF10/125 route fit of 110.8 min.
+The arithmetic in [02](docs/02-radio-basics.md) and [06](docs/06-own-protocol.md) can be
+trusted. [calc]
+
+Every project pinned in [03](docs/03-alternatives.md) is mirrored locally at `../upstream/`, at
+the commits in its pin table (meshtastic-firmware `fad52bb`, mt-fw-2726 `54e0d8d`,
+meshtastic-android `ed0a53f`, meshtastic-atak-plugin `4c4766c`, meshcore `81dbae5`,
+meshcore-solo `1f47fc5`, reticulum `e40191b`, sideband `ef572b5`, meshand `034e24d`,
+sx126x-driver `a10c5df`, osmand `a68b83f`), so any `[code]` claim here can be checked offline.
