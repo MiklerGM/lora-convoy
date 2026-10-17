@@ -83,7 +83,7 @@ def tables():
     fixed = 0.314 - time_on_air(46, 11, 500, ldro=True, preamble=-4.25)  # calibrated: 46 B -> 314 ms
     print(f"  calibrated fixed part {fixed / ts:.1f} symbols (our measurement: 46 B -> 314 ms)")
     print(f"  {'riders':>6} {'on air':>7} {'airtime':>8} {'interval':>9} {'channel':>8} {'one device':>11}")
-    for n in (1, 2, 3, 5, 9):
+    for n in (1, 2, 3, 5, 6, 9):
         raw = 14 + 14 * min(n, 9)                 # header + up to nine retold riders
         onair = math.ceil(raw * 4 / 3) + 8         # base64, no padding, plus EBYTE's header
         t = fixed + time_on_air(onair, 11, 500, ldro=True, preamble=-4.25)

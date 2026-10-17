@@ -14,7 +14,8 @@ coverage. Each rider wants to:
 | | Target | Notes |
 |---|---|---|
 | Group size | up to 20 riders (proposed for a first version) | typical size still to confirm |
-| Position freshness | 1–10 s | DMD sent every 1.5–6 s; Garmin's Group Ride Tracker claims 5 s; tuned Meshtastic 5–10 s ([03](03-alternatives.md)) |
+| Position freshness | the age of the fix **shown on the receiver's map**, at a stated percentile (e.g. 95 % of the time under N s) | not the transmission interval: losses, relays and phone or Bluetooth outages count too. At 60 km/h a 10 s old point is already 167 m behind. For comparison: DMD sent every 1.5–6 s, Garmin's Group Ride Tracker reportedly 5 s, tuned Meshtastic 5–10 s ([03](03-alternatives.md)) |
+| Separate statuses | "radio last heard", "GPS fix age" and "help acknowledged" are three different facts | a fresh heartbeat proves neither a fresh position nor delivered help |
 | Range | direct radio range, roughly 1–4 km | how far a column spreads is still to confirm |
 | Infrastructure | none: no repeaters, no internet | |
 | Phone | Android with OsmAnd | iOS out of scope: OsmAnd's API there is different ([05](05-osmand-integration.md)) |
@@ -25,13 +26,9 @@ coverage. Each rider wants to:
 | Route sharing | nice to have: send a route or a change to it during the ride | via points fit one packet ([06](06-own-protocol.md)) |
 | Route safety | a shared route is never silently altered off-road: exact or within 2 m, never snapped, integrity-checked | [06](06-own-protocol.md) |
 
-> **Review (Codex, 2026-10-17):** Inference: define freshness as the age of the **fix displayed
-> at the receiver**, including losses, relays and phone/BLE outages, rather than the transmission
-> interval. [calc] At 60 km/h, a 10 s old point is already 167 m behind even on a straight road.
-> Specify an acceptable delivery percentile and separate “radio last heard”, “GPS fix age” and
-> “help acknowledged”; a fresh heartbeat does not prove a fresh position or delivered help.
-> Inference: retain an agreed regroup/missing-rider procedure when the radio path fails; this
-> design has no guaranteed path to a rider beyond direct range in v1 ([06](06-own-protocol.md)).
+The radio is not a guarantee. A group still needs an agreed regroup and missing-rider procedure
+for when nothing gets through: the first version in [06](06-own-protocol.md) has no path at all to
+a rider beyond direct range.
 
 ## Non-goals, for now
 
@@ -43,7 +40,8 @@ coverage. Each rider wants to:
 ## Open questions for the owner
 
 1. How many riders does a group usually have?
-2. How fresh must a position be: is 10 s enough, or does it need 1–2 s?
+2. How fresh must a shown position be, and how often may it be late: is 10 s at the 95th
+   percentile enough, or does it need 1–2 s?
 3. How far does a column spread on a typical ride?
 4. Will some riders bring plain Meshtastic radios and apps, so that they must interoperate?
 5. Is the node powered by the bike, or must it run a day on its own battery?

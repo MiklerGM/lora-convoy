@@ -4,7 +4,7 @@ Research into sharing positions within a group ride over LoRa, with no mobile ne
 infrastructure: what existing systems do, where they fall short, and what a protocol designed for
 a moving group could do better.
 
-**Status:** research notes and an airtime calculator. No firmware or app yet, and nothing here has
+**Status:** research notes and calculation tools. No firmware or app yet, and nothing here has
 been ridden.
 
 ## Why this exists
@@ -28,25 +28,31 @@ protocol, with OsmAnd as the map.
 | 06 | [**Our own protocol**](docs/06-own-protocol.md) | What a purpose-built design could do better, and at what cost |
 | 07 | [Experiments](docs/07-experiments.md) | What to measure, and the results |
 
-`tools/airtime.py` produces every time-on-air, duty-cycle and capacity figure in these documents,
-and `tools/route_size.py` the route sizes (GPX in, simplified binary sizes and LoRa packets out):
-`python3 tools/airtime.py` prints the tables, `python3 tools/airtime.py 56 7 250` one packet.
+## Tools
+
+All standard-library Python:
+
+| Tool | What it does | How to run |
+|---|---|---|
+| `tools/airtime.py` | every time-on-air, duty-cycle and capacity figure in the documents | `python3 tools/airtime.py` prints the tables; `python3 tools/airtime.py 56 7 250` prices one packet |
+| `tools/route_size.py` | route sizes: a GPX in, simplified binary sizes and LoRa packets out | `python3 -I tools/route_size.py route.gpx --tolerances 2,5,100` |
+| `tools/cross_check.py` | re-derives airtime independently, from Semtech's driver, and checks the other two tools against it | `python3 -I tools/cross_check.py` |
 
 ## Conventions
 
 Each claim says where it comes from:
 
-- **[code]** — read in the project's source, main branch on the date given;
-- **[docs]** — the project's own documentation or a vendor page;
-- **[calc]** — computed with `tools/airtime.py`;
+- **[code]** — read in a project's source, pinned to a commit or release tag;
+- **[docs]** — the project's own documentation, a vendor page or a regulation;
+- **[calc]** — computed with the tools above;
 - **[bench]** — measured on our boards;
 - **[owner]** — the project owner's experience on the road with the apps concerned.
 
 Anything untagged is inference. Regulatory notes are information, not legal advice.
 
-> **Review (Codex, 2026-10-17):** [code] “Main branch on the date” is insufficient to reproduce
-> a claim: [03](docs/03-alternatives.md) mixes tested firmware 2.7.26 with newer development
-> behavior. Review additions pin source files to full commit SHAs; the original notes remain
-> unchanged. [calc] Independent airtime derivation and counterexamples are reproducible with
-> `python3 -I tools/review_checks.py`, rather than treating `airtime.py` as its own reference.
-> Main findings and validation limits are in [REVIEW-codex.md](REVIEW-codex.md).
+Meshtastic's firmware branch `develop` (pinned here at `fad52bb`) is ahead of the release on our
+boards, 2.7.26 (tag `54e0d8d`): several behaviours below exist only in `develop`, and each says
+which.
+
+These documents were reviewed by Codex on 2026-10-17. Its findings have been folded into the text;
+its original annotations are in the repository history, commits `62f3fca` to `75ae2c1`.
