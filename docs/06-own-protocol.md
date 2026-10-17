@@ -16,6 +16,10 @@ beyond what that baseline can do:
 If none of these applies, building our own means paying for firmware on every board, field
 testing, and losing interoperability with plain Meshtastic users, for no gain.
 
+> **Review (Codex, 2026-10-17):** Inference: the third trigger is not solved by the proposed v1:
+> it has no relay at all. Compare a stretched column against a measured Meshtastic baseline
+> **after** v2 forwarding exists; faster direct broadcasts do not cross an obstructing ridge.
+
 ## What to avoid: "DMD, but better"
 
 DMD's core is random access plus every device retelling every rider, at a fixed fast pace
@@ -52,6 +56,15 @@ the frame used for slots:
 One rider sending every second is on air 3.1 % of the time at SF7, 5.7 % at SF8 and 10.3 % at
 SF9, which is the limit of the 869.4–869.65 MHz band.
 
+> **Review (Codex, 2026-10-17):** [calc] Independently derived explicit-header airtimes are
+> 30.848 / 56.576 / 102.912 ms for SF7/8/9. With 10 ms guard and the stated 80% slot budget,
+> 20 riders require **1.021 / 1.664 / 2.823 s** respectively, before additional traffic;
+> “every 1 s” is rounding beyond this model at SF7. SF9 every second is **over**, not within,
+> the 10% duty-cycle option (minimum 1.02912 s with no other TX). Derivation and assertions:
+> [`tools/review_checks.py`](../tools/review_checks.py), independently checked against
+> [Semtech `src/sx126x.c`](https://github.com/Lora-net/sx126x_driver/blob/a10c5dfdf89788c6ac805e9fe98889de44175aa2/src/sx126x.c),
+> commit `a10c5dfdf89788c6ac805e9fe98889de44175aa2`.
+
 ## v1: up to 20 riders, no relaying
 
 The simplest version that could work.
@@ -72,6 +85,22 @@ The simplest version that could work.
   1 km in forest, 2–4.5 km on an open road at SF7, up to about 6 km at SF9
   ([02](02-radio-basics.md)).
 
+> **Review (Codex, 2026-10-17):** Inference: define how each physical radio selects its unique
+> rider/slot from the common QR roster, and authenticate a roster version plus its
+> activation epoch; a restarted or late node must listen before transmitting. Reserve one
+> allocator for spare slots, otherwise two isolated joiners can select the same “free” slot.
+> A changed frame must activate at an agreed future epoch, or old/new schedules overlap.
+
+> **Review (Codex, 2026-10-17):** [docs] GNSS serial messages arrive after fix computation;
+> the time-pulse pin is the precision timing reference ([u-blox receiver description, §12](https://content.u-blox.com/sites/default/files/products/documents/u-blox6-GPS-GLONASS-QZSS-V14_ReceiverDescrProtSpec_%28GPS.G6-SW-12013%29_Public.pdf)).
+> Inference: verify PPS wiring on each board, timestamp a defined RF event, and account for
+> packet duration when recovering frame phase from authenticated, replay-checked reception.
+> Define GPS versus UTC, an epoch
+> and `epoch + k × frame_length`: a 1.2 s frame cannot restart on every integer second.
+> [calc] Two clocks each at ±20 ppm can consume a 10 ms relative guard in 250 s without resync.
+> Inference: transmit only while timing uncertainty fits the guard; a phone clock over BLE
+> needs an error bound before it can safely recover the schedule. External groups can still collide.
+
 Packet sketch, about 18 bytes; with a fixed length the LoRa header can be implicit, saving airtime:
 
 | Bytes | Field |
@@ -84,6 +113,21 @@ Packet sketch, about 18 bytes; with a fixed length the LoRa header can be implic
 | 1 | course, 2° steps |
 | 1 | status: help, stopped, GPS ok, battery low |
 | 4 | message authentication code (AES-CCM), nonce derived from group, slot and time, so no nonce on air |
+
+> **Review (Codex, 2026-10-17):** [docs][calc] **Do not derive a CCM nonce from fix time.** It
+> repeats when the fix stalls, and the transmitted time wraps after 65 536 s (18 h 12 min 16 s).
+> [NIST SP 800-38C, §5.3](https://nvlpubs.nist.gov/nistpubs/legacy/sp/nistspecialpublication800-38c.pdf)
+> requires uniqueness per key. Inference: use a distinct transmission counter with a
+> reboot-safe session/epoch and sender identity, authenticate the header, and keep replay state;
+> carry fix time separately. Define how receivers recover the epoch after long outages.
+> [docs] A 32-bit tag needs an explicit failed-verification/key-lifetime budget; NIST Appendix B
+> requires risk analysis below 64 bits. Budget those fields before fixing packet length.
+
+> **Review (Codex, 2026-10-17):** [docs] A shared key authenticates membership, not an
+> individual rider: every member can construct another slot's packet ([RFC 3610, §2.1](https://www.rfc-editor.org/rfc/rfc3610#section-2.1)).
+> Inference: state that trust boundary, rotate keys when a device is lost or a rider leaves,
+> and authenticate route/control messages too. A modulo fix time also needs bounded unwrapping;
+> half the 16-bit range is only 9 h 6 min 8 s ([RFC 1982, §3.2](https://www.rfc-editor.org/rfc/rfc1982#section-3.2)).
 
 ## Sizing the group at creation
 
@@ -116,6 +160,15 @@ The trade-off this exposes:
 
 The 869.40–869.65 MHz band holds two 125 kHz channels, so the group key could also pick one of them.
 
+> **Review (Codex, 2026-10-17):** [calc] `plan()` budgets each rider's **own positions only**;
+> a relay or route sender must add all its traffic to the same duty ledger. Unlike the capacity
+> table, `plan()` does not reserve a further 20% of the frame beyond its spare slots. Its small-group
+> duty stretch also creates idle time outside `(riders + spare) × slot`, which the actual frame
+> definition must include. [docs] Two nominal 125 kHz channels exactly fill 250 kHz and leave
+> no nominal edge margin; compliant occupied bandwidth and oscillator error need checking
+> ([ETSI EN 300 220-2 V3.3.1, §§4.4.4–5, 4.4.8](https://www.etsi.org/deliver/etsi_en/300200_300299/30022002/03.03.01_60/en_30022002v030301p.pdf)).
+> Inference: they are not two proven independent channels merely because the arithmetic fits.
+
 ## Sharing a route
 
 **DMD:** the LoRa format we recovered has only two packet types, positions and chat
@@ -133,6 +186,14 @@ The 869.40–869.65 MHz band holds two 125 kHz channels, so the group key could 
 Even the worst case fits the 10 % duty cycle comfortably. Via points are by far the cheapest; the
 risk is that riders whose maps or routing profiles differ get slightly different routes, which is
 acceptable for "ride via these points".
+
+> **Review (Codex, 2026-10-17):** [calc] Airtime alone does not determine legal completion
+> time: 48.7 s of TX consumes **487 s of replenishment** at a sustained 10% budget with no
+> other traffic. At SF10/125 a position every 4 s already uses 9.2672%; only 26.38 s/hour
+> remains for route traffic, so 48.71 s takes about **111 min to replenish** at that rate.
+> An unused hourly budget may allow an earlier burst; these are amortized rates, not mandatory
+> burst delays. Include retries and the actual observation-window ledger. Independent values are in
+> [`review_checks.py`](../tools/review_checks.py); regulatory accounting is reviewed in [02](02-radio-basics.md).
 
 **Measured on two real routes** (2026-10-17, `tools/route_size.py`) [calc]:
 
@@ -177,12 +238,27 @@ coarse rows above are for mapped roads only. Rules:
    | at most 5 m from the original | 4.1 kB, 18 packets | 3.5 · 11 · 40 s |
 
    All of these fit the 10 % duty cycle, so there is no reason to compress further.
+
+   > **Review (Codex, 2026-10-17):** [code][calc] The current tool cannot guarantee the stated
+   > end-to-end 2 m bound: a three-point example simplified at 2 m becomes **2.449 m** away
+   > after its 1e-5° rounding. A collinear out-and-back is also reduced to its endpoints,
+   > losing traversal order despite zero geometric deviation. Reproductions:
+   > [`review_checks.py`](../tools/review_checks.py); baseline `tools/route_size.py`,
+   > `simplify()` / `encoded_size()`, commit `fe4c836018fe91683540dc30c5e24aca1e9ce1cb`.
+   > Inference: budget quantization/projection error, preserve turns and traversal order,
+   > and label “exact” relative to the decoded geometry, not physical trail safety.
 2. **Coarse points with road snapping are an optimisation, never the default.** They are used only
    for segments the sender has verified:
    1. it snaps the coarse points with its own OsmAnd, exactly as the receivers will;
    2. the result stays within about 10 m of the original over the whole segment.
 
    Anything else goes out dense.
+
+   > **Review (Codex, 2026-10-17):** Inference: a sender-only snap check cannot validate
+> receivers with different maps or profiles. Verify each receiver's reconstruction against
+> the approved geometry; otherwise request dense geometry. A hash proves matching bytes, not a safe
+   > road choice; authenticate the manifest (route ID, segments, count, hash, revision and
+   > allowed snapping) and require rider acceptance before navigation changes.
 3. **Integrity.** A route carries a hash of its decoded geometry. Each rider's app says "exact
    route received" or "road-snapped approximation", and never shows a partial route as complete.
 4. **Before the ride, hand the full GPX over phone to phone.** LoRa is for changes on the way.
@@ -213,6 +289,15 @@ road. So:
   `passWholeRoute`, snapping, `force`). Our app builds the GPX it hands over (reversed and cut to
   the segment), so that does not matter.
 
+> **Review (Codex, 2026-10-17):** [code] OsmAnd's join is not a universal nearest-point
+> guarantee: `TrackStartPointFinder` also uses bearing/prior progress, and `passWholeRoute=true`
+> selects the beginning. Loops and out-and-back tracks therefore need a departure preview.
+> The snapping fields belong to **AIDL V2**, not legacy
+> `net.osmand.aidl.navigation.NavigateGpxParams` (both parameter classes are pinned in [05](05-osmand-integration.md)).
+> Sources at commit `a68b83f322aa1bf76c8a98a2d76da261d59b15f7`:
+> [`TrackStartPointFinder.java`](https://github.com/osmandapp/OsmAnd/blob/a68b83f322aa1bf76c8a98a2d76da261d59b15f7/OsmAnd-java/src/main/java/net/osmand/router/TrackStartPointFinder.java),
+> [`GpxRouteHelper.java`](https://github.com/osmandapp/OsmAnd/blob/a68b83f322aa1bf76c8a98a2d76da261d59b15f7/OsmAnd/src/net/osmand/plus/routing/GpxRouteHelper.java).
+
 **The hard part is delivering it to everyone**, not airtime: in a broadcast, each rider misses
 different packets. Slots make this natural:
 
@@ -221,6 +306,14 @@ different packets. Slots make this natural:
   missing parts;
 - the sender repeats only what someone still lacks. Alternatively, forward error correction (a
   fountain code): send a few extra packets, so that any N of N+k rebuild the route.
+
+> **Review (Codex, 2026-10-17):** [calc] A 246-byte route packet at SF7/250 takes **192.128 ms**;
+> it cannot occupy a spare 40.848 ms position slot. Likewise, a 70-byte relay needs 64.128 ms.
+> Inference: define larger typed slots or smaller fragments, then recompute cadence, individual
+> duty cycle and feedback overhead. The current position sketch contains no route version or
+> missing-parts bitmap. Track “no feedback” separately from “complete”, bound retries/expiry,
+> and prioritize help over a route transfer. [docs] Fountain decoding is not an unconditional
+> “any N” guarantee; choose a code and failure target ([RFC 6330, §5.4.2](https://www.rfc-editor.org/rfc/rfc6330#section-5.4.2)).
 
 **Before the ride**, a route is easier to hand over phone to phone (Wi-Fi, Bluetooth, file sharing);
 LoRa is for changes on the way ("the pass is closed, new route").
@@ -257,6 +350,14 @@ the frame:
 | 868.0–868.6 MHz | 1 %, 25 mW | one rider every ~3 s at SF7 at best |
 | 169.4 MHz, like Garmin | 500 mW in EMEA | better range per watt; needs different radio hardware |
 
+> **Review (Codex, 2026-10-17):** [docs] The general EU 169.4–169.475 MHz SRD entry has
+> **500 mW ERP and ≤1% duty cycle**; metering's 10% entry is a different use category. Its
+> 75 kHz width also excludes the proposed 125/250 kHz modes. This is not a general EMEA
+> 500 mW fallback ([Decision (EU) 2025/105, Annex, row 37c](https://eur-lex.europa.eu/eli/dec_impl/2025/105/oj/eng/pdf)).
+> Inference: fix the actual country, application category, antenna ERP and occupied bandwidth
+> before choosing a profile. Switching frequencies within one operational band does not
+> create a fresh duty allowance ([ETSI EN 300 220-1, §5.4](https://www.etsi.org/deliver/etsi_en/300200_300299/30022001/03.01.01_60/en_30022001v030101p.pdf)).
+
 A short preamble saves airtime. Bike-powered nodes can listen all the time, so no receive duty
 cycling is needed in v1.
 
@@ -272,6 +373,15 @@ cycling is needed in v1.
 - **GPS:** on the node (the L1 has one); the phone's position over BLE as a fallback.
 - **App:** the OsmAnd side as in MeshAnd ([05](05-osmand-integration.md)); reusing its code makes
   ours GPL-3.0.
+
+> **Review (Codex, 2026-10-17):** [code] Reusing the bridge is feasible, but its radio backend
+> currently fixes SF11/BW500, forced LDRO and the EBYTE sync/framing: it is not already a
+> configurable TDMA modem ([`firmware/src/sx1262.c`](https://github.com/MiklerGM/dmd2-lora-bridge/blob/2234b5a4077479bf4145c86d76d4061af515bd6f/firmware/src/sx1262.c),
+> commit `2234b5a4077479bf4145c86d76d4061af515bd6f`). Inference: retain the BLE/platform code,
+> but measure generic PHY timing and power independently. [docs] The same SX1262 also supports
+> GFSK up to 300 kbit/s ([Semtech](https://www.semtech.com/products/wireless-rf/lora-connect/sx1262));
+> inference: a direct-range GFSK comparison is a useful control before attributing every gain
+> to a new LoRa protocol, if that shorter-range mode meets the measured riding requirement.
 
 ## Costs and risks
 
