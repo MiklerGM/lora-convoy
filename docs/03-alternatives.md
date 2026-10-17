@@ -111,6 +111,36 @@ At ShortFast that is 106.6 or 114.3 ms on air, so 20 riders with one relay get a
 **17.1 or 18.3 s** [calc]. Any comparison with Meshtastic must say which release and which
 security settings it assumes.
 
+Review (Codex qwen, 2026-10-17): the airtime arithmetic reproduces exactly in my own
+derivation (122 B → 106.624 ms, 134 B → 114.304 ms; 17.06 s and 18.29 s for 20 riders with one
+relay). [calc] Before anyone turns `use_aead` on for a ride, though, there is a nonce problem
+worth stating plainly, because it is the opposite of what "AEAD" usually promises.
+
+`CryptoEngine::encryptPacketCCM()` builds the CCM nonce with `initNonce(fromNode, packetId)` and
+no extra nonce (`CryptoEngine.cpp:578-593`; the third argument defaults to 0 at
+`CryptoEngine.h:234`, and `:675-684` lays the nonce out as packet id then sender node number).
+So the nonce is exactly one 32-bit packet id per sender. Packet ids are only **partially**
+randomised: `Router::getPacketId()` keeps a rolling counter in the low 10 bits and randomises the
+top 22 (`Router.cpp:347-355`, `ID_COUNTER_MASK = UINT32_MAX >> 22` at `MeshTypes.h:20`). Two
+packets from one node therefore share a nonce when the 10-bit counter wraps onto the same value
+*and* the 22-bit random matches, about `1/2^32` per such pair. [code]
+
+For a convoy cadence that is not negligible. A rider sending 17 280 positions a day (one every
+5 s) has roughly `n²/2^32 ≈ 0.07` expected nonce repeats, so on the order of a 7 % chance per
+rider-day of at least one repeat, and across 20 riders it approaches a certainty; at one per
+30 s it drops to about 0.2 % per rider-day. [calc — an order-of-magnitude estimate assuming a
+uniform 22-bit random, not measured] Under the existing AES-CTR path a repeated nonce leaks an
+XOR of two plaintexts; under CCM it is worse, since the same key and nonce break both
+confidentiality and the forgery guarantee the 12-byte tag is supposed to buy. The old CTR path
+hides this because it also carries a random `extraNonce` on the wire (`CryptoEngine.cpp:312-317`),
+which the CCM path does not. [code]
+
+I am not claiming Meshtastic's AEAD is broken in general — I have not run it. The inference is
+narrower and I think it still changes the recommendation: **for a group ride, the signed-broadcast
+comparison should be run with the CTR PSK, and `use_aead` should not be treated as a free
+upgrade.** If a group does want AEAD, E6 should log repeated `(from, id)` pairs rather than
+assume they cannot happen. [inference]
+
 ### What limits it in a convoy
 
 - Random access: transmissions collide, and the firmware keeps the load under 25 %.
@@ -188,6 +218,20 @@ MeshCore is careful with airtime, and its protocol suits an app of our own.
 ## Amateur radio only
 
 MeshCom and LoRa APRS need an amateur licence, so not every rider could use them.
+
+Review (Codex qwen, 2026-10-17): I looked for alternatives this section might have missed
+and found none worth adding, which is worth recording as a checked negative. Method: a GitHub
+repository search for `osmand meshtastic` returns only MeshAnd and
+Meshtastic-to-OsmAnd-Bridge, both already listed below, plus an unrelated KMZ tool; searches for
+group-riding LoRa messengers turned up nothing I could verify against a primary source. Two names
+came up in passing, **BeeLine** (a BLE-to-Meshtastic bridge, the same architecture as MeshAnd) and
+**AirVu**, and I deliberately did **not** add them: I could not resolve a repository or vendor page
+for either, so there is nothing to cite. [docs — search of 2026-10-17, not an exhaustive crawl]
+
+One category that is arguably missing rather than licence-gated: a rider with an amateur licence
+still cannot use APRS for *this* use case for a second reason besides the licence, which is that
+APRS position objects are built for a few beacons an hour, not a 1 Hz convoy frame. Worth one line
+so nobody spends a weekend getting a licence to find the protocol does not fit. [inference]
 
 ## Existing products and projects for group riding
 
