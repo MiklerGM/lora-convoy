@@ -28,6 +28,24 @@ once [code]:
 - `importGpx`, `showGpx`: the `TRACKS_EDIT` group;
 - `navigateGpx`: the `NAVIGATION` group.
 
+Review (Codex qwen, 2026-10-17): the group list is right — `MAP` is `grantedByDefault =
+true`, `NAVIGATION` and `TRACKS_EDIT` are `false` (`AidlPermissionGroup.java:22,33,42`) — and I
+checked the call gates too: `isMethodAllowed` requires the app to be enabled *and* the group
+granted (`OsmandAidlApi.java:2358-2361`). [code]
+
+What is missing is that **trails are not a `MAP`-group feature**. MeshAnd draws each rider's trail
+by writing a GPX and calling `importGpx` (`OsmAndBridge.kt:591,611`, `TrailGpx.kt`), so a
+companion that shows trails needs `TRACKS_EDIT` granted as well, even though the rider list itself
+only needs `MAP`. [code] In practice a setup flow has to ask for three groups, not one, and it
+should ask at the moment the feature is first used: a companion that only asks for `MAP` will
+silently draw points with no trails, which reads as a bug rather than a missing permission.
+[inference]
+
+One more for the setup checklist, from the same file: `LOCATION` is also not granted by default
+(`AidlPermissionGroup.java:29`, `getAppInfo`, `getMapWidgetValues`). A companion that reads a map
+widget value, for instance to show a rider's bearing or speed in OsmAnd's own widget, needs it.
+[code]
+
 **Snapping a route to roads needs the V2 interface.** In the V2 interface
 (`net.osmand.aidlapi.navigation.NavigateGpxParams`), `navigateGpx` takes `snapToRoad`,
 `snapToRoadMode`, `snapToRoadThreshold` and `passWholeRoute`, so OsmAnd itself can snap a sparse
@@ -80,6 +98,19 @@ architecture above, already working [docs]:
 - a "GPS not updating" flag and "not heard for N minutes" alerts;
 - tested by its authors on a LILYGO T-Beam Supreme. Its README says the code was written entirely
   by an AI (Claude Code) and tested by people on real radios and a phone.
+
+Review (Codex qwen, 2026-10-17): the thresholds below are confirmed in the source
+(`AppSettings.kt:129` `DEFAULT_SILENCE_MINUTES = 60`; `domain/GpsHealth.kt:10` `STUCK_AFTER` and
+`:54` `FRESH_FOR`, both 15 minutes), as is the SDK dependency
+(`app/build.gradle.kts:80-81` with `org.meshtastic:sdk-core` 0.1.0 at
+`gradle/libs.versions.toml:9,25-26`). [code]
+
+Two things to add for anyone forking it. The pins are **plaintext** messages with a prefix, so
+they are readable by anyone on the channel and forgeable by any key holder — fine for a camp
+marker, not for a regroup point in a ride where the group assumes its channel is private.
+[code, inference] And the pin format has no checksum or version, so a typo or a truncated message
+is either silently dropped or mis-parsed; if we reuse the idea, a one-byte version and a short
+integrity check cost nothing. [inference]
 
 Its `docs/radio-setup.md` is a good settings checklist (summarised in [03](03-alternatives.md)).
 
