@@ -37,6 +37,8 @@ def plan(riders, target_s, duty=0.10, guard=0.010, packet=24):
     """The longest-range mode whose slot frame gives every rider a position every target_s or
     faster without passing the duty cycle: what a group set up for this many riders would use.
     Returns (mode, budget dB, spare slots, seconds between a rider's positions) or None."""
+    # **Review (Codex, 2026-10-17):** [calc] This budgets only one position per rider;
+    # route/control/relay TX must share that sender's duty allowance (see docs/06 review).
     spare = max(1, round(riders / 10))
     best = None
     for name, sf, bw, budget in MODES:
@@ -70,6 +72,8 @@ def tables():
         print(f"  {region:9} {name:11} {t * 1000:5.0f}ms {t / 30:12.1%} {t * 20 / 10:26.0%} {t * 20 / 30:6.0%}")
 
     print("\nMeshCore EU/UK Narrow (869.618 MHz, SF8/62.5, CR 4/8), a 37-byte channel datagram")
+    # **Review (Codex, 2026-10-17):** [code][calc] Upstream SF8 uses 32 preamble symbols:
+    # 37 B therefore takes 508.928 ms, not either example below. See docs/03 pinned source.
     for pre in (16, 8):
         print(f"  preamble {pre:2}: {time_on_air(37, 8, 62.5, 8, pre) * 1000:.0f} ms")
 
@@ -113,6 +117,8 @@ def tables():
         packets = math.ceil(size / 230)
         times = [packets * time_on_air(min(size, 230) + 16, sf, bw, preamble=8)
                  for _, sf, bw, _ in (MODES[0], MODES[2], MODES[5])]
+        # **Review (Codex, 2026-10-17):** [calc] A partial last packet is charged as full;
+        # these are upper bounds, excluding manifests, feedback and retries, not delivery times.
         print(f"  {what:36} {size / 1000:4.2f} kB, {packets:2} packets, on air once: "
               f"SF7/250 {times[0]:4.1f} s, SF9/250 {times[1]:4.1f} s, SF10/125 {times[2]:4.1f} s")
 
