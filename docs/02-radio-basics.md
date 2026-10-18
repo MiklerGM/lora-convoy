@@ -172,7 +172,9 @@ positions per second for the group = allowed load / (time on air × copies of ea
 ```
 
 - **Meshtastic ShortFast**, every packet relayed once (×2), 25 % load: 0.25 / (0.058 × 2) =
-  **2.2 positions/s**. That is 20 riders every ~9 s; with no relays, every ~4.6 s [calc].
+  **2.2 positions/s**. That is 10 riders every ~4.6 s and 20 every ~9.3 s; with no relays, half
+  that [calc]. Stock firmware sends positions on a 5 s tick at most [code: `PositionModule.cpp:503`
+  at `fad52bb`], so 10 riders get 5 s, not 4.6.
 - **Slots by GPS time**, a 24-byte packet (CR 4/5, explicit header, CRC, 8-symbol preamble, LDRO
   off) [calc]:
 
@@ -180,6 +182,7 @@ positions per second for the group = allowed load / (time on air × copies of ea
   |---|---|---|---|
   | time on air | 30.848 ms | 56.576 ms | 102.912 ms |
   | with a 10 ms guard, 80 % of the frame | 19.6 positions/s | 12.0/s | 7.1/s |
+  | 10 riders, each every | 0.511 s | 0.832 s | 1.411 s |
   | 20 riders, each every | 1.021 s | 1.664 s | 2.823 s |
 
   One rider sending every second at SF9 is on air 10.3 % of the time, already over a 10 % budget

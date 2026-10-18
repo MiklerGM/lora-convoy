@@ -13,7 +13,7 @@ coverage. Each rider wants to:
 
 | | Target | Notes |
 |---|---|---|
-| Group size | up to 20 riders (proposed for a first version) | typical size still to confirm |
+| Group size | designed for 10 riders; up to 20, with freshness degrading in proportion (twice the riders, at most twice the interval), never a breakdown | both numbers are assumptions to confirm (question 1) |
 | Position freshness | the age of the fix **shown on the receiver's map**, at a stated percentile (e.g. 95 % of the time under N s) | not the transmission interval: losses, relays and phone or Bluetooth outages count too. At 60 km/h a 10 s old point is already 167 m behind. For comparison: DMD sent every 1.5–6 s, tuned Meshtastic 5–10 s ([03](03-alternatives.md)) |
 | Separate statuses | "radio last heard", "GPS fix age" and "help acknowledged" are three different facts | a fresh heartbeat proves neither a fresh position nor delivered help |
 | Help delivery | "need help" acknowledged within N s at the 95th percentile | N still to set (question 2); [06](06-own-protocol.md) sizes the slots that carry it |

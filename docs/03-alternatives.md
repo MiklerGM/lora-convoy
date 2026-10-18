@@ -9,7 +9,7 @@ What exists for sharing positions within a group over LoRa, how well each fits
 |---|---|---|---|---|---|
 | Relays through other riders, no infrastructure | yes, managed flooding (hop limit ≤ 7) | stock: **no**, only repeaters relay; the MeshCore-Solo fork can relay on a client's own radio | through transport nodes; not checked for a moving group | TTL relay, broken (stale CRC) | not published |
 | Positions out of the box | yes | stock: adverts sent by hand; MeshCore-Solo: live sharing; or our own datagrams | telemetry to a **collector**, minutes apart | yes, everyone retells everyone | yes |
-| 20 riders, a position each every… (offered budget) | ~9 s (ShortFast, one relay); ~5 s with no relays; ~10.5 s with AEAD, ~17 s signed [calc] | whatever our app sends; ~0.51 s on air per packet | not computed | channel over 100 % at six riders [calc] | 5 s (retailer figure only) |
+| A position each every… (offered budget; 10 / 20 riders) | ShortFast, one relay: 5 s (the firmware's floor) / ~9 s; with AEAD ~5.3 / ~10.5 s, signed ~8.5 / ~17 s [calc] | whatever our app sends; ~0.51 s on air per packet | not computed | channel over 100 % at six riders [calc] | 5 s (retailer figure only) |
 | API for our own companion app | the node's BLE protobuf API, with an official SDK (`org.meshtastic:sdk-core` 0.1.0); the Android app's API was removed in 2026-06 | documented BLE protocol with binary channel datagrams | RNS in Python; Sideband is non-commercial | closed to third parties since DMD2 4.036 | none |
 | Time on air per position (EU) | 58 ms (ShortFast) – 191 ms (MediumFast), unsigned [calc] | ~509 ms (EU/UK Narrow, 32-symbol preamble) [calc] | heavier packets; not computed | 314–990 ms [calc] | not published |
 | Licence | GPL-3.0 | MIT | Reticulum License; Sideband CC BY-NC-SA 4.0; RNode GPL-3.0 | proprietary | proprietary |
@@ -111,17 +111,20 @@ and no other traffic or losses, not delivered freshness:
 
 | Preset | One relay per packet | No relays (all Client Mute) |
 |---|---|---|
-| ShortFast | 2.2 positions/s: 20 riders every ~9 s | 4.3/s: every ~4.6 s |
-| MediumFast | 0.7/s: every ~31 s | 1.3/s: every ~15 s |
+| ShortFast | 2.2 positions/s: 10 riders every ~4.6 s, 20 every ~9.3 s | 4.3/s: 10 every ~2.3 s, 20 every ~4.6 s |
+| MediumFast | 0.7/s: 10 every ~15 s, 20 every ~31 s | 1.3/s: 10 every ~7.6 s, 20 every ~15 s |
+
+Stock firmware sends positions on a 5 s tick at most [code: `PositionModule.cpp:503` at
+`fad52bb`], so every figure under 5 s becomes 5 s.
 
 **Authentication changes the picture** [calc]. Sizes are from the source [code]:
 
-| Setting | Position on air | ShortFast | 20 riders, one relay, each every |
-|---|---|---|---|
-| none (CTR only) | ~56 B | 58.0 ms | ~9.3 s |
-| AEAD (`use_aead`, +12 B, `develop`) | ~68 B | 65.7 ms | ~10.5 s |
-| signed (XEdDSA, +66 B, `develop`) | ~122 B | 106.6 ms | ~17.1 s |
-| signed and AEAD | ~134 B | 114.3 ms | ~18.3 s |
+| Setting | Position on air | ShortFast | One relay, each every: 10 riders | 20 riders |
+|---|---|---|---|---|
+| none (CTR only) | ~56 B | 58.0 ms | ~4.6 s (5 s floor) | ~9.3 s |
+| AEAD (`use_aead`, +12 B, `develop`) | ~68 B | 65.7 ms | ~5.3 s | ~10.5 s |
+| signed (XEdDSA, +66 B, `develop`) | ~122 B | 106.6 ms | ~8.5 s | ~17.1 s |
+| signed and AEAD | ~134 B | 114.3 ms | ~9.1 s | ~18.3 s |
 
 AEAD proves membership of the group, which is what the protocol in [06](06-own-protocol.md) would
 offer, so it is the like-for-like comparison; signing proves which rider sent a packet, which

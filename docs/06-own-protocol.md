@@ -58,7 +58,7 @@ preamble, 10 ms guard, 80 % of the frame used for slots. Derived independently i
 One rider sending every second is on air 3.1 % of the time at SF7, 5.7 % at SF8 and 10.3 % at SF9.
 At SF9 that is **over** a 10 % budget before any other traffic.
 
-## v1: up to 20 riders, no relaying
+## v1: 10 riders, up to 20, no relaying
 
 The simplest version that could work.
 
@@ -211,6 +211,9 @@ The trade-off this exposes:
   every ~55 s with relaying, or every ~27 s without [calc].
 - **A large group pays for cadence with range.** Twenty riders every 1.5 s need SF8/250, about
   8 dB less budget.
+- **Growing within one mode costs cadence, not range.** On SF10/125, 10 riders get a position every
+  4.2 s and 20 every 8.4 s: the frame doubles and the link budget stays. That is the degradation
+  [01](01-goals.md) asks for, and the alternative to switching modes to keep the cadence.
 - **For very small groups the duty cycle, not the frame, sets the pace.** Five riders at SF10/125
   fit a 2.3 s frame, but each rider may only send every 3.7 s.
 
@@ -376,7 +379,22 @@ but clumsy.
 Keep one or two **relay slots** per frame from the start, so relaying can be added without changing
 the frame:
 
-- **Who relays:** a rider in the middle of the column, chosen from what each rider hears.
+- **Who relays, and whom: only riders someone does not hear** (an idea to research). Each position
+  packet carries a bitmap of the slots its sender heard in the last few frames: 3 bytes for 20
+  riders, which may fit the free bytes of a length step (packet sketch above). From the bitmaps
+  every radio knows who hears whom. A rider everyone hears needs no relay; for a rider some others
+  miss, the relay is a rider who hears them and is heard by those others, picked by a rule every
+  radio computes alike, for example the fewest relays that cover every gap. Relay airtime then
+  follows the gaps in the hearing graph, not the size of the group: a tight group relays nothing,
+  a column relays a few riders at its breaks.
+  - The same idea elsewhere: OLSR's multipoint relays (RFC 3626) forward only for neighbours'
+    neighbours they cover; Thread promotes devices to routers only while routers are few; Zigbee
+    and Z-Wave route through chosen mains-powered devices. Meshtastic lets the receiver that heard
+    a packet worst rebroadcast first and cancels the others' copies [code:
+    `RadioInterface.cpp:867-876` at `fad52bb`], but without knowing who missed it, so even in a
+    tight group one copy goes out.
+  - E6's receive logs, one line per packet heard, already contain the hearing graph, so relay rules
+    can be compared offline on recorded rides before any is built.
 - **What a relay packet carries:** riders it heard recently that others may not have, each as an
   offset from the relay's own position plus the original fix time. About 6 bytes per rider, so ten
   riders fit in about 70 bytes: 64 ms at SF7/250, so a relay slot is a larger slot.
@@ -451,4 +469,6 @@ time, so no receive duty cycling is needed in v1.
   acknowledged.
 - The tag length, and the key lifetime it implies.
 - Typed slots for routes and relays: sizes, and how often.
+- Relay selection from the hearing graph: how old a bitmap may be, the rule every radio computes,
+  and what happens when the chosen relay drops out.
 - Receiving all the time on bike power versus duty-cycled reception on battery.
