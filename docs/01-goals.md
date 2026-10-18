@@ -46,11 +46,15 @@ a rider beyond direct range.
 1. How many riders does a group usually have?
 2. How fresh must a shown position be, and how often may it be late: is 10 s at the 95th
    percentile enough, or does it need 1–2 s? And how soon must "need help" be acknowledged?
+   Two independent reviews proposed a candidate: the shown fix under about 30 s old and the map
+   error under about 60 m, both at the 95th percentile, with predicted points marked and stop and
+   help sent at once ([07](07-experiments.md), E9 tests it). The answer decides between the two
+   paths: at 10–15 s a tuned Meshtastic with a companion may be enough.
 3. How far does a column spread on a typical ride?
 4. Will some riders bring plain Meshtastic radios and apps, so that they must interoperate?
 5. Is the node powered by the bike, or must it run a day on its own battery?
-6. Which countries will the group ride in? Decision (EU) 2025/105 does not apply outside the EU
-   (the sample routes in [06](06-own-protocol.md) include Morocco), so the band and power there
-   depend on national rules.
+6. Which countries will the group ride in? Decision (EU) 2025/105 does not apply outside the EU,
+   so the band and power there depend on national rules. What is known so far, and the gaps, is in
+   [08](08-regions.md); Morocco, for one, allows 869.40–869.65 MHz at 500 mW.
 7. Does the organiser ride with the group, and where in it? In [06](06-own-protocol.md) the
    organiser's radio hands out spare slots.

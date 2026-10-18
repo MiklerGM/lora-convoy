@@ -97,7 +97,10 @@ Three things go with these limits [docs]:
 
 - **Duty cycle is not the only access option.** Commission Implementing Decision (EU) 2025/105
   (Annex, rows 48 and 54) also allows qualifying spectrum-access and interference-mitigation
-  techniques instead. Listening before sending (CAD) is not by itself such a technique.
+  techniques instead. Listening before sending (CAD) is not by itself such a technique, and the
+  qualifying one, polite spectrum access, has limits of its own: at most 1 s per transmission and
+  100 s an hour per 200 kHz (EN 300 220-1, Table 48). In 869.40–869.65 MHz that is under 3.5 %, so
+  the 10 % duty cycle is the better route there ([08](08-regions.md)).
 - **One budget per device and band.** Positions, relays, route transfers, retries and control
   messages all count against it. Moving to another frequency in the same band does not reset it
   (ETSI EN 300 220-1 V3.1.1, §§5.4.1–2).
@@ -114,7 +117,10 @@ load over a separate rolling minute of six 10 s buckets. Three gates follow from
 release 2.7.26 and in `develop` [code: `airtime.h`, `airtime.cpp:304-335`,
 `PositionModule.cpp:578`, `Router.cpp:485-510` at `fad52bb`; the same checks at `54e0d8d`]:
 
-- **positions** are withheld above 25 % channel load, 40 % for the Tracker roles;
+- **positions** are withheld above 25 % channel load, 40 % for the Tracker roles. The load counts
+  everything the node hears, strangers included [code: `airtime.cpp:10-32` at `54e0d8d`]: in a
+  tight group each of N riders gets about 25 %/N of the time, 1.25 % at 20, and public LongFast
+  traffic or LoRaWAN downlinks on 869.525 MHz close the gate as well;
 - **nodeinfo and telemetry** stop at half the duty allowance (`polite_duty_cycle_percent = 50`),
   5 % on `EU_868`. Positions are not subject to this gate;
 - **everything** stops at the full allowance. `Router::send()` compares the share already used and

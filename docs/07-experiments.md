@@ -27,6 +27,10 @@ GPS time at both ends: Meshtastic's own fix times are whole seconds [code: `mesh
 | E5 | MeshAnd with two Meshtastic nodes | whether it is a usable baseline; what is missing |
 | E6 | Load: 5, 10 and 20 senders on one channel, each logging the sequence numbers it sends, with hidden transmitters (senders out of each other's range) in every run. Variants: authentication none, AEAD, signed, or both; relays on and off; other traffic on the channel; one rider stopped, so smart position sends less | whether the baseline meets the freshness target, and at what group size it stops; the numbers [06](06-own-protocol.md) has to beat |
 | E7 | Soak: three hours or more with the phone's screen off and OsmAnd navigating, node and companion running | gaps from the phone and the node: Android putting the app to sleep, Bluetooth drops, a node that hangs; counted as stretches without a shown update |
+| E8 | Ride replay: 1 Hz phone GPS logs of every rider on one real ride, with every radio's receive log | how far the column spreads (question 3 in [01](01-goals.md)); how often a sender would send if it sent only when the others' prediction drifts; the hearing graph for relay selection ([06](06-own-protocol.md)) |
+| E9 | The requirement: riders watch one ride replayed at 2 s and at 10 s with marked prediction, and judge stops and turns | whether 10–15 s with prediction is enough (question 2) |
+| E10 | Channel survey: occupancy of 869.40–869.65 MHz along a route, with the RTL-SDR | how much of Meshtastic's 25 % gate, and of a schedule's frame, other users take |
+| E11 | Height: the same links with a relay antenna at 1.2, 3 and 7 m, in hills | whether a raised relay gains the 8–15 dB the two-ray model predicts |
 
 **E6 in detail:**
 
@@ -38,7 +42,8 @@ GPS time at both ends: Meshtastic's own fix times are whole seconds [code: `mesh
   packet, a different guarantee ([03](03-alternatives.md)).
 - **Separate log lines for separate failures:** "Ch. util" skips stop positions, "TX air util"
   skips stop nodeinfo and telemetry at half the duty allowance, and `DUTY_CYCLE_LIMIT` stops
-  everything ([02](02-radio-basics.md)). Repeated `(from, id)` pairs are logged too
+  everything ([02](02-radio-basics.md)). Each node's hourly transmit share is logged next to its
+  gate skips, to tell which limit binds; repeated `(from, id)` pairs are logged too
   ([03](03-alternatives.md)).
 - **It needs a radio per rider.** On stock firmware one radio cannot stand in for several:
   positions run on a 5 s tick, a client cannot set the sender, so stand-ins share one node number,
@@ -78,7 +83,7 @@ derivation and known counterexamples. None of the tests above can be settled wit
 
 ## Results
 
-None of E0–E7 has run yet. Measurements the documents already rely on:
+None of E0–E11 has run yet. Measurements the documents already rely on:
 
 - **DMD's time on air:** a one-rider DMD packet (46 bytes) takes 314 ms, measured on
   dmd2-lora-bridge's firmware. `tools/airtime.py` calibrates DMD's fixed overhead on it

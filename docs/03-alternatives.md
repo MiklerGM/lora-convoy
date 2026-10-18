@@ -79,8 +79,12 @@ and `develop`]. A private channel lifts them.
 
 - a 5 s scheduling tick;
 - a smart send needs a new GPS fix, the minimum distance and the minimum interval;
-- positions are withheld above **25 % channel load**, 40 % for the Tracker roles;
-- for the Client role, intervals stretch once more than about 40 nodes are online.
+- positions are withheld above **25 % channel load**, 40 % for the Tracker roles, counting
+  everything the node hears ([02](02-radio-basics.md));
+- for the Client role, intervals stretch once more than about 40 nodes are online;
+- a position, waypoint, alert or telemetry packet from the phone is accepted at most once per 10 s
+  per port, and skips the channel-load gate [code: `PhoneAPI.cpp:840-846` at `54e0d8d`]. A
+  companion feeding the phone's GPS to the node cannot go faster than 10 s.
 
 **Only in `develop`:** an unchanged position is held to a 6 h 6 min floor unless the channel
 shares full precision. It does not exist in 2.7.26.
@@ -103,6 +107,10 @@ Other roles:
 
 - **Tracker** sleeps between sends only when `power.is_power_saving` is on. Otherwise it stays
   connected and receives while awake, so it is an option, not ruled out [code, 2.7.26][docs].
+  Both Tracker roles mark the node as not accepting messages (`is_unmessagable`) [code].
+- **Router** and **Router Late** always rebroadcast, never cancelling a copy they heard someone
+  else send [code: `FloodingRouter.cpp:117-122` at `fad52bb`]. One router relaying 20 riders at
+  ShortFast holds them to a position each per 11.6 s, by its own 10 % [calc].
 - **Client Hidden** sends no position.
 - **TAK** sends its position once a day.
 
@@ -175,6 +183,11 @@ A mesh built around fixed repeaters; MIT licence, very active [docs].
 - MeshCore uses a **32-symbol preamble at SF8 and below** (`preambleLengthForSF`) [code]. A 37-byte
   datagram therefore takes **508.9 ms** on air [calc].
 - With no repeaters nothing is relayed, so 10 riders every 30 s offer about 17 % load.
+- The companion firmware budgets its own airtime as 1/(1 + `airtime_factor`) of the time; the
+  default factor of 1.0 allows 50 %, five times the EU 10 % [code: `MyMesh.cpp:917`,
+  `Dispatcher.cpp:26`]. Channel-activity detection before sending is off by default, and in
+  MeshCore-Solo it stays off while `client_repeat` is on unless set by hand [code:
+  `NodePrefs.h:45`; MeshCore-Solo `MyMesh.cpp:302`].
 
 **Apps and forks:**
 
@@ -182,12 +195,14 @@ A mesh built around fixed repeaters; MIT licence, very active [docs].
 - [MeshCore Open](https://github.com/zjs81/meshcore-open), open source (Flutter);
 - **[MeshCore-Solo](https://github.com/MarekZegare4/MeshCore-Solo)**, a firmware fork with optional
   relaying on the companion's own radio (`client_repeat`, off until enabled) and live position
-  sharing gated by movement and a heartbeat [code].
+  sharing gated by movement and a heartbeat, every 30, 60, 120 or 300 s at most [code:
+  `NodePrefs.h:567-570`].
 
 **For a moving group without infrastructure**, stock MeshCore's missing relay through riders is
 the deciding weakness: only riders in direct range see each other. MeshCore-Solo removes that
 limitation on the same radio, so it belongs in a comparison trial before MeshCore is ruled out.
-MeshCore is careful with airtime, and its protocol suits an app of our own.
+MeshCore's datagrams are lean and its protocol suits an app of our own, but its defaults are not
+set for the EU: the airtime budget needs `airtime_factor` 9 for 10 %.
 
 ## Reticulum, RNode and Sideband
 
@@ -238,8 +253,9 @@ found for either [docs].
 
 **On Garmin's 169.4 MHz.** A lower frequency carries further at the same power, but the general EU
 short-range allocation there, 169.400–169.475 MHz, allows 500 mW ERP with **at most 1 % duty
-cycle** in only **75 kHz** (Decision 2025/105, Annex row 37c) [docs]. Our 125 and 250 kHz LoRa modes
-do not fit, and a Garmin product's approval says nothing about our waveform or every country.
+cycle** (Decision 2025/105, Annex row 37c), and the emission may occupy at most **50 kHz**
+(EN 300 220-2, Table B.1, row D) [docs]. None of our LoRa modes fits, 62.5 kHz included, and a Garmin
+product's approval says nothing about our waveform or every country.
 
 ## Sources (pinned)
 

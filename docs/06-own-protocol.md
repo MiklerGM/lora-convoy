@@ -14,7 +14,13 @@ shortfall of that baseline ([07](07-experiments.md)):
 - long, stretched columns where flooding does not hold the group together.
 
 The last one is **not** solved by v1 below, which has no relay at all; faster direct broadcasts do
-not cross a ridge. It can only be compared once v2's forwarding exists. If none of these applies,
+not cross a ridge. It can only be compared once v2's forwarding exists.
+
+Three independent reviews (2026-10-17 and 18) converged on a narrower rule: build this only if E6
+shows that **collisions inside the group**, not shadowing, keep the 95th-percentile fix age above
+target. A schedule cures collisions; a relay on a raised mast cures shadowing, on stock firmware,
+and gains more on its links (about 15 dB at 7 m) than going from SF7/250 to SF10/125 (about
+10.5 dB) [calc]. If none of these applies,
 building our own means paying for firmware on every board, field testing, and losing
 interoperability with plain Meshtastic users, for no gain.
 
@@ -166,7 +172,9 @@ questions).
     flash, so a reboot without a fix never reuses one; or
   - group, slot and the frame number k from GPS time, as TSCH does with its absolute slot number.
     It needs no session field, a rebooted radio learns k from any packet it hears, and it stays
-    unique while each slot sends once per frame.
+    unique while each slot sends once per frame; or
+  - the radio's own 64-bit ID and a transmission counter, with blocks of counter values reserved
+    in flash before use, so a reboot skips the unfinished block (Codex's design review).
 - **The header is authenticated, and replay is checked per slot.** With the frame number, a
   receiver drops any packet whose k is more than a few frames from its own clock. With counters it
   keeps the highest counter per slot, and after its own reboot it cannot tell a replayed packet
@@ -400,19 +408,24 @@ the frame:
   riders fit in about 70 bytes: 64 ms at SF7/250, so a relay slot is a larger slot.
 - **Freshness:** a relayed position keeps its original fix time, so it never looks younger than it
   is. That is the "retelling" DMD needed, done with bounded airtime and honest ages.
-- **Budget:** the relaying rider's own duty cycle carries the relay slots too.
+- **Budget:** the relaying rider's own duty cycle carries the relay slots too, and relaying
+  everyone does not fit [calc]. At SF10/125 a 70-byte relay packet takes 780 ms: relaying ten
+  riders once per 8.4 s frame costs 9.3 %, on top of the relay's own 4.4 %. At ShortFast, one relay
+  forwarding 20 riders' positions every 10 s (68 bytes with AEAD) transmits 13 %. Hence relaying
+  only those someone misses (above).
 
 ## Frequency and PHY
 
 | Option | Conditions [docs] | Notes |
 |---|---|---|
-| 869.40–869.65 MHz | 10 % duty, 500 mW ERP (or a qualifying access technique instead of duty cycle) | Meshtastic sits at 869.525 MHz (250 kHz) and MeshCore at 869.618 MHz (62.5 kHz) in the same band. Pick SF and bandwidth to suit, and measure interference with the RTL-SDR |
+| 869.40–869.65 MHz | 10 % duty, 500 mW ERP; polite spectrum access instead allows less here (under 3.5 %) | the band confirmed along the route so far ([08](08-regions.md)). Meshtastic sits at 869.525 MHz (250 kHz) and MeshCore at 869.618 MHz (62.5 kHz), with LoRaWAN downlinks at 869.525 MHz. Measure the occupancy with the RTL-SDR |
 | 868.0–868.6 MHz | 1 % duty, 25 mW ERP | one rider every ~3 s at SF7 at best |
-| 169.400–169.475 MHz | 1 % duty, 500 mW ERP, only 75 kHz wide (general SRD, Decision 2025/105 row 37c) | our 125/250 kHz modes do not fit; Garmin's approval says nothing about our waveform |
+| 169.400–169.475 MHz | 1 % duty, 500 mW ERP, occupied bandwidth ≤ 50 kHz (Decision 2025/105 row 37c; EN 300 220-2) | none of our LoRa modes fits, 62.5 kHz included; Garmin's approval says nothing about our waveform |
 
 The actual country, application category, antenna ERP and occupied bandwidth come before any of
-these. Moving between frequencies in one band does not start a fresh duty allowance
-(ETSI EN 300 220-1, §5.4).
+these; other countries are in [08](08-regions.md). Moving between frequencies in one band does not
+start a fresh duty allowance (ETSI EN 300 220-1, §5.4). A schedule that also hops is constrained in
+the US, where coordinating hopping transmitters to avoid each other is not permitted.
 
 A shorter preamble saves airtime: 8 symbols down to 5 is 5 % at SF7/250 and 6.6 % at SF10/125
 [calc], at some cost in detection that E2 and E6 measure. Bike-powered nodes can listen all the
