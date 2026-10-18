@@ -11,87 +11,74 @@ headline numbers are therefore:
 - the median and 95th-percentile age of the fix each map shows;
 - how long a help message takes to arrive, and to be acknowledged.
 
-Packet intervals or RSSI alone cannot answer it.
+Packet intervals or RSSI alone cannot answer it. Logs carry millisecond timestamps referenced to
+GPS time at both ends: Meshtastic's own fix times are whole seconds [code: `mesh.pb.h`,
+`timestamp_millis_adjust` unset at `fad52bb`], too coarse for a target of 1–2 s.
 
 ## Planned: the baseline
 
 | # | What | Answers |
 |---|---|---|
+| E0 | Timing on each board: whether it has a PPS line; the PPS edge against the radio's start of transmission; without PPS, the jitter of NMEA time; the jitter of starting a transmission | whether the schedule in [06](06-own-protocol.md) can run on that board, and the terms of its guard |
 | E1 | Two Meshtastic nodes on a private channel, MediumFast, smart position every 20 s; a second run with both as Client Mute (no relays) | real intervals, relay delay, losses; how much "no relays" gains |
-| E2 | Range, ShortFast against MediumFast, one node in a vehicle (Meshtastic's Range Test module) | the range table in [02](02-radio-basics.md) |
+| E2 | Range: ShortFast and MediumFast, and SF9/125 and SF10/125 through Meshtastic's custom modem settings, the modes [06](06-own-protocol.md) picks; one node in a vehicle (Meshtastic's Range Test module) | the range tables in [02](02-radio-basics.md), per sub-band |
 | E3 | A minimal app that draws two points in OsmAnd over AIDL and moves them every second | what the rider must do before points appear (a new app starts disabled, [05](05-osmand-integration.md)); smoothness |
 | E4 | How many BLE clients a Meshtastic node accepts; whether a USB client and a BLE client work at once | whether a companion must replace the official app |
 | E5 | MeshAnd with two Meshtastic nodes | whether it is a usable baseline; what is missing |
-| E6 | Load: 5, 10 and 20 senders on one channel, each logging the sequence numbers it sends. Variants: relays on and off; hidden transmitters (senders out of each other's range); other traffic on the channel; one rider stopped, so smart position sends less | whether the baseline meets the freshness target, and at what group size it stops; the numbers [06](06-own-protocol.md) has to beat |
+| E6 | Load: 5, 10 and 20 senders on one channel, each logging the sequence numbers it sends, with hidden transmitters (senders out of each other's range) in every run. Variants: authentication none, AEAD, signed, or both; relays on and off; other traffic on the channel; one rider stopped, so smart position sends less | whether the baseline meets the freshness target, and at what group size it stops; the numbers [06](06-own-protocol.md) has to beat |
+| E7 | Soak: three hours or more with the phone's screen off and OsmAnd navigating, node and companion running | gaps from the phone and the node: Android putting the app to sleep, Bluetooth drops, a node that hangs; counted as stretches without a shown update |
 
-Review (Codex qwen, 2026-10-17): E6 is the right experiment and it is currently
-under-specified in four ways that would change its result. [inference]
+**E6 in detail:**
 
-- **Add a signed-versus-unsigned Meshtastic run.** Signing roughly doubles a position's airtime
-  (58 → 106.6 ms, [03](03-alternatives.md)), so a baseline measured unsigned is not the baseline
-  [06](06-own-protocol.md) has to beat, which claims authenticated positions. Without this variant
-  the comparison is unfair in the wrong direction. [calc]
-- **Add the half-duty skip as an observed failure mode.** Positions are gated by channel load,
-  while nodeinfo and telemetry stop at **half** the duty allowance
-  (`airtime.cpp:319-335`, `airtime.h:232`; not called from `PositionModule.cpp`). On `EU_868`
-  that is 5 %. E6 should log "TX air util. >x% Skip send" and the `DUTY_CYCLE_LIMIT` NAKs
-  separately, because they are different failures with different thresholds. [code]
-- **Add the guard-time measurement** that [06](06-own-protocol.md) needs: per board, the PPS
-  alignment error and the RX wake-to-sync latency. The 10 ms guard is currently a guess worth
-  about 24 % of SF7/250 capacity. [calc]
-- **Give it numeric pass criteria.** "whether the baseline meets the freshness target" has no
-  target until Q2 of [01](01-goals.md) is answered, so E6 cannot currently fail. Write the
-  criteria as the two headline numbers above (delivered share, 95th-percentile shown-fix age) at
-  each of 5, 10 and 20 senders, before it runs — otherwise the result will be read as whatever the
-  reader hoped for. [inference]
+- **Pass criteria are written before it runs:** the delivered share and the 95th-percentile
+  shown-fix age at 5, 10 and 20 senders, against the target set by question 2 in [01](01-goals.md).
+  Without them, E6 cannot fail.
+- **The like-for-like arm is AEAD**, about 10.5 s for 20 riders on paper: the protocol in
+  [06](06-own-protocol.md) proves group membership the same way. Signing proves which rider sent a
+  packet, a different guarantee ([03](03-alternatives.md)).
+- **Separate log lines for separate failures:** "Ch. util" skips stop positions, "TX air util"
+  skips stop nodeinfo and telemetry at half the duty allowance, and `DUTY_CYCLE_LIMIT` stops
+  everything ([02](02-radio-basics.md)). Repeated `(from, id)` pairs are logged too
+  ([03](03-alternatives.md)).
+- **It needs a radio per rider.** On stock firmware one radio cannot stand in for several:
+  positions run on a 5 s tick, a client cannot set the sender, so stand-ins share one node number,
+  and the per-node gates see the sum [code: `PositionModule.cpp:503,578`, `MeshService.cpp:312` at
+  `fad52bb`]. A stand-in run measures channel load only.
 
-One caution on the "each radio sends as often as several riders would" trick: it gets the offered
-load right, but a real convoy's collisions depend on which riders can hear each other, and a
-single radio cannot be in two places. The hidden-transmitter variant is listed, which is good; I
-would make it mandatory rather than a variant, since it is the geometry that decides whether
-flooding holds a column together. [inference]
+E1's two radios cannot show what twenty riders do; E6 can.
 
-E1's two radios cannot show what twenty riders do; E6 can. With fewer radios than riders, each
-radio can send as often as several riders would. The channel load is then right but the geometry
-is not, so hidden transmitters still need real separation.
+**E7 is not hypothetical.** On our own rides Samsung's "sleeping apps" list overrode the battery
+exemption, and a bridge hung once until a power cycle [bench: dmd2-lora-bridge
+`docs/ROADMAP.md`, `docs/ARCHITECTURE.md`].
 
 ## Before accepting 06
 
 [06](06-own-protocol.md) is a set of notes. An implementation of it gets E6's measurements on the
-same terms, and these tests besides:
+same terms, E0 on every board it supports, and these tests besides:
 
-- **Slots and roster:** two radios given the same slot; a radio that reboots or joins late listens
-  before it transmits; a roster change takes effect at its activation epoch.
+- **Slots and roster:** two radios given the same slot, which the design must prevent since their
+  nonces would repeat; a radio that reboots without a fix, or joins late, listens before it
+  transmits and never reuses a session; a roster change takes effect at its activation epoch; the
+  organiser's radio is lost mid-ride.
 - **Timing:** loss of PPS, and of the GPS fix; drift held within bounds; a radio stops
   transmitting once its timing uncertainty exceeds the guard.
 - **Neighbours:** two groups on the same frequency.
 - **Routes:** route packets lost or reordered, conflicting revisions, and a help message sent
   during a transfer.
-- **Regulation:** each transmitter's complete duty ledger over an hour (positions, relays, routes,
-  retries, control), and measured radiated power and occupied bandwidth against the sub-band's
-  limits ([02](02-radio-basics.md)).
-
-Review (Codex qwen, 2026-10-17): this is the right test and the only place the repository
-commits to measuring rather than modelling. Two additions. It should measure **ERP**, not
-transmit-power settings — a configured 22 dBm plus an antenna gain is over the 25 mW ERP cap in
-868.0–868.6 MHz, and [02](02-radio-basics.md) already makes the point that a power setting proves
-nothing. And it needs a **bandwidth** check against the mode actually used, including the case
-[06](06-own-protocol.md) raises of two 125 kHz channels inside one 250 kHz allocation: occupied
-bandwidth with oscillator error at both edges is what decides whether that is two channels or one
-over-limit emission. [docs]
-
-For the ledger itself, note that Meshtastic's own counters are not enough: its hourly TX share is
-60 one-minute buckets of our own transmission (`airtime.h:87,198`), which is close but is a
-rolling window rather than a ledger, and it does not attribute airtime to positions versus routes
-versus retries. A device that has to prove compliance needs its own per-category counter. [code,
-inference]
+- **Regulation:**
+  - each transmitter's complete duty ledger over an hour, by category: positions, relays, routes,
+    retries, control. Meshtastic's counters are rolling windows with no categories, so the device
+    keeps its own;
+  - the radiated power measured as ERP, not taken from the power setting;
+  - the occupied bandwidth, with oscillator error at both edges. It decides whether two 125 kHz
+    channels fit one 250 kHz allocation ([06](06-own-protocol.md)).
 
 `tools/cross_check.py` checks the arithmetic and the route geometry offline, against an independent
 derivation and known counterexamples. None of the tests above can be settled without radios.
 
 ## Results
 
-None of E1–E6 has run yet. Measurements the documents already rely on:
+None of E0–E7 has run yet. Measurements the documents already rely on:
 
 - **DMD's time on air:** a one-rider DMD packet (46 bytes) takes 314 ms, measured on
   dmd2-lora-bridge's firmware. `tools/airtime.py` calibrates DMD's fixed overhead on it

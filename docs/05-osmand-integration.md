@@ -22,29 +22,20 @@ All of these belong to the `MAP` permission group, which OsmAnd grants by defaul
 enabled as well as that its group is granted (`isMethodAllowed`) [code]. A companion's setup must
 walk the rider through enabling it, and handle access being revoked later.
 
-For routes, other groups are needed, and neither is granted by default, so the rider allows each
-once [code]:
+Other features need other groups. None of them is granted by default, so the rider allows each
+once [code: `AidlPermissionGroup.java:22-49`]:
 
-- `importGpx`, `showGpx`: the `TRACKS_EDIT` group;
-- `navigateGpx`: the `NAVIGATION` group.
+| Group | Calls | Needed for |
+|---|---|---|
+| `TRACKS_EDIT` | `importGpx`, `showGpx` | routes, and **trails**: MeshAnd draws each rider's trail as an imported GPX |
+| `TRACKS_VIEW` | `getImportedGpx` | listing tracks already imported |
+| `NAVIGATION` | `navigateGpx`, `navigate`, `registerForNavUpdates` | navigating to a rider or along a route |
+| `SYSTEM` | `setNavDrawerItems` | an entry in OsmAnd's side menu |
+| `LOCATION` | `getAppInfo`, `getMapWidgetValues` | reading OsmAnd's own values; showing a widget (`addMapWidget`) is in `MAP` |
 
-Review (Codex qwen, 2026-10-17): the group list is right — `MAP` is `grantedByDefault =
-true`, `NAVIGATION` and `TRACKS_EDIT` are `false` (`AidlPermissionGroup.java:22,33,42`) — and I
-checked the call gates too: `isMethodAllowed` requires the app to be enabled *and* the group
-granted (`OsmandAidlApi.java:2358-2361`). [code]
-
-What is missing is that **trails are not a `MAP`-group feature**. MeshAnd draws each rider's trail
-by writing a GPX and calling `importGpx` (`OsmAndBridge.kt:591,611`, `TrailGpx.kt`), so a
-companion that shows trails needs `TRACKS_EDIT` granted as well, even though the rider list itself
-only needs `MAP`. [code] In practice a setup flow has to ask for three groups, not one, and it
-should ask at the moment the feature is first used: a companion that only asks for `MAP` will
-silently draw points with no trails, which reads as a bug rather than a missing permission.
-[inference]
-
-One more for the setup checklist, from the same file: `LOCATION` is also not granted by default
-(`AidlPermissionGroup.java:29`, `getAppInfo`, `getMapWidgetValues`). A companion that reads a map
-widget value, for instance to show a rider's bearing or speed in OsmAnd's own widget, needs it.
-[code]
+MeshAnd uses `MAP` and the first four [code: MeshAnd `OsmAndBridge.kt:359,477,557,591,611`]. A
+companion asks for each group when a feature first needs it: one that asks only for `MAP` draws
+points without trails, which looks like a bug rather than a missing permission.
 
 **Snapping a route to roads needs the V2 interface.** In the V2 interface
 (`net.osmand.aidlapi.navigation.NavigateGpxParams`), `navigateGpx` takes `snapToRoad`,
@@ -84,6 +75,9 @@ Telegram tracker works the same way. iOS has no such API: out of scope.
   not depend on the official app's internals. The cost: probably one BLE connection per node, so
   during a ride the companion takes the official app's place. Experiment E4 in
   [07](07-experiments.md) checks this.
+- **A companion leaves packet ids to the node** (`id = 0`). The firmware keeps an id the phone
+  supplies as it is [code: `MeshService.cpp:317-318` at `fad52bb`], and packet ids also make the
+  encryption nonces ([03](03-alternatives.md)).
 
 ## MeshAnd
 
@@ -99,18 +93,10 @@ architecture above, already working [docs]:
 - tested by its authors on a LILYGO T-Beam Supreme. Its README says the code was written entirely
   by an AI (Claude Code) and tested by people on real radios and a phone.
 
-Review (Codex qwen, 2026-10-17): the thresholds below are confirmed in the source
-(`AppSettings.kt:129` `DEFAULT_SILENCE_MINUTES = 60`; `domain/GpsHealth.kt:10` `STUCK_AFTER` and
-`:54` `FRESH_FOR`, both 15 minutes), as is the SDK dependency
-(`app/build.gradle.kts:80-81` with `org.meshtastic:sdk-core` 0.1.0 at
-`gradle/libs.versions.toml:9,25-26`). [code]
-
-Two things to add for anyone forking it. The pins are **plaintext** messages with a prefix, so
-they are readable by anyone on the channel and forgeable by any key holder — fine for a camp
-marker, not for a regroup point in a ride where the group assumes its channel is private.
-[code, inference] And the pin format has no checksum or version, so a typo or a truncated message
-is either silently dropped or mis-parsed; if we reuse the idea, a one-byte version and a short
-integrity check cost nothing. [inference]
+Its pins are ordinary text messages on the primary channel, which its setup guide makes the
+team's private channel, so they are encrypted like positions [code: MeshAnd `PinText.kt:9-11`,
+`PinRepository.kt:121-133`, `docs/radio-setup.md`]. The format has no version byte; if we reuse
+the idea, we add one.
 
 Its `docs/radio-setup.md` is a good settings checklist (summarised in [03](03-alternatives.md)).
 

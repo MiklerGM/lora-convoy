@@ -9,7 +9,7 @@ What exists for sharing positions within a group over LoRa, how well each fits
 |---|---|---|---|---|---|
 | Relays through other riders, no infrastructure | yes, managed flooding (hop limit ≤ 7) | stock: **no**, only repeaters relay; the MeshCore-Solo fork can relay on a client's own radio | through transport nodes; not checked for a moving group | TTL relay, broken (stale CRC) | not published |
 | Positions out of the box | yes | stock: adverts sent by hand; MeshCore-Solo: live sharing; or our own datagrams | telemetry to a **collector**, minutes apart | yes, everyone retells everyone | yes |
-| 20 riders, a position each every… (offered budget) | ~9 s (ShortFast, one relay); ~5 s with no relays; ~17 s if positions are signed [calc] | whatever our app sends; ~0.51 s on air per packet | not computed | channel over 100 % at six riders [calc] | 5 s (retailer figure only) |
+| 20 riders, a position each every… (offered budget) | ~9 s (ShortFast, one relay); ~5 s with no relays; ~10.5 s with AEAD, ~17 s signed [calc] | whatever our app sends; ~0.51 s on air per packet | not computed | channel over 100 % at six riders [calc] | 5 s (retailer figure only) |
 | API for our own companion app | the node's BLE protobuf API, with an official SDK (`org.meshtastic:sdk-core` 0.1.0); the Android app's API was removed in 2026-06 | documented BLE protocol with binary channel datagrams | RNS in Python; Sideband is non-commercial | closed to third parties since DMD2 4.036 | none |
 | Time on air per position (EU) | 58 ms (ShortFast) – 191 ms (MediumFast), unsigned [calc] | ~509 ms (EU/UK Narrow, 32-symbol preamble) [calc] | heavier packets; not computed | 314–990 ms [calc] | not published |
 | Licence | GPL-3.0 | MIT | Reticulum License; Sideband CC BY-NC-SA 4.0; RNode GPL-3.0 | proprietary | proprietary |
@@ -32,9 +32,19 @@ first, up to a hop limit. A channel's QR code carries the region and modem prese
 key, so a group can be configured with one scan [docs].
 
 **Encryption is not authentication.** Channels are encrypted with a shared key (AES-CTR), which
-detects no forgery: anyone holding the key can impersonate any rider [docs]. The `develop` branch
+detects no forgery: anyone holding the key can impersonate any rider [docs], and even without the
+key, flipping bits of a captured packet flips the same bits of its content. The `develop` branch
 adds XEdDSA-signed broadcasts and an optional channel AEAD [code]. Their compatibility and their
 airtime belong in any comparison (below).
+
+**Nonces repeat now and then, with or without AEAD.** Both channel paths, CTR today and the AEAD in
+`develop`, build the nonce from the sender and the packet id, and a packet id is a 10-bit counter
+plus 22 random bits [code: `CryptoEngine.cpp:587,626-636`, `Router.cpp:337-356` at `fad52bb`; CTR
+the same at `54e0d8d`]. At one packet every 5 s a sender repeats a nonce about 0.033 times a day,
+a 6 % chance in an 8-hour day of 20 riders [calc]. A repeat leaks the XOR of two plaintexts under
+either path; AEAD adds a tag and loses nothing, so it is the better setting wherever every radio
+runs `develop`. Over a key's lifetime the repeats add up (about 7.6 in ten such days), so a group
+changes its channel key between rides.
 
 **Releases and `develop` differ.** Our boards run 2.7.26 (tag `54e0d8d`). Several behaviours
 described below exist only in `develop` (`fad52bb`), and each is marked. A group should pin one
@@ -104,42 +114,19 @@ and no other traffic or losses, not delivered freshness:
 | ShortFast | 2.2 positions/s: 20 riders every ~9 s | 4.3/s: every ~4.6 s |
 | MediumFast | 0.7/s: every ~31 s | 1.3/s: every ~15 s |
 
-**Signing changes the picture.** If position broadcasts are signed as in `develop` (+66 bytes:
-64-byte signature plus field overhead [code]), a position is about 122 bytes. With the channel's
-optional AEAD as well (`use_aead`, 12 bytes more, also only in `develop`), about 134 bytes [code].
-At ShortFast that is 106.6 or 114.3 ms on air, so 20 riders with one relay get a position every
-**17.1 or 18.3 s** [calc]. Any comparison with Meshtastic must say which release and which
-security settings it assumes.
+**Authentication changes the picture** [calc]. Sizes are from the source [code]:
 
-Review (Codex qwen, 2026-10-17): the airtime arithmetic reproduces exactly in my own
-derivation (122 B → 106.624 ms, 134 B → 114.304 ms; 17.06 s and 18.29 s for 20 riders with one
-relay). [calc] Before anyone turns `use_aead` on for a ride, though, there is a nonce problem
-worth stating plainly, because it is the opposite of what "AEAD" usually promises.
+| Setting | Position on air | ShortFast | 20 riders, one relay, each every |
+|---|---|---|---|
+| none (CTR only) | ~56 B | 58.0 ms | ~9.3 s |
+| AEAD (`use_aead`, +12 B, `develop`) | ~68 B | 65.7 ms | ~10.5 s |
+| signed (XEdDSA, +66 B, `develop`) | ~122 B | 106.6 ms | ~17.1 s |
+| signed and AEAD | ~134 B | 114.3 ms | ~18.3 s |
 
-`CryptoEngine::encryptPacketCCM()` builds the CCM nonce with `initNonce(fromNode, packetId)` and
-no extra nonce (`CryptoEngine.cpp:578-593`; the third argument defaults to 0 at
-`CryptoEngine.h:234`, and `:675-684` lays the nonce out as packet id then sender node number).
-So the nonce is exactly one 32-bit packet id per sender. Packet ids are only **partially**
-randomised: `Router::getPacketId()` keeps a rolling counter in the low 10 bits and randomises the
-top 22 (`Router.cpp:347-355`, `ID_COUNTER_MASK = UINT32_MAX >> 22` at `MeshTypes.h:20`). Two
-packets from one node therefore share a nonce when the 10-bit counter wraps onto the same value
-*and* the 22-bit random matches, about `1/2^32` per such pair. [code]
-
-For a convoy cadence that is not negligible. A rider sending 17 280 positions a day (one every
-5 s) has roughly `n²/2^32 ≈ 0.07` expected nonce repeats, so on the order of a 7 % chance per
-rider-day of at least one repeat, and across 20 riders it approaches a certainty; at one per
-30 s it drops to about 0.2 % per rider-day. [calc — an order-of-magnitude estimate assuming a
-uniform 22-bit random, not measured] Under the existing AES-CTR path a repeated nonce leaks an
-XOR of two plaintexts; under CCM it is worse, since the same key and nonce break both
-confidentiality and the forgery guarantee the 12-byte tag is supposed to buy. The old CTR path
-hides this because it also carries a random `extraNonce` on the wire (`CryptoEngine.cpp:312-317`),
-which the CCM path does not. [code]
-
-I am not claiming Meshtastic's AEAD is broken in general — I have not run it. The inference is
-narrower and I think it still changes the recommendation: **for a group ride, the signed-broadcast
-comparison should be run with the CTR PSK, and `use_aead` should not be treated as a free
-upgrade.** If a group does want AEAD, E6 should log repeated `(from, id)` pairs rather than
-assume they cannot happen. [inference]
+AEAD proves membership of the group, which is what the protocol in [06](06-own-protocol.md) would
+offer, so it is the like-for-like comparison; signing proves which rider sent a packet, which
+neither offers otherwise. Any comparison with Meshtastic says which release and which of the four
+settings it assumes.
 
 ### What limits it in a convoy
 
@@ -217,23 +204,19 @@ MeshCore is careful with airtime, and its protocol suits an app of our own.
 
 ## Amateur radio only
 
-MeshCom and LoRa APRS need an amateur licence, so not every rider could use them.
+MeshCom and LoRa APRS need an amateur licence, so not every rider could use them. Two more reasons
+they do not fit, even for licensed riders:
 
-Review (Codex qwen, 2026-10-17): I looked for alternatives this section might have missed
-and found none worth adding, which is worth recording as a checked negative. Method: a GitHub
-repository search for `osmand meshtastic` returns only MeshAnd and
-Meshtastic-to-OsmAnd-Bridge, both already listed below, plus an unrelated KMZ tool; searches for
-group-riding LoRa messengers turned up nothing I could verify against a primary source. Two names
-came up in passing, **BeeLine** (a BLE-to-Meshtastic bridge, the same architecture as MeshAnd) and
-**AirVu**, and I deliberately did **not** add them: I could not resolve a repository or vendor page
-for either, so there is nothing to cite. [docs — search of 2026-10-17, not an exhaustive crawl]
-
-One category that is arguably missing rather than licence-gated: a rider with an amateur licence
-still cannot use APRS for *this* use case for a second reason besides the licence, which is that
-APRS position objects are built for a few beacons an hour, not a 1 Hz convoy frame. Worth one line
-so nobody spends a weekend getting a licence to find the protocol does not fit. [inference]
+- APRS shares one slow channel among beacons sent minutes apart, not a group sending every few
+  seconds;
+- amateur rules forbid encryption that hides a message's meaning (internationally, ITU Radio
+  Regulations No. 25.2A), so a private group channel is not allowed there [docs].
 
 ## Existing products and projects for group riding
+
+A GitHub search on 2026-10-17 found no OsmAnd and Meshtastic projects beyond the two listed here.
+Two more names that came up, BeeLine and AirVu, are left out: no repository or vendor page could be
+found for either [docs].
 
 | Name | Built on | What it does | Status / notes |
 |---|---|---|---|

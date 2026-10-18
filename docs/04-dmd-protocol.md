@@ -21,21 +21,9 @@ It works for two or three riders close together.
 ## What it gets right
 
 - **A compact record**, 14 bytes per rider [code]:
-  - 24-bit latitude and longitude: about 2.39 m north–south, and `4.78 × cos(latitude)` m
-    east–west (3.38 m at 45°);
-
-  Review (Codex qwen, 2026-10-17): I checked this because it looks like a typo — the east–west
-  figure is twice the north–south one before the cosine, which is usually wrong — and it is
-  **correct**. The two fields use different scales: `u24 = (lat + 90) × 46603.375` and
-  `u24 = (lon + 180) × 23301.6875` (`docs/PROTOCOL.md:92-93`, and `LAT_SCALE`/`LON_SCALE` in
-  `android/.../protocol/Codec.kt:39-40`, dmd2-lora-bridge at `2234b5a`). 46 603.375 is
-  2^24/360, so latitude steps at 360/2^24 deg = 2.389 m; 23 301.6875 is 2^24/720, so longitude
-  steps at twice that, 4.777 m at the equator and 3.378 m at 45°. [code, calc] Worth keeping
-  explicitly, because the asymmetry is a deliberate choice — the full 24-bit range is needed for
-  ±180° of longitude at that resolution — and a reader who assumes one shared scale will "fix" this
-  and get the grid wrong. It also means the east–west quantisation, not the north–south one, is the
-  floor on any position accuracy claim made from this format. [inference]
-
+  - 24-bit latitude and longitude on different scales: about 2.39 m north–south, and
+    `4.78 × cos(latitude)` m east–west (3.38 m at 45°). Each field uses only 2^23 of its 2^24
+    codes, so longitude could have had latitude's scale [calc];
   - a three-byte position age;
   - status bits: "needs help" worked over LoRa on our rides.
 
@@ -103,23 +91,12 @@ It works for two or three riders close together.
 - Packets stay **binary and small**.
 - Positions carry an **absolute fix time** on one time base, GPS time, not an age computed on
   whatever clock the sender has.
+- An implausible age, negative or far beyond the cadence, shows as **"stale, age unknown"**: never
+  as a frozen dot, and never silently dropped.
+- Identify riders by an **assigned slot index**, not by a hash of who they are. DMD's rider id is
+  `CRC-16(user_id)` [code: `docs/PROTOCOL.md:91`], so two of 20 riders share one with a 0.29 %
+  chance, and the chance grows with the square of the group [calc].
+- A sender is **always in its own packet**: any list with a fixed capacity needs that rule.
 - Encrypt and authenticate.
 - Pace by the channel, not by a fixed interval per rider.
 - Stay inside the duty cycle and power of the sub-band used.
-
-Review (Codex qwen, 2026-10-17): three lessons I would add, all learned from the failure
-modes above rather than invented:
-
-- **Identify riders by a small assigned index, not a hash of their identity.** DMD's rider id is
-  `CRC-16(user_id)` (`docs/PROTOCOL.md:91`), so two riders collide in one dot with probability
-  about `n(n−1)/2 / 65536`: roughly 0.3 % for 20 riders, and it grows with the square. [code,
-  calc] [06](06-own-protocol.md) already uses a roster slot index, which cannot collide — the
-  lesson is to keep that and never "improve" it with an identity hash to make joiners easier.
-- **Never let a receiver's display depend on the sender's wall clock.** Lesson 3 above says use
-  GPS time, and item 3 above shows what the alternative did: a future-dated timestamp *froze* a
-  rider. The stronger rule is that an implausible age (negative, or far beyond the expected
-  cadence) must degrade to "stale, age unknown" rather than to a frozen dot or a silently
-  discarded packet. [inference]
-- **Make the sender's own position mandatory in its own packet.** Item 8 above is a bug worth
-  generalising: the stock app took the first nine riders in DMD2's order, which need not include
-  the sender. Any fixed-capacity list field needs a rule that the sender is always in it. [code]
