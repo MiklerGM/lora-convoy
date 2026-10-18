@@ -34,6 +34,19 @@ The radio is not a guarantee. A group still needs an agreed regroup and missing-
 for when nothing gets through: the first version in [06](06-own-protocol.md) has no path at all to
 a rider beyond direct range.
 
+## Wishes, not yet requirements
+
+The owner's wishes so far. Each still has to be weighed against the rest; the second column says
+what it would touch.
+
+| Wish | What it touches |
+|---|---|
+| The node runs from its own battery, charged from the bike, and rides through the dips of starting the engine (an ESP32 with an E220 hung on them) | the choice of board, since nRF52 boards draw several times less than ESP32 ones; a test in [07](07-experiments.md), E7 |
+| Riders bring the boards they have, with or without GNSS | the companion must feed the phone's position to a radio without one (MeshAnd does not); Meshtastic takes positions from the phone at most every 10 s ([03](03-alternatives.md)); in [06](06-own-protocol.md), radios without PPS take their time from two or more that have it, and a packet says where its position came from |
+| The app carries the table of rules from [08](08-regions.md), without updates, picks the profile by country and hands it to the radio | the split between app and firmware, next row; each rule keeps its date, since rules change |
+| The firmware does not care about countries or routes: the app decides, the radio executes | the radio still enforces its duty cycle and power itself, keeps the last confirmed profile, stays silent without one, and refuses a band its hardware is not built for |
+| Routes travel through the app, downloaded or passed phone to phone before the ride; over LoRa only changes | already the rule in [06](06-own-protocol.md); the companion's features |
+
 ## Non-goals, for now
 
 - voice;
