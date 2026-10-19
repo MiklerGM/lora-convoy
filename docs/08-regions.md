@@ -119,8 +119,10 @@ limits to such decisions.
 - antennas above 6 dBi reduce the allowed power; coordinating hopping transmitters so they avoid
   each other is not permitted (§ 15.247(h)), which matters for a schedule that hops.
 
-A single 250 kHz LoRa channel at 1 W, Meshtastic's US default, fits neither route; its wide
-presets (812.5 kHz) clear the 500 kHz floor [code, inference]. Canada applies the same structure
+A single 250 kHz LoRa channel at 1 W, Meshtastic's US default, fits neither route. Its Turbo
+presets (500 kHz) sit at the 500 kHz floor, and whether their 6 dB bandwidth reaches it is for
+measurement; the 812.5 kHz presets belong to 2.4 GHz only [code: `RadioInterface.cpp:101,120,354`,
+`MeshRadio.h:221-251` at `fad52bb`; inference]. Canada applies the same structure
 in RSS-247 Issue 4 with its own certification; Brazil allows 902–907.5 MHz and 915–928 MHz
 (ANATEL act 14448) [docs].
 
