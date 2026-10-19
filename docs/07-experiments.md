@@ -31,6 +31,7 @@ GPS time at both ends: Meshtastic's own fix times are whole seconds [code: `mesh
 | E9 | The requirement: riders watch one ride replayed at 2 s and at 10 s with marked prediction, and judge stops and turns | whether 10–15 s with prediction is enough (question 2) |
 | E10 | Channel survey: occupancy of 869.40–869.65 MHz along a route, with the RTL-SDR | how much of Meshtastic's 25 % gate, and of a schedule's frame, other users take |
 | E11 | Height: the same links with a relay antenna at 1.2, 3 and 7 m, in hills | whether a raised relay gains the 8–15 dB the two-ray model predicts |
+| E12 | A DMD rider nearby: an EBYTE module with DMD's profile (868.125 MHz, 500 kHz, its pacing and power) 0.5–5 m from a node that receives a weak signal from a distant one | whether a DMD device in a mixed group deafens our radios, and from what distance. The modules are already on hand ([04](04-dmd-protocol.md)); runs stay short, since DMD's configured power and pacing are over that sub-band's limits (for information) |
 
 **E6 in detail:**
 
@@ -98,7 +99,7 @@ derivation and known counterexamples. None of the tests above can be settled wit
 
 ## Results
 
-None of E0–E11 has run yet. Measurements the documents already rely on:
+None of E0–E12 has run yet. Measurements the documents already rely on:
 
 - **DMD's time on air:** a one-rider DMD packet (46 bytes) takes 314 ms, measured on
   dmd2-lora-bridge's firmware. `tools/airtime.py` calibrates DMD's fixed overhead on it
