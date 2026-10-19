@@ -25,7 +25,7 @@ GPS time at both ends: Meshtastic's own fix times are whole seconds [code: `mesh
 | E3 | A minimal app that draws two points in OsmAnd over AIDL and moves them every second | what the rider must do before points appear (a new app starts disabled, [05](05-osmand-integration.md)); smoothness |
 | E4 | How many BLE clients a Meshtastic node accepts; whether a USB client and a BLE client work at once | whether a companion must replace the official app |
 | E5 | MeshAnd with two Meshtastic nodes | whether it is a usable baseline; what is missing |
-| E6 | Load: 5, 10 and 20 senders on one channel, each logging the sequence numbers it sends, with hidden transmitters (senders out of each other's range) in every run. Variants: authentication none, AEAD, signed, or both; relays on and off; other traffic on the channel; one rider stopped, so smart position sends less | whether the baseline meets the freshness target, and at what group size it stops; the numbers [06](06-own-protocol.md) has to beat |
+| E6 | Load in Meshtastic's simulator: 5, 10 and 20 nodes on the stock firmware, each logging the sequence numbers it sends, with hidden nodes (out of each other's range) in every run, checked against the same scenario on three real radios. Variants: authentication none, AEAD, signed, or both; relays on and off; a second group on the channel, with rebroadcast mode `ALL` or `LOCAL_ONLY`; one rider stopped, so smart position sends less | whether the baseline meets the freshness target, and at what group size it stops; the numbers [06](06-own-protocol.md) has to beat |
 | E7 | Soak: three hours or more with the phone's screen off and OsmAnd navigating, node and companion running | gaps from the phone and the node: Android putting the app to sleep, Bluetooth drops, a node that hangs; counted as stretches without a shown update |
 | E8 | Ride replay: 1 Hz phone GPS logs of every rider on one real ride, with every radio's receive log | how far the column spreads (question 3 in [01](01-goals.md)); how often a sender would send if it sent only when the others' prediction drifts; the hearing graph for relay selection ([06](06-own-protocol.md)) |
 | E9 | The requirement: riders watch one ride replayed at 2 s and at 10 s with marked prediction, and judge stops and turns | whether 10–15 s with prediction is enough (question 2) |
@@ -34,6 +34,19 @@ GPS time at both ends: Meshtastic's own fix times are whole seconds [code: `mesh
 
 **E6 in detail:**
 
+- **Where it runs.** Meshtastic's own simulator,
+  [Meshtasticator](https://github.com/meshtastic/Meshtasticator), runs one instance of the stock
+  firmware's Linux build per node and hands each packet to the nodes that would hear it, by their
+  positions and a path-loss model [docs: its `INTERACTIVE_SIM.md`]. All logs are on one clock, so
+  shown-fix ages need no GPS. Its limits:
+  - collisions are emulated only with a build flag, and then any overlap loses both packets, with
+    no capture effect [code: `SimRadio.cpp:306-341` at `fad52bb`], so losses err high;
+  - its path-loss model is rough;
+  - riders do not move, so positions go out on a fixed interval, and the stopped-rider variant
+    runs on the real radios.
+- **Calibration on air.** The same scenario runs on three radios, two in range of the third but
+  not of each other. The simulator's figures for 10 and 20 nodes count only if, for those three,
+  its delivered share, channel load and gate skips match the radios'.
 - **Pass criteria are written before it runs:** the delivered share and the 95th-percentile
   shown-fix age at 5, 10 and 20 senders, against the target set by question 2 in [01](01-goals.md).
   Without them, E6 cannot fail.
@@ -45,12 +58,12 @@ GPS time at both ends: Meshtastic's own fix times are whole seconds [code: `mesh
   everything ([02](02-radio-basics.md)). Each node's hourly transmit share is logged next to its
   gate skips, to tell which limit binds; repeated `(from, id)` pairs are logged too
   ([03](03-alternatives.md)).
-- **It needs a radio per rider.** On stock firmware one radio cannot stand in for several:
-  positions run on a 5 s tick, a client cannot set the sender, so stand-ins share one node number,
-  and the per-node gates see the sum [code: `PositionModule.cpp:503,578`, `MeshService.cpp:312` at
-  `fad52bb`]. A stand-in run measures channel load only.
+- **On stock firmware one radio cannot play several riders:** positions run on a 5 s tick, a
+  client cannot set the sender, so stand-ins share one node number, and the per-node gates see the
+  sum [code: `PositionModule.cpp:503,578`, `MeshService.cpp:312` at `fad52bb`]. A stand-in run
+  measures channel load only, which is why the load runs in the simulator.
 
-E1's two radios cannot show what twenty riders do; E6 can.
+E1's two radios cannot show what twenty riders do; E6 can, in the simulator.
 
 **E7 is not hypothetical.** On our own rides Samsung's "sleeping apps" list overrode the battery
 exemption, and a bridge hung once until a power cycle [bench: dmd2-lora-bridge
@@ -58,8 +71,10 @@ exemption, and a bridge hung once until a power cycle [bench: dmd2-lora-bridge
 
 ## Before accepting 06
 
-[06](06-own-protocol.md) is a set of notes. An implementation of it gets E6's measurements on the
-same terms, E0 on every board it supports, and these tests besides:
+[06](06-own-protocol.md) is a set of notes. An implementation of it gets E6's measurements on
+comparable terms, E0 on every board it supports, and these tests besides. Its slots never overlap
+by design, so on the bench one radio may play several riders, through a dummy load since it then
+carries their airtime too; independent clocks take the real radios.
 
 - **Slots and roster:** two radios given the same slot, which the design must prevent since their
   nonces would repeat; a radio that reboots without a fix, or joins late, listens before it
