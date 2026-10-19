@@ -46,6 +46,14 @@ either path; AEAD adds a tag and loses nothing, so it is the better setting wher
 runs `develop`. Over a key's lifetime the repeats add up (about 7.6 in ten such days), so a group
 changes its channel key between rides.
 
+**The header travels in clear.** Encryption covers the payload only. The 16-byte header
+(destination, sender, packet id, flags with the hop limit, a one-byte channel hash, and the last
+byte of the next hop and of the relaying node) can be read by anyone in range, key or not [code:
+`RadioInterface.h:36-55` at `fad52bb`]. The sender's node number comes from the radio's MAC address
+and stays the same from ride to ride [code: `NodeDB.cpp:2241-2248` at `fad52bb`], so a listener
+can tell which radios pass, when and how often, and recognise them later. An idea for
+[06](06-own-protocol.md): keep in clear only a short group tag, and nothing that names a rider.
+
 **Releases and `develop` differ.** Our boards run 2.7.26 (tag `54e0d8d`). Several behaviours
 described below exist only in `develop` (`fad52bb`), and each is marked. A group should pin one
 release for all its radios.
@@ -101,7 +109,12 @@ the firmware itself [docs]:
   - smart position with a 10–60 s interval and 25–100 m distance;
   - a regular broadcast every 1–10 min as a heartbeat;
 - the **Timestamp** position flag on, without which a stuck GPS looks like a rider standing still;
-- role **Client**, or **Client Mute** when riders are close together.
+- role **Client**, or **Client Mute** when riders are close together;
+- **an idea to test:** rebroadcast mode `LOCAL_ONLY`. The default, `ALL`, relays every packet heard
+  with the same radio settings, other groups' and the public mesh's included, so two groups side by
+  side add to each other's load. `LOCAL_ONLY` relays only traffic on the radio's own channels, and
+  `KNOWN_ONLY` only that of nodes it knows [code: `config.pb.h:76-95`, `NextHopRouter.cpp:28-50` at
+  `fad52bb`].
 
 Other roles:
 

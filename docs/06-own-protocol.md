@@ -466,6 +466,51 @@ time, so no receive duty cycling is needed in v1.
   (Art. 2(2)(c));
 - the security design above, done properly.
 
+## Ideas, not yet decisions
+
+Directions worth weighing, each with what it would take. None is part of v1.
+
+**Two speeds in one frame.** A radio changes SF between packets in milliseconds but receives one SF
+at a time, so the schedule tells every radio when to listen at which. Each rider sends a fast packet
+every frame at SF7/250, for the riders near them, and one slow slot per frame at SF11/250 goes to
+each rider in turn, for the far ones [calc; the conventions of Capacity above]:
+
+| Group | Near riders, each every | Far riders, each every | Airtime per rider |
+|---|---|---|---|
+| 10 riders | 0.99 s | 9.9 s | 6.9 % |
+| 20 riders | 1.5 s | 29.9 s | 3.3 % |
+| 20 riders, two slow slots per frame | 1.97 s | 19.7 s | 3.4 % |
+
+- SF11/250 takes as long as SF10/125, 370.7 ms for 24 bytes, with about the same link budget (153
+  and 153.5 dB), so the far riders lose no range.
+- It might take the edge off question 2 in [01](01-goals.md): riders near each other see each other
+  every second or two, and the far ones every 10–30 s, at full range.
+- Packets of different SF on one frequency should disturb each other only weakly, unless one is
+  much stronger [inference, to be measured].
+- It needs a schedule. Meshtastic runs one preset per node, so there it would take two radios per
+  rider.
+
+**Groups apart by frequency, where the band allows.** DMD takes the channel from the group ID
+([04](04-dmd-protocol.md)); Meshtastic takes a slot from the hash of the channel name [code:
+`RadioInterface.cpp:1373-1384` at `fad52bb`], which separates groups only where a region has many
+slots. What the bands offer:
+
+- In 869.40–869.65 MHz there is room for two 125 kHz channels or three to four of 62.5 kHz, with no
+  margin at the edges (Sizing above), and each halving of bandwidth doubles the airtime.
+- 865–868 MHz has room, but allows 25 mW and 1 %.
+- Around 900 MHz (US, Australia, Japan) a channel can simply follow from the group key.
+
+A region profile in [08](08-regions.md) would then also say how many channels a group may choose
+from. Where groups share one channel, a frame offset and slot order derived from the group key
+spread their collisions over different riders (open questions below).
+
+**A short group tag in clear, and nothing that names a rider.** Meshtastic's clear header carries a
+node number fixed to the radio ([03](03-alternatives.md)). A one-byte tag derived from the group key
+would let a radio drop other groups' packets without running the authentication, and never relay
+them. A tag shared by two groups (1 in 256) costs only a failed check, and slot indexes are handed
+out per ride, so nothing in clear follows a rider across rides. The byte counts against the length
+steps (Packet sketch above).
+
 ## Open design questions
 
 - Riders who join late, or a roster that changes mid-ride: the activation epoch and the spare-slot

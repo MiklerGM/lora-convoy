@@ -28,8 +28,10 @@ It works for two or three riders close together.
   - status bits: "needs help" worked over LoRa on our rides.
 
   Around the records: a version byte, and a per-sender sequence number that shows losses.
-- **Groups are spread over frequencies:** the channel follows from the group ID (channels 14–22 in
-  Europe). With nine channels, two groups can still land on the same one.
+- **Groups are spread over frequencies:** the channel follows from the group ID, and the frequency
+  is 850.125 MHz plus the channel. In Europe that is channels 14–22, 864.125–872.125 MHz in 1 MHz
+  steps, 868.125 MHz by default [code: `docs/PROTOCOL.md:147-150`]. With nine channels, two groups
+  can still land on the same one, and in the EU the plan has a cost (item 9 below).
 - **Cheap hardware:** it runs on inexpensive EBYTE modules in transparent mode, with a long-range
   PHY (SF11/500).
 - **It worked on the rides:** positions crossed both ways between our devices and a NOR7E.
@@ -85,6 +87,15 @@ It works for two or three riders close together.
    is not a measurement of a NOR7E, so this is not a compliance verdict; but the modelled duty cycle
    could not fit 1 % if transmitted as modelled.
 
+   The other channels fare no better, each 500 kHz wide [calc, against Decision 2025/105]:
+   - none of the nine falls in 869.40–869.65 MHz, the one sub-band with 500 mW and 10 %;
+   - 864.125–868.125 MHz lie in sub-bands of 25 mW with 0.1 % or 1 %, and 865.125 MHz straddles
+     the two;
+   - 869.125 MHz spans the 0.1 % sub-band and the channels kept for alarms (rows 50–53);
+   - 870.125 MHz is half outside 863–870 MHz, and 871.125 and 872.125 MHz entirely. Above 870 MHz
+     the EU harmonises only 874–874.4 MHz, under a separate decision (2018/1538), for RFID and
+     networked devices in data networks.
+
 ## Lessons for anything we build
 
 - Each device sends **its own** position; relaying is separate and selective.
@@ -99,4 +110,6 @@ It works for two or three riders close together.
 - A sender is **always in its own packet**: any list with a fixed capacity needs that rule.
 - Encrypt and authenticate.
 - Pace by the channel, not by a fixed interval per rider.
+- Spread groups over frequencies only within sub-bands whose limits suit the protocol; in the EU
+  that leaves little room ([06](06-own-protocol.md), ideas).
 - Stay inside the duty cycle and power of the sub-band used.
