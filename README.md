@@ -5,10 +5,10 @@ infrastructure: what existing systems do, where they fall short, and what a prot
 a moving group could do better.
 
 **Status:** research notes and calculation tools, and the start of building it: architecture,
-roadmap and backlog below; an app that shows riders and routes in OsmAnd, and firmware for the
-Heltec V4.3 and the Wio Tracker L1 Pro that talks to it over Bluetooth, all tested without hardware
-(M1–M4). Nothing has run on a
-board yet, and nothing here has been ridden.
+roadmap and backlog below; an app that shows riders and routes in OsmAnd and sets up a private
+group, and firmware for the Heltec V4.3 and the Wio Tracker L1 Pro that sends positions encrypted
+for the group and talks to the app over Bluetooth, all tested without hardware (M1–M5). Nothing
+has run on a board yet, and nothing here has been ridden.
 
 ## Why this exists
 
@@ -39,7 +39,7 @@ protocol, with OsmAnd as the map.
 | [Architecture](docs/ARCHITECTURE.md) | How board, app and OsmAnd split the work; the decisions behind it |
 | [Roadmap](docs/ROADMAP.md) | Milestones in order, each with a test without hardware and one on it |
 | [Backlog](docs/BACKLOG.md) | Open decisions and features not yet in a milestone, one ticket each |
-| [Protocol](docs/PROTOCOL.md) | The air format and radio mode, as built: v0, for the bench |
+| [Protocol](docs/PROTOCOL.md) | The air format, radio mode, invitation and phone API, as built: v1 |
 
 Nothing is stable yet: the air format, the phone API and the app may all change together.
 

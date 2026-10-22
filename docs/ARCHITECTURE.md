@@ -40,7 +40,7 @@ board shows only its own position.
 |---|---|---|---|
 | Air format | board and board | binary packets, [PROTOCOL](PROTOCOL.md) from M3 | two bits of the first byte |
 | Phone API | board and app | text lines of `key=value` tokens: over BLE (Nordic UART Service), over TCP to a simulated board, over the USB console on the bench | `proto=` in the status line |
-| Invitation | organiser and riders | one string, shown as a QR code or sent as a link (M5) | its prefix |
+| Invitation | organiser and riders | one string per rider, `LC1.` and base64url, sent as text ([PROTOCOL](PROTOCOL.md)); a QR code later (T-invite) | its prefix |
 | OsmAnd | app and OsmAnd | AIDL V2 through `android-aidl-lib` 5.4 | OsmAnd's own; checked on connecting |
 
 A side that meets a version it does not know refuses, and says so; it never guesses (D3).
@@ -174,8 +174,22 @@ app once, in Plugins; OsmAnd's `develop` adds permission groups and a dialog tha
 ### D11. Protocol v0 is for the bench
 
 Plaintext, random access, one radio mode: enough for boards to hear each other (M3). Nothing is
-ridden before M5 adds authenticated encryption.
+ridden before M5 adds authenticated encryption. v1 did (2026-10-22), and v0 is gone.
 
 ### D12. Android 12 and later (2026-10-22)
 
 One Bluetooth permission model, without location permission for scanning, as in dmd2-lora-bridge.
+
+### D13. AES-128-CCM of our own (2026-10-22)
+
+The firmware carries its own AES-128 and CCM (`firmware/src/crypto.c`, under 150 lines), checked
+against FIPS-197, RFC 3610 and OpenSSL, and the app derives the group tag with Java's AES.
+
+- **Why:** one implementation on ESP-IDF, on Zephyr and on the host (D7), so the host tests and
+  the simulator run the very code the boards do. mbedTLS on ESP-IDF and Zephyr's crypto API differ,
+  and neither runs in the host tests. A packet every 2 s needs microseconds of AES, so the chips'
+  AES hardware is not worth a backend each.
+- **Cost:** cryptography without an outside review. The tag check takes constant time and a failed
+  check wipes the plaintext, but AES looks its S-box up in a table, whose timing depends on the key
+  where caches are involved; over the air the timing is buried under the random interval, and
+  nobody else's code runs on a board. A review before the first ride is part of T-tag and T-nonce.

@@ -29,24 +29,33 @@ v0 uses SF7/250 at 869.525 MHz, a sync word of our own and an 8-symbol preamble.
 modes per group size ([06](06-own-protocol.md), Sizing), the sync word's value and whether EBYTE
 and other chips leave it alone, a shorter preamble. Settled by E2 (range) and E10 (occupancy) in
 [07](07-experiments.md), and a hardware check of the sync word: in dmd2-lora-bridge one wrong
-sync symbol cost most packets. Needed by M5.
+sync symbol cost most packets. M5 went without it: v1 keeps v0's mode for every group, and the
+invitation does not carry one yet. Needed by M7.
 
 ### T-length: the packet's final length
 
 The tag, a session field if the nonce needs one, an implicit header and dropping the PHY CRC, all
 chosen so the length sits just under a step of airtime ([06](06-own-protocol.md), Packet sketch).
-Needed by M5.
+**v1, for now:** 24 bytes with an explicit header and the CRC, 30.848 ms at SF7/250; 25 and 26
+bytes cost no more ([PROTOCOL](PROTOCOL.md)). Still open: the implicit header and dropping the CRC,
+which want the hardware check of T-phy.
 
 ### T-nonce: how a nonce never repeats
 
 A random or persisted session with a counter; the frame number from GPS time; or counter blocks
 reserved in flash ([06](06-own-protocol.md), security rules). The frame number needs M6's
-schedule, so M5 may start with a session and change. Needed by M5.
+schedule, so M5 may start with a session and change. **v1, for now:** a 32-bit session drawn at
+every start and before the counter wraps, with a 16-bit counter. A nonce repeats if two sessions
+of one slot under one key draw the same value: about n²/2^33 for n sessions, one in 8 600 for a
+thousand restarts. M6 decides whether the frame number replaces the session.
 
 ### T-tag: the tag's length
 
 4 or 8 bytes, with the forgery risk and key lifetime NIST SP 800-38C (Appendix B) asks for below
-64 bits. Needed by M5.
+64 bits. **v1, for now:** 4 bytes. One forgery in 2^32 tries: four years of a transmitter sending
+nothing else, for a position of random bytes; a key lives one ride. Still to do: the budget written
+out as Appendix B asks, and an outside review of the cipher and nonce (ARCHITECTURE, D13) before
+the first ride.
 
 ### T-fix-time: how a position carries its time
 
@@ -147,6 +156,14 @@ them, or send a pull request, once the owner decides to.
 OsmAnd's `develop` gates each call by a permission group and lets an app ask for groups in a
 dialog (`net.osmand.aidl.REQUEST_PERMISSIONS`); 5.4 has neither ([05](05-osmand-integration.md)).
 Support both once a release has the groups.
+
+### T-invite: invitations as QR codes, riders' names, several boards
+
+M5's invitation is a string sent as text. Open: a QR code the organiser shows and the rider scans,
+and a link a messenger makes tappable, which wants a domain or app links; riders' names and colours
+in the invitation, so the map stops saying "Rider 2"; one phone setting up several boards, such as a
+pillion's or loaners, without joining each slot itself; a new key for the group when a rider leaves.
+Needed by M7.
 
 ### T-phone-gps: boards without GNSS
 

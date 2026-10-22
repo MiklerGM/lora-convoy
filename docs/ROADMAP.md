@@ -29,7 +29,7 @@ flowchart TD
 | M2 | A route from outside | ✅ | | done, no hardware |
 | M3 | Protocol v0: a beacon and a receiver | | ✅ | done, no hardware |
 | M4 | A board and the app | ✅ | ✅ | done, no hardware |
-| M5 | A private group: invitation and encryption | ✅ | ✅ | planned |
+| M5 | A private group: invitation and encryption | ✅ | ✅ | done, no hardware |
 | M6 | Slots by GPS time | | ✅ | planned |
 | M7 | Ready for a first ride | ✅ | ✅ | planned |
 
@@ -162,6 +162,19 @@ groups on one channel each see only their own riders, and forged or replayed pac
 and counted; on the emulator, a simulated board set up from an invitation.
 **Test on hardware:** two boards in one group and a third in another.
 
+**Result, 2026-10-22, without hardware:** protocol v1 ([PROTOCOL](PROTOCOL.md)): 24-byte positions
+under AES-128-CCM of our own (D13), a group tag in clear and replay checks per slot, with a test
+vector from OpenSSL; seven defects planted in the cipher, the nonce and the replay checks each broke
+a test. The phone API is version 2: `KEY` sets the group's key, and the status shows its tag. In the
+simulator three riders get 94.4 % of their packets through, with fixes 3.5 s old at the 95th
+percentile; twenty on random access get 55.4 % (8.5 s), as pure ALOHA predicts; two groups of three
+on one channel each see only their own riders, and drop the other's 2 286 packets by their tag. The
+app makes a group, a fresh key and an invitation per rider to send with Android's share sheet, and
+joins one from a pasted invitation. On the emulator it set simulated board 0 up itself, and OsmAnd
+showed boards 1 and 2, keyed for the same group; joining another slot moved the board within 10 s.
+Left for later: the radio mode from the group's size (T-phy), and invitations by QR code with
+riders' names (T-invite).
+
 ## M6. Slots by GPS time
 
 The schedule of [06](06-own-protocol.md): frames numbered from an epoch in GPS time, one slot per
@@ -185,6 +198,9 @@ age of the fix each map shows.
   exported (T-ledger; other countries are T-regions).
 - Surviving a ride: the bridge's foreground service, reconnects and battery checks; a board that
   restarts rejoins (T-survive).
+- The group as riders meet it: an invitation to scan, riders' names on the map, the radio mode for
+  the group's size (T-invite, T-phy); and an outside review of the cipher and the nonce (D13;
+  T-tag, T-nonce).
 
 **Test now:** a ride replayed in the simulator from GPX logs: riders spreading out, stopping, one
 asking for help. A soak run on the emulator.
