@@ -22,6 +22,13 @@ All of these belong to the `MAP` permission group, which OsmAnd grants by defaul
 enabled as well as that its group is granted (`isMethodAllowed`) [code]. A companion's setup must
 walk the rider through enabling it, and handle access being revoked later.
 
+**Released OsmAnd has no groups yet.** The groups, and a dialog in which an app asks for them
+(`AidlPermissionRequestActivity`, action `net.osmand.aidl.REQUEST_PERMISSIONS`), are in `develop` as
+pinned above. In OsmAnd 5.4 the only gate is the enabled flag: a new app is recorded as disabled,
+the rider enables it in Plugins, and from then on every call is allowed [code: branch `r5.4` at
+`9867e3d`, `OsmandAidlApi.isAppEnabled` and `PluginsFragment.switchEnabled`; neither class is in
+OsmAnd~ 5.4.10's code]. A companion handles both.
+
 Other features need other groups. None of them is granted by default, so the rider allows each
 once [code: `AidlPermissionGroup.java:22-49`]:
 
