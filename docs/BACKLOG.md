@@ -12,18 +12,14 @@ freshness, set the default radio mode in M5.
 ### T-licence: the licence, and publishing
 
 Apache-2.0, as dmd2-lora-bridge, or GPL-3.0, which reusing MeshAnd's or Meshtastic's code would
-require. Until it is decided, nothing is copied from GPL code. Needed before the repository is
+require. The owner is open to GPL-3.0 if we take MeshAnd's code as well as the bridge's
+(2026-10-22). Settled the first time code is copied from a GPL project, and before the repository is
 published.
 
 ### T-app-id: the app's name and package
 
 Provisionally "LoRa Convoy", `io.github.miklergm.convoy`. Free to change until a build is handed
 to anyone, since Android ties installs and updates to the package.
-
-### T-android-min: the oldest Android supported
-
-Provisionally Android 12 (API 31), as in dmd2-lora-bridge: one Bluetooth permission model, without
-location permission for scanning. MeshAnd goes down to 7.0. Lower it if riders' phones need it.
 
 ## Protocol
 

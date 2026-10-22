@@ -101,8 +101,8 @@ since v0 is plaintext (D11).
 **Test now:** host tests for the codec (vectors), the NMEA reader (an L76K's multi-GNSS sentences),
 the duty ledger and the beacon's timing. In the simulator, three nodes on scripted tracks each
 list the other two with fresh fixes. Both board images build.
-**Test on hardware:** a Heltec V4 with its GNSS kit and a Wio Tracker L1 on a bench, each listing
-the other on its console; then a few hundred metres apart outdoors.
+**Test on hardware:** the Heltec V4.3 with its GNSS kit and the Wio Tracker L1 Pro on a bench,
+each listing the other on its console; then a few hundred metres apart outdoors.
 
 ## M4. A board and the app
 

@@ -22,7 +22,7 @@ android {
     defaultConfig {
         // Provisional, see BACKLOG T-app-id: free to change until a build is handed out.
         applicationId 'io.github.miklergm.convoy'
-        // Android 12: one Bluetooth permission model for M4. BACKLOG T-android-min.
+        // Android 12 and later: ARCHITECTURE D12.
         minSdk 31
         targetSdk 35
         versionCode versionNumber

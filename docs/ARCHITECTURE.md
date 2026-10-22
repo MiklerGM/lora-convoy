@@ -13,7 +13,7 @@ flowchart LR
     osmand["OsmAnd<br/>map, navigation"]
     app -->|"AIDL: a layer of riders,<br/>GPX, navigate"| osmand
   end
-  subgraph board["Board: Heltec V4 with GNSS kit, Wio Tracker L1"]
+  subgraph board["Board: Heltec V4.3 with GNSS kit, Wio Tracker L1 Pro"]
     gnss["GNSS<br/>position, time, PPS"] --> core
     core["Node core, C<br/>codec, schedule, keys,<br/>duty ledger, riders heard"]
     core <--> radio["SX1262"]
@@ -120,9 +120,11 @@ the board up, shows the riders in OsmAnd, and later carries routes and the hub.
 
 ### D5. Boards with GNSS first
 
-- **Heltec WiFi LoRa 32 V4** (ESP32-S3) with Heltec's GNSS expansion kit: an L76K on a UART, PPS on
+- **Heltec WiFi LoRa 32 V4.3** (ESP32-S3) with Heltec's own GNSS kit: an L76K on a UART, PPS on
   GPIO 41.
-- **Seeed Wio Tracker L1** (nRF52840): an L76K on a UART; its pin map has no PPS.
+- **Seeed Wio Tracker L1 Pro** (nRF52840): an L76K on a UART; its pin map has no PPS.
+
+These are the owner's boards, the ones dmd2-lora-bridge was built on; neither GNSS has run yet.
 
 [code: Meshtastic `variants/esp32s3/heltec_v4`, `variants/nrf52840/seeed_wio_tracker_L1` at
 `fad52bb`; Zephyr's `wio_tracker_l1` board]. The toolchains are dmd2-lora-bridge's: ESP-IDF through
@@ -173,3 +175,7 @@ app once, in Plugins; OsmAnd's `develop` adds permission groups and a dialog tha
 
 Plaintext, random access, one radio mode: enough for boards to hear each other (M3). Nothing is
 ridden before M5 adds authenticated encryption.
+
+### D12. Android 12 and later (2026-10-22)
+
+One Bluetooth permission model, without location permission for scanning, as in dmd2-lora-bridge.
