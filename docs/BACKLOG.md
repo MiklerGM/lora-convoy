@@ -136,6 +136,12 @@ Version 1 engine, from none. Measure it on a phone first. Then: update less ofte
 who moved; advise the Version 1 engine; or propose to OsmAnd that its layer move markers instead of
 rebuilding them. Needed by M4.
 
+### T-osmand-upstream: fixes to offer OsmAnd
+
+Two found while building M1 and M2 ([05](05-osmand-integration.md)): `navigateGpx` throws in the
+caller unless `passWholeRoute` is set, a one-line fix in its library; and T-osmand-opengl. Report
+them, or send a pull request, once the owner decides to.
+
 ### T-osmand-perm: OsmAnd's permission groups
 
 OsmAnd's `develop` gates each call by a permission group and lets an app ask for groups in a

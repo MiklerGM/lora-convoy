@@ -4,6 +4,7 @@
 #   ./emulator.sh up        create the emulator once, boot it without a window, wait for it
 #   ./emulator.sh install   OsmAnd~ from F-Droid (downloaded once, hash checked) and a debug build
 #   ./emulator.sh map       a small map OsmAnd can route on (Liechtenstein), and the emulator there
+#   ./emulator.sh route     a test route in Downloads, opened with LoRa Convoy as another app would
 #   ./emulator.sh shot FILE a screenshot
 #   ./emulator.sh down
 #
@@ -11,6 +12,9 @@
 # LoRa Convoy tap Start (it says OsmAnd has not let it in); in OsmAnd, Menu > Plugins, switch
 # LoRa Convoy on. Three riders appear around the map's centre; a tap on one shows its details,
 # and NAVIGATION in that menu routes to it.
+#
+# M2: run route; in the app, Show in OsmAnd, then Navigate along it. A share (SEND) cannot be
+# tested from adb: `am start` grants only the intent's data, and a share grants its stream.
 #
 # The image is Google APIs without the Play Store, so `adb root` works for looking inside apps.
 set -euo pipefail
@@ -76,6 +80,33 @@ map)
     adb emu geo fix 9.5215 47.1410 >/dev/null # Vaduz
     echo "map in place, and the emulator is in Vaduz; start OsmAnd again"
     ;;
+route)
+    gpx=$(mktemp --suffix=.gpx)
+    cat >"$gpx" <<'GPX'
+<?xml version="1.0" encoding="UTF-8"?>
+<gpx version="1.1" creator="lora-convoy emulator.sh" xmlns="http://www.topografix.com/GPX/1/1">
+  <metadata><name>Vaduz to Schaan</name></metadata>
+  <trk><name>Vaduz to Schaan</name><trkseg>
+    <trkpt lat="47.1380" lon="9.5225"/><trkpt lat="47.1410" lon="9.5212"/><trkpt lat="47.1440" lon="9.5195"/>
+    <trkpt lat="47.1470" lon="9.5175"/><trkpt lat="47.1500" lon="9.5155"/><trkpt lat="47.1530" lon="9.5135"/>
+    <trkpt lat="47.1560" lon="9.5115"/><trkpt lat="47.1590" lon="9.5100"/><trkpt lat="47.1620" lon="9.5090"/>
+    <trkpt lat="47.1650" lon="9.5085"/>
+  </trkseg></trk>
+</gpx>
+GPX
+    adb push "$gpx" /sdcard/Download/vaduz-schaan.gpx >/dev/null 2>&1
+    rm "$gpx"
+    for _ in $(seq 20); do # MediaStore lists a pushed file a moment later
+        id=$(adb shell content query --uri content://media/external/file --projection _id \
+            --where "_display_name=\'vaduz-schaan.gpx\'" | sed -n 's/.*_id=\([0-9]*\).*/\1/p' | head -1)
+        [ -n "$id" ] && break
+        sleep 0.5
+    done
+    [ -n "$id" ] || { echo "MediaStore does not list the route"; exit 1; }
+    adb shell am start -a android.intent.action.VIEW -d "content://media/external/file/$id" \
+        -t application/octet-stream --grant-read-uri-permission -n io.github.miklergm.convoy/.RouteActivity >/dev/null
+    echo "route opened with LoRa Convoy"
+    ;;
 shot)
     adb exec-out screencap -p >"${2:?where to}"
     ;;
@@ -83,7 +114,7 @@ down)
     adb emu kill
     ;;
 *)
-    sed -n '2,15p' "$0"
+    sed -n '2,19p' "$0"
     exit 2
     ;;
 esac

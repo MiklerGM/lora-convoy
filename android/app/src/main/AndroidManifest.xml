@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -28,6 +29,37 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- Routes from outside. Messengers and file managers label a GPX in several ways, octet
+             stream included, so the activity reads the file and refuses whatever is not GPX. -->
+        <activity
+            android:name=".RouteActivity"
+            android:exported="true"
+            android:label="Route for LoRa Convoy">
+            <!-- A file by its type, not a link: lint reads any VIEW filter as a deep link. -->
+            <intent-filter tools:ignore="AppLinkUrlError">
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/gpx+xml" />
+                <data android:mimeType="application/gpx" />
+                <data android:mimeType="text/xml" />
+                <data android:mimeType="application/xml" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="application/octet-stream" />
+            </intent-filter>
+        </activity>
+
+        <!-- Kept routes, readable only by apps given a grant: OsmAnd, for each route handed over. -->
+        <provider
+            android:name=".RouteProvider"
+            android:authorities="io.github.miklergm.convoy.routes"
+            android:exported="false"
+            android:grantUriPermissions="true" />
 
         <!-- Keeps the riders moving on OsmAnd's map while OsmAnd, not this app, is in front.
              specialUse until M4, when the board's Bluetooth link makes it connectedDevice. -->

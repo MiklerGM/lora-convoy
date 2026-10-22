@@ -26,7 +26,7 @@ flowchart TD
 | | Milestone | App | Firmware | Status |
 |---|---|---|---|---|
 | M1 | Mock riders on the OsmAnd map | ✅ | | done, no hardware |
-| M2 | A route from outside | ✅ | | planned |
+| M2 | A route from outside | ✅ | | done, no hardware |
 | M3 | Protocol v0: a beacon and a receiver | | ✅ | planned |
 | M4 | A board and the app | ✅ | ✅ | planned |
 | M5 | A private group: invitation and encryption | ✅ | ✅ | planned |
@@ -71,9 +71,16 @@ Where a route from LoRa or from the hub will end up, tested before either exists
 - "Received", "imported" and "navigating" stay separate states: OsmAnd's success only means a
   request was accepted ([05](05-osmand-integration.md)).
 
-**Test now:** JVM tests for the file store. On the emulator: a GPX pushed with adb and shared to
-the app shows in OsmAnd, and navigation starts once accepted.
-**Test on a device:** a route shared from a messenger or a file manager.
+**Test now:** JVM tests for reading a GPX (and refusing what is not one, external entities
+included) and for the hash. On the emulator: a GPX pushed with adb and opened with the app shows in
+OsmAnd, and navigation starts once accepted.
+**Test on a device:** a route shared from a messenger or a file manager. A share cannot be tested
+from adb: `am start` grants the app only the intent's data, and a share grants its stream.
+
+**Result, 2026-10-22, on the emulator:** `android/emulator.sh route` opened a 3.2 km test route
+with the app; "Show in OsmAnd" put it among OsmAnd's tracks and on the map, and "Navigate along it"
+started OsmAnd's navigation along it. A KML was refused as not a GPX. OsmAnd's library crashed the
+app on the first try: it needs `passWholeRoute` set ([05](05-osmand-integration.md)).
 
 Reversing a route and cutting it to a day's segment are T-route-intent.
 

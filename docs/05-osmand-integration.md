@@ -51,6 +51,11 @@ track to roads ([06](06-own-protocol.md), route sharing). The legacy interface
 (`net.osmand.aidl.navigation.NavigateGpxParams`) has none of them. Pin the API version and check the
 installed OsmAnd's [code].
 
+**`passWholeRoute` must be set.** `NavigateGpxParams` keeps it as a `Boolean` that may be null and
+packs it with `putBoolean`, so a request without it throws in the caller's own process, before
+anything reaches OsmAnd [code: `NavigateGpxParams.writeToBundle`, line 111 on `develop`; the same
+in the 5.4 library; bench: emulator]. False joins the track where the rider meets it.
+
 **A successful call is only an accepted request.** `NavigateGpxHelper.saveAndNavigateGpx` returns
 before saving, road approximation and navigation have finished [code], so a successful call does
 not mean the rider is following the route. A companion keeps "received", "imported" and

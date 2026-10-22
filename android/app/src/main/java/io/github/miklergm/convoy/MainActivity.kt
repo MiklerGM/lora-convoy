@@ -39,6 +39,7 @@ class MainActivity : Activity() {
             addView(button("Start mock riders") { start() })
             addView(button("Stop") { stopService(Intent(this@MainActivity, ConvoyService::class.java)) })
             addView(button("Open OsmAnd") { openOsmAnd() })
+            addView(button("Last route") { startActivity(Intent(this@MainActivity, RouteActivity::class.java)) })
         }
         // Android 15 draws apps edge to edge: this keeps the column clear of the system bars.
         setContentView(FrameLayout(this).apply { fitsSystemWindows = true; addView(column) })
@@ -77,9 +78,9 @@ class MainActivity : Activity() {
         OsmAnd.State.SHOWING -> "Riders on the map of ${ConvoyService.version ?: "OsmAnd"}. " +
             "Mock riders circle where OsmAnd's map was centred when they started."
     }
+}
 
-    private fun button(label: String, onClick: () -> Unit) = Button(this).apply {
-        text = label
-        setOnClickListener { onClick() }
-    }
+fun Activity.button(label: String, onClick: () -> Unit) = Button(this).apply {
+    text = label
+    setOnClickListener { onClick() }
 }
