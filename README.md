@@ -5,8 +5,9 @@ infrastructure: what existing systems do, where they fall short, and what a prot
 a moving group could do better.
 
 **Status:** research notes and calculation tools, and the start of building it: architecture,
-roadmap and backlog below, and an app that puts mock riders on OsmAnd's map (M1, tested on an
-emulator). No firmware yet, and nothing here has been ridden.
+roadmap and backlog below; an app that shows riders and routes in OsmAnd, and firmware for the
+Heltec V4.3 and the Wio Tracker L1 Pro, all tested without hardware (M1–M3). Nothing has run on a
+board yet, and nothing here has been ridden.
 
 ## Why this exists
 
@@ -37,11 +38,13 @@ protocol, with OsmAnd as the map.
 | [Architecture](docs/ARCHITECTURE.md) | How board, app and OsmAnd split the work; the decisions behind it |
 | [Roadmap](docs/ROADMAP.md) | Milestones in order, each with a test without hardware and one on it |
 | [Backlog](docs/BACKLOG.md) | Open decisions and features not yet in a milestone, one ticket each |
+| [Protocol](docs/PROTOCOL.md) | The air format and radio mode, as built: v0, for the bench |
 
 Nothing is stable yet: the air format, the phone API and the app may all change together.
 
-The app is in `android/`. `make check` runs every test that needs no hardware;
-`android/emulator.sh` sets up an emulator with OsmAnd for the rest.
+The app is in `android/`, the firmware in `firmware/`. `make check` runs every test that needs
+no hardware and builds both board images; `android/emulator.sh` sets up an emulator with OsmAnd,
+and `make -C firmware sim ARGS="10 2000 600"` simulates ten riders for ten minutes.
 
 ## Tools
 

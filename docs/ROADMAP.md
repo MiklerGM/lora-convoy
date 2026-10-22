@@ -27,7 +27,7 @@ flowchart TD
 |---|---|---|---|---|
 | M1 | Mock riders on the OsmAnd map | ✅ | | done, no hardware |
 | M2 | A route from outside | ✅ | | done, no hardware |
-| M3 | Protocol v0: a beacon and a receiver | | ✅ | planned |
+| M3 | Protocol v0: a beacon and a receiver | | ✅ | done, no hardware |
 | M4 | A board and the app | ✅ | ✅ | planned |
 | M5 | A private group: invitation and encryption | ✅ | ✅ | planned |
 | M6 | Slots by GPS time | | ✅ | planned |
@@ -110,6 +110,20 @@ the duty ledger and the beacon's timing. In the simulator, three nodes on script
 list the other two with fresh fixes. Both board images build.
 **Test on hardware:** the Heltec V4.3 with its GNSS kit and the Wio Tracker L1 Pro on a bench,
 each listing the other on its console; then a few hundred metres apart outdoors.
+
+**Result, 2026-10-22, without hardware:** [PROTOCOL](PROTOCOL.md) v0 is written, and
+`make -C firmware test` passes. It runs:
+
+- the core's checks: airtime equal to `tools/airtime.py` in 11 cases, the packet's fixed vector,
+  an L76K's NMEA sentences, the duty cycle's hour to the minute;
+- the SX1262 driver against a fake chip, v0's mode included;
+- the simulator.
+
+In the simulator, three riders sending every 2 s deliver 95 % of their packets, and each map shows
+a fix 3.5 s old at the 95th percentile. Twenty riders on random access deliver 61 % (pure ALOHA
+predicts about 58 %), and 7.5 s: the case for M6's slots. Both images build: the Heltec V4.3's
+(ESP-IDF, 252 kB) and the L1 Pro's (Zephyr, 79 kB). Neither has run on a board yet, so the GNSS
+power lines and the sync word are unchecked.
 
 ## M4. A board and the app
 
