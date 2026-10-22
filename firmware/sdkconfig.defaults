@@ -1,0 +1,5 @@
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=4096
+# A hung task reboots the board instead of leaving it silent until someone re-plugs it
+# (dmd2-lora-bridge, ARCHITECTURE item 13).
+CONFIG_ESP_TASK_WDT_PANIC=y
+CONFIG_ESP_TASK_WDT_TIMEOUT_S=30

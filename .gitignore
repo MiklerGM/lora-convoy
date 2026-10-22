@@ -9,3 +9,7 @@ build/
 local.properties
 *.apk
 *.idsig
+# Firmware build output; ESP-IDF regenerates sdkconfig.<env> from sdkconfig.defaults
+.pio/
+firmware/sdkconfig.*
+!firmware/sdkconfig.defaults
