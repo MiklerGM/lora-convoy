@@ -132,6 +132,14 @@ rate limit. Open: GPX or our binary geometry, and who runs it ([01](01-goals.md)
 Trails, a widget listing riders nearest first, a predicted point marked as prediction, colours
 riders keep between rides ([05](05-osmand-integration.md), Implications). After M4.
 
+### T-osmand-opengl: riders blink on OsmAnd's OpenGL engine
+
+Each update hides the whole layer while OsmAnd rebuilds it ([05](05-osmand-integration.md)). On an
+emulator, at one update a second, the riders were missing from 40–45 % of screenshots; on the
+Version 1 engine, from none. Measure it on a phone first. Then: update less often, or only riders
+who moved; advise the Version 1 engine; or propose to OsmAnd that its layer move markers instead of
+rebuilding them. Needed by M4.
+
 ### T-osmand-perm: OsmAnd's permission groups
 
 OsmAnd's `develop` gates each call by a permission group and lets an app ask for groups in a

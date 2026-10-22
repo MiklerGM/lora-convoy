@@ -5,7 +5,8 @@ infrastructure: what existing systems do, where they fall short, and what a prot
 a moving group could do better.
 
 **Status:** research notes and calculation tools, and the start of building it: architecture,
-roadmap and backlog below. No firmware or app yet, and nothing here has been ridden.
+roadmap and backlog below, and an app that puts mock riders on OsmAnd's map (M1, tested on an
+emulator). No firmware yet, and nothing here has been ridden.
 
 ## Why this exists
 
@@ -39,6 +40,9 @@ protocol, with OsmAnd as the map.
 
 Nothing is stable yet: the air format, the phone API and the app may all change together.
 
+The app is in `android/`. `make check` runs every test that needs no hardware;
+`android/emulator.sh` sets up an emulator with OsmAnd for the rest.
+
 ## Tools
 
 All standard-library Python:
@@ -56,7 +60,7 @@ Each claim says where it comes from:
 - **[code]** — read in a project's source, pinned to a commit or release tag;
 - **[docs]** — the project's own documentation, a vendor page or a regulation;
 - **[calc]** — computed with the tools above;
-- **[bench]** — measured on our boards;
+- **[bench]** — measured on our boards, or on an emulator where it says so;
 - **[owner]** — the project owner's experience on the road with the apps concerned.
 
 Anything untagged is inference. Regulatory notes are information, not legal advice.

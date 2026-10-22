@@ -25,7 +25,7 @@ flowchart TD
 
 | | Milestone | App | Firmware | Status |
 |---|---|---|---|---|
-| M1 | Mock riders on the OsmAnd map | ✅ | | planned |
+| M1 | Mock riders on the OsmAnd map | ✅ | | done, no hardware |
 | M2 | A route from outside | ✅ | | planned |
 | M3 | Protocol v0: a beacon and a receiver | | ✅ | planned |
 | M4 | A board and the app | ✅ | ✅ | planned |
@@ -45,12 +45,19 @@ be finished on an emulator.
   stale and one asking for help.
 - One map layer, one point per rider: name and colour on the point; fix age, link age, speed and
   status in its details. Stale and help show on the point itself.
-- Tapping a rider opens OsmAnd's menu with the details and a button that navigates to them.
+- Tapping a rider opens OsmAnd's menu with the details; its own NAVIGATION button routes to the
+  rider.
 
 **Test now:** JVM tests for the mock source and for turning a rider into a point. On the emulator,
-with OsmAnd~ 5.4.10 from F-Droid: the riders appear and move, a tap shows the details, and the
-button starts a route to the rider. A script sets the emulator up, so the run repeats.
-**Test on a device:** the same on the owner's phone.
+with OsmAnd~ 5.4.10 from F-Droid: the riders appear and move, a tap shows the details, and
+NAVIGATION routes to the rider. `android/emulator.sh` sets the emulator up, so the run repeats.
+**Test on a device:** the same on the owner's phone, on OsmAnd's default engine.
+
+**Result, 2026-10-22, on the emulator:** OsmAnd refused the app until it was switched on in
+Plugins, and the app said where. Then three riders circled the map's centre: B turned red with
+"B SOS", C went grey with its silence on the label, the details gave the times heard and of the
+fix, and NAVIGATION routed 421 m to B on the Liechtenstein map. On OsmAnd's OpenGL engine, its
+default, the riders blink at every update; on its Version 1 engine they do not (T-osmand-opengl).
 
 ## M2. A route from outside
 

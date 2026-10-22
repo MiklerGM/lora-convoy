@@ -57,7 +57,24 @@ not mean the rider is following the route. A companion keeps "received", "import
 "navigating" as separate states, and lets the rider approve replacing a route.
 
 A layer point (`AMapPoint`) carries `id`, `shortName`, `fullName`, `typeName`, `layerId`, `color`,
-`location`, a list of `details` strings and a `params` map.
+`location`, a list of `details` strings and a `params` map. Without images, OsmAnd 5.4 draws it from
+zoom 7 as a circle in its colour, labelled with its short name; the details are lines in the
+point's menu, and the menu's own NAVIGATION button routes to the point [code: `AidlMapLayer`,
+`AMapPointMenuController`; bench: emulator].
+
+**Moving points blink on OsmAnd's OpenGL engine.** Every update of a layer makes OsmAnd reload its
+map, and its OpenGL engine (Version 2, the default) then clears the layer's symbols and builds them
+anew, hiding all of the layer's points until it is done [code: `AidlMapLayer`,
+`pointsLocationChanged` and `showAidlTileProvider`, the same on `r5.4` and `develop`]. On an emulator
+with software rendering, at one update a second, the riders were missing from 5 of 12 screenshots
+with one update per point and from 7 of 16 with one update of the whole layer; on the Version 1
+engine, from none of 16 [bench: emulator, 2026-10-22]. How long the gap lasts on a phone is still
+to measure.
+
+**An open menu is a snapshot.** A layer update moves the points but leaves an open menu as it was;
+only `updateMapPoint` with `updateOpenedMenuAndMap` refreshes it, at a map reload per point [code:
+`ConnectedApp.updateMapPoint`, `r5.4`]. Details that say "heard 2 s ago" would stay on screen while
+they grew false, so a companion shows clock times there.
 
 OsmAnd does not load third-party code as plugins, so this needs a companion app. OsmAnd's own
 Telegram tracker works the same way. iOS has no such API: out of scope.

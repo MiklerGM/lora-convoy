@@ -72,7 +72,7 @@ flowchart LR
 | Emulator | riders and routes in a real OsmAnd; later the app against simulated boards | M1 |
 | Hardware | boards on a bench, then on the road | waits for the bench |
 
-`make check` runs every level but the last.
+`make check` runs the host, simulator and JVM levels; `android/emulator.sh` sets up the emulator.
 
 ## Decisions
 
