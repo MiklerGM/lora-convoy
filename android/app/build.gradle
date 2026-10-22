@@ -1,0 +1,48 @@
+plugins {
+    id 'com.android.application'
+    id 'org.jetbrains.kotlin.android'
+}
+
+// The build names its commit, as dmd2-lora-bridge's does: which build is on a phone is then never
+// in doubt. The commit count grows with every commit, so Android accepts each build over the last.
+def gitOut = { List<String> cmd, String fallback ->
+    try {
+        return providers.exec { commandLine cmd }.standardOutput.asText.get().trim()
+    } catch (ignored) {
+        return fallback
+    }
+}
+def versionString = gitOut(['git', 'describe', '--always', '--dirty'], 'nogit')
+def versionNumber = gitOut(['git', 'rev-list', '--count', 'HEAD'], '1').toInteger()
+
+android {
+    namespace 'io.github.miklergm.convoy'
+    compileSdk 35
+
+    defaultConfig {
+        // Provisional, see BACKLOG T-app-id: free to change until a build is handed out.
+        applicationId 'io.github.miklergm.convoy'
+        // Android 12: one Bluetooth permission model for M4. BACKLOG T-android-min.
+        minSdk 31
+        targetSdk 35
+        versionCode versionNumber
+        versionName versionString
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+
+    lint {
+        abortOnError true
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    // OsmAnd's AIDL V2 client, vendored and pinned: libs/README.md.
+    implementation files('libs/android-aidl-lib-5.4.aar')
+    testImplementation 'junit:junit:4.13.2'
+}

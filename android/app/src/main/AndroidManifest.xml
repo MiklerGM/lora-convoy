@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <!-- Package visibility: whichever OsmAnd is installed (OsmAnd, OsmAnd+, OsmAnd~, nightly)
+         answers on this action. -->
+    <queries>
+        <intent>
+            <action android:name="net.osmand.aidl.OsmandAidlServiceV2" />
+        </intent>
+    </queries>
+
+    <application
+        android:allowBackup="false"
+        android:icon="@android:drawable/ic_dialog_map"
+        android:label="LoRa Convoy"
+        android:supportsRtl="true"
+        android:theme="@android:style/Theme.DeviceDefault.DayNight">
+
+        <activity
+            android:name=".MainActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+
+        <!-- Keeps the riders moving on OsmAnd's map while OsmAnd, not this app, is in front.
+             specialUse until M4, when the board's Bluetooth link makes it connectedDevice. -->
+        <service
+            android:name=".ConvoyService"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows other riders' positions on the OsmAnd map" />
+        </service>
+    </application>
+</manifest>

@@ -2,3 +2,10 @@
 *.gpx.gz
 __pycache__/
 lab/
+# Android build output and local settings
+build/
+.gradle/
+.kotlin/
+local.properties
+*.apk
+*.idsig
