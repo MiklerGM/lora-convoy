@@ -20,7 +20,7 @@ GPS time at both ends: Meshtastic's own fix times are whole seconds [code: `mesh
 | # | What | Answers |
 |---|---|---|
 | E0 | Timing on each board: whether it has a PPS line; the PPS edge against the radio's start of transmission; without PPS, the jitter of NMEA time; the jitter of starting a transmission | whether the schedule in [06](06-own-protocol.md) can run on that board, and the terms of its guard |
-| E1 | Two Meshtastic nodes on a private channel, MediumFast, smart position every 20 s; a second run with both as Client Mute (no relays) | real intervals, relay delay, losses; how much "no relays" gains |
+| E1 | Two Meshtastic nodes on a private channel, on MediumFast, or ShortFast where the public mesh is on MediumFast; smart position every 20 s; a second run with both as Client Mute (no relays) | real intervals, relay delay, losses; how much "no relays" gains |
 | E2 | Range: ShortFast and MediumFast, and SF9/125 and SF10/125 through Meshtastic's custom modem settings, the modes [06](06-own-protocol.md) picks; one node in a vehicle (Meshtastic's Range Test module) | the range tables in [02](02-radio-basics.md), per sub-band |
 | E3 | A minimal app that draws two points in OsmAnd over AIDL and moves them every second | what the rider must do before points appear (a new app starts disabled, [05](05-osmand-integration.md)); smoothness |
 | E4 | How many BLE clients a Meshtastic node accepts; whether a USB client and a BLE client work at once | whether a companion must replace the official app |
@@ -29,9 +29,13 @@ GPS time at both ends: Meshtastic's own fix times are whole seconds [code: `mesh
 | E7 | Soak: three hours or more with the phone's screen off and OsmAnd navigating, node and companion running | gaps from the phone and the node: Android putting the app to sleep, Bluetooth drops, a node that hangs; counted as stretches without a shown update |
 | E8 | Ride replay: 1 Hz phone GPS logs of every rider on one real ride, with every radio's receive log | how far the column spreads (question 3 in [01](01-goals.md)); how often a sender would send if it sent only when the others' prediction drifts; the hearing graph for relay selection ([06](06-own-protocol.md)) |
 | E9 | The requirement: riders watch one ride replayed at 2 s and at 10 s with marked prediction, and judge stops and turns | whether 10–15 s with prediction is enough (question 2) |
-| E10 | Channel survey: occupancy of 869.40–869.65 MHz along a route, with the RTL-SDR | how much of Meshtastic's 25 % gate, and of a schedule's frame, other users take |
+| E10 | Channel survey: occupancy of 869.40–869.65 MHz along a route, and in a city for contrast, with the RTL-SDR | how much of Meshtastic's 25 % gate, and of a schedule's frame, other users take |
 | E11 | Height: the same links with a relay antenna at 1.2, 3 and 7 m, in hills | whether a raised relay gains the 8–15 dB the two-ray model predicts |
 | E12 | A DMD rider nearby: an EBYTE module with DMD's profile (868.125 MHz, 500 kHz, its pacing and power) 0.5–5 m from a node that receives a weak signal from a distant one | whether a DMD device in a mixed group deafens our radios, and from what distance. The modules are already on hand ([04](04-dmd-protocol.md)); runs stay short, since DMD's configured power and pacing are over that sub-band's limits (for information) |
+
+**Where to run them.** A city is the worst case for neighbours, and the trail is the target. E1
+and E2 run out of town, or record the public load as a condition of the run; E10 measures both
+places.
 
 **E6 in detail:**
 

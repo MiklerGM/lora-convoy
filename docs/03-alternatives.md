@@ -103,7 +103,14 @@ Our reading of the source, and what [MeshAnd](05-osmand-integration.md) recommen
 the firmware itself [docs]:
 
 - a private **primary** channel with **precise** location;
-- ShortFast or MediumFast on every radio;
+- ShortFast or MediumFast on every radio, whichever the local public mesh does not use. In
+  `EU_868` every 250 kHz preset sits in the one slot at 869.525 MHz, so a group on the public
+  preset decodes the whole public mesh: its airtime counts toward the 25 % gate, and with
+  rebroadcast mode `ALL` it gets relayed. On another preset the public traffic still shares the
+  air but is not decoded. In Berlin the public mesh has moved to MediumFast (the owner's
+  observation);
+- a node that carries only the group's channel: with the public channel too it hears far more
+  nodes, and a Client stretches its intervals once more than about 40 are online (above);
 - position settings:
   - GPS every 5–60 s;
   - smart position with a 10–60 s interval and 25–100 m distance;

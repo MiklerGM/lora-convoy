@@ -446,7 +446,7 @@ the frame:
 
 | Option | Conditions [docs] | Notes |
 |---|---|---|
-| 869.40–869.65 MHz | 10 % duty, 500 mW ERP; polite spectrum access instead allows less here (under 3.5 %) | the band confirmed along the route so far ([08](08-regions.md)). Meshtastic sits at 869.525 MHz (250 kHz) and MeshCore at 869.618 MHz (62.5 kHz), with LoRaWAN downlinks at 869.525 MHz. Measure the occupancy with the RTL-SDR |
+| 869.40–869.65 MHz | 10 % duty, 500 mW ERP; polite spectrum access instead allows less here (under 3.5 %) | the design band, open along most likely routes ([08](08-regions.md)); who else is in it, below. Measure the occupancy with the RTL-SDR |
 | 868.0–868.6 MHz | 1 % duty, 25 mW ERP | one rider every ~3 s at SF7 at best |
 | 169.400–169.475 MHz | 1 % duty, 500 mW ERP, occupied bandwidth ≤ 50 kHz (Decision 2025/105 row 37c; EN 300 220-2) | none of our LoRa modes fits, 62.5 kHz included; Garmin's approval says nothing about our waveform |
 
@@ -454,6 +454,49 @@ The actual country, application category, antenna ERP and occupied bandwidth com
 these; other countries are in [08](08-regions.md). Moving between frequencies in one band does not
 start a fresh duty allowance (ETSI EN 300 220-1, §5.4). A schedule that also hops is constrained in
 the US, where coordinating hopping transmitters to avoid each other is not permitted.
+
+**The trail decides the mode; towns are the exception.** Where there is no mobile coverage there is
+rarely any other LoRa traffic, so the mode follows from range and cadence for the group's size
+(Sizing above), not from neighbours. Starts and finishes are usually in towns, though, and a node
+on a hill can carry public traffic far into the country; there the group shares the window, and
+the protocol should lose some slots, not break. Hence cheap insurance rather than a design driver:
+a sync word of our own, an SF other than the local public mesh's where range allows, and a narrow
+channel only if E10 shows the window crowded.
+
+**Who is in 869.40–869.65 MHz** [code, docs]:
+
+| Who | Centre, MHz | Width | SF |
+|---|---|---|---|
+| Meshtastic `EU_868`, every 250 kHz preset: LongFast is the public default, and some cities have moved to MediumFast (Berlin, by the owner's observation) | 869.525 | 250 kHz, the whole window | 7–11, by preset |
+| Meshtastic LongModerate and LongSlow | 869.4625 / 869.5875 | 125 kHz | 11 / 12 |
+| Meshtastic `EU_N_868` (`develop`) | 869.442 / 869.525 / 869.608 | 62.5 kHz | 7 / 8 |
+| MeshCore, EU/UK Narrow | 869.618 | 62.5 kHz | 8 |
+| LoRaWAN downlinks (RX2) | 869.525 | 125 kHz | 9 on TTN, 12 by default |
+
+**Ways to share it:**
+
+- **By SF:** packets of different SF on one frequency should barely decode or disturb each other
+  unless one is much stronger [inference, to be measured]. Same SF and width collide head-on.
+- **By frequency:** a narrow channel at the window's edge moves away from some neighbours.
+- **By sync word:** only logically. Neither side decodes the other's packets; the air is still
+  shared.
+- **By time:** a schedule orders only our own group. Neighbours transmit at random.
+
+**What each mode meets in a town** [calc, 24-byte packet, the conventions of Capacity above; which
+presets public meshes use is our inference]:
+
+| Mode | On air | Link budget | 10 / 20 riders, each every | Same PHY nearby |
+|---|---|---|---|---|
+| SF7/250, 869.525 | 30.8 ms | 143 dB | 0.51 / 1.02 s | only ShortFast, which public meshes rarely use |
+| SF8/250, 869.525 | 56.6 ms | 145.5 dB | 0.83 / 1.66 s | only ShortSlow, likewise |
+| SF9/250, 869.525 | 102.9 ms | 148 dB | 1.41 / 2.82 s | MediumFast: head-on where it is the public mesh |
+| SF10/125, 869.4625 | 370.7 ms | 153.5 dB | 4.76 / 9.52 s | next to LongModerate (another SF) and half of LoRaWAN's RX2 |
+| SF7/62.5, 869.442 | 123.4 ms | ~149 dB | 1.67 / 3.33 s | `EU_N_868`'s lowest channel (NarrowFast); farthest from MeshCore and LoRaWAN |
+
+The 62.5 kHz budget assumes about 3 dB per halving of bandwidth, which our 125 kHz figures follow.
+The two-speed idea's slow slot, SF11/250, is LongFast's PHY: without a sync word of our own every
+radio would also receive the public LongFast mesh. That sync word needs testing on hardware: in
+dmd2-lora-bridge a second sync symbol once kept EBYTE modules from taking our packets [bench].
 
 A shorter preamble saves airtime: 8 symbols down to 5 is 5 % at SF7/250 and 6.6 % at SF10/125
 [calc], at some cost in detection that E2 and E6 measure. Bike-powered nodes can listen all the
