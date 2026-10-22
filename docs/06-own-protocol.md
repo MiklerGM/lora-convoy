@@ -409,8 +409,28 @@ the frame:
     a packet worst rebroadcast first and cancels the others' copies [code:
     `RadioInterface.cpp:867-876` at `fad52bb`], but without knowing who missed it, so even in a
     tight group one copy goes out.
-  - E6's receive logs, one line per packet heard, already contain the hearing graph, so relay rules
-    can be compared offline on recorded rides before any is built.
+  - E8's receive logs, one line per packet heard, already contain the hearing graph, so relay rules
+    can be compared offline before any is built: on recorded rides, and on made-up cases such as
+    a rider bridging two bunches, a stretched column where each rider hears only its neighbours,
+    the chosen relay dropping out, and two candidates whose views differ.
+- **One owner per relay slot.** Two radios in one relay slot clash, so the owner is settled before
+  the slot, never by whoever transmits first. Ways to settle it, all still ideas:
+  - by role: the organiser names one or two relays when the group is created (the sweep rider, a
+    support vehicle, a mast). Simple, and it matches roles a column already has;
+  - in turn, by frame number. Nothing clashes, but when one rider bridges two bunches, only that
+    rider's turn helps, once in N frames;
+  - by the hearing graph, as above. A single bridge is the easy case, since every radio sees the
+    same one candidate. With several candidates and views that differ, because each radio lost
+    different packets, two may transmit, so it needs a tie-break and a fallback to the turn order;
+  - piggybacked, as in another rider's own protocol: each packet carries the sender's record plus
+    up to three others, the one heard weakest and then whoever was relayed least. No owner,
+    nothing clashes and no bitmaps, but a relaying packet grows from 18 to 60 bytes.
+- **A single bridge is the budget's hard case.** Four riders in one bunch, five in another, and one
+  rider who hears both: a relay packet is a broadcast and serves both bunches at once, but the
+  bridge pays for it from its own 10 % [calc; 10 riders, the conventions of Capacity above, a
+  relay packet of about 70 bytes]. At SF7/250 its own positions take 6.0 % and leave room for a
+  relay packet every 1.6 s; at SF10/125 they take 7.8 %, and a relay packet fits only every 35 s.
+  While bridging, it could send its own position less often, or relay only riders who have moved.
 - **What a relay packet carries:** riders it heard recently that others may not have, each as an
   offset from the relay's own position plus the original fix time. About 6 bytes per rider, so ten
   riders fit in about 70 bytes: 64 ms at SF7/250, so a relay slot is a larger slot.
@@ -538,6 +558,6 @@ steps (Packet sketch above).
 - Typed slots for routes and relays: sizes, and how often.
 - What a hub stores: the GPX itself, as other apps and services exchange it, or our binary geometry,
   smaller and the same as over LoRa. It depends on how and with whom we integrate.
-- Relay selection from the hearing graph: how old a bitmap may be, the rule every radio computes,
-  and what happens when the chosen relay drops out.
+- Who owns a relay slot: role, turn, hearing graph or piggyback. For the hearing graph: how old a
+  bitmap may be, the rule every radio computes, and what happens when the chosen relay drops out.
 - Receiving all the time on bike power versus duty-cycled reception on battery.
