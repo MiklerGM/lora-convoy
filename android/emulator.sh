@@ -16,6 +16,9 @@
 # M2: run route; in the app, Show in OsmAnd, then Navigate along it. A share (SEND) cannot be
 # tested from adb: `am start` grants only the intent's data, and a share grants its stream.
 #
+# M4: make -C ../firmware sim ARGS="serve 3" in another terminal; in the app, Simulated board with
+# 10.0.2.2:4403. OsmAnd shows the riders that board 0 hears.
+#
 # The image is Google APIs without the Play Store, so `adb root` works for looking inside apps.
 set -euo pipefail
 
@@ -114,7 +117,7 @@ down)
     adb emu kill
     ;;
 *)
-    sed -n '2,19p' "$0"
+    sed -n '2,22p' "$0"
     exit 2
     ;;
 esac

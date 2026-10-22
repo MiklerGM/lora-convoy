@@ -6,10 +6,11 @@ import java.time.format.DateTimeFormatter
 import kotlin.math.max
 
 /**
- * One rider as the app knows them, whatever the source: the mock now, a board from M4.
+ * One rider as the app knows them, whatever the source: the mock, or a board's RIDER lines.
  *
  * Two ages, never one (01-goals, separate statuses): when the position was measured, and when the
- * rider was last heard. A rider heard a second ago can still carry a minute-old fix.
+ * rider was last heard. A rider heard a second ago can still carry a minute-old fix. What the
+ * source does not know stays null rather than turning into a plausible number.
  */
 data class Rider(
     val id: String,
@@ -18,10 +19,10 @@ data class Rider(
     val color: Int,
     val lat: Double,
     val lon: Double,
-    val fixAtMs: Long,
+    val fixAtMs: Long?,
     val heardAtMs: Long,
-    val speedKmh: Int,
-    val courseDeg: Int,
+    val speedKmh: Int?,
+    val courseDeg: Int?,
     val help: Boolean = false,
     val stopped: Boolean = false,
     val gpsOk: Boolean = true,
@@ -68,8 +69,16 @@ fun Rider.toPoint(nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): PointSpec
     val details = buildList {
         if (help) add("Needs help")
         add("Heard at ${at(heardAtMs)}")
-        add(if (gpsOk) "Fix from ${at(fixAtMs)}" else "No GPS fix")
-        add(if (stopped || speedKmh == 0) "Stopped" else "$speedKmh km/h, heading $courseDeg°")
+        add(when {
+            fixAtMs == null -> "Fix time unknown"
+            gpsOk -> "Fix from ${at(fixAtMs)}"
+            else -> "No GPS fix; the last from ${at(fixAtMs)}"
+        })
+        add(when {
+            stopped || speedKmh == 0 -> "Stopped"
+            speedKmh == null -> "Speed unknown"
+            else -> "$speedKmh km/h" + (courseDeg?.let { ", heading $it°" } ?: "")
+        })
     }
     return PointSpec(
         id = id,

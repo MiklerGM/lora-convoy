@@ -5,6 +5,13 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- A simulated board's phone API over TCP (firmware/test/sim.c serve), and later the hub. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <!-- A board over Bluetooth. Android 12 and later (D12): no location permission to scan. -->
+    <uses-permission
+        android:name="android.permission.BLUETOOTH_SCAN"
+        android:usesPermissionFlags="neverForLocation" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <!-- Package visibility: whichever OsmAnd is installed (OsmAnd, OsmAnd+, OsmAnd~, nightly)
          answers on this action. -->

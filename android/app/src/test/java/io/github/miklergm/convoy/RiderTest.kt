@@ -32,7 +32,7 @@ class RiderTest {
         val (north, east) = offset(a10, a11)
         assertEquals(40 / 3.6, sqrt(north * north + east * east), 0.2)
         val bearing = Math.floorMod(Math.toDegrees(atan2(east, north)).toInt(), 360)
-        val diff = abs(bearing - a10.courseDeg)
+        val diff = abs(bearing - a10.courseDeg!!)
         assertTrue("bearing $bearing, course ${a10.courseDeg}", minOf(diff, 360 - diff) <= 3)
         assertEquals(start + 11_000, a11.heardAtMs)
     }
@@ -72,7 +72,7 @@ class RiderTest {
             assertEquals("A 45 s", it.shortName)
             assertEquals(STALE_COLOR, it.color)
             assertTrue(it.stale)
-            assertEquals(listOf("Heard at 08:00:55", "No GPS fix"), it.details.take(2))
+            assertEquals(listOf("Heard at 08:00:55", "No GPS fix; the last from 08:01:37"), it.details.take(2))
         }
         // the edge: stale only once past the threshold
         assertFalse(fresh.copy(heardAtMs = now - STALE_AFTER_MS).toPoint(now, utc).stale)
