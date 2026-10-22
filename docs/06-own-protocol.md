@@ -348,6 +348,14 @@ and cut to the segment.
 
 ### Delivering it to everyone
 
+**A hub is the fast path when anyone has internet** (a wish in [01](01-goals.md)). The phone
+encrypts the geometry with the group key and uploads it; the hub keeps it under its hash, without
+accounts, and deletes it a few days after the ride. Over LoRa only the intent goes, and whoever is
+online fetches the geometry. The intent's ~6-byte hash is enough to find the file but not to trust
+it: a 48-bit match can be forced with hours of GPU time [calc, rough], so the group key's
+authentication is what proves the file unaltered. In the field nobody has internet, so the delivery
+below stays the fallback.
+
 **The hard part is delivery**, not airtime: in a broadcast, each rider misses different packets.
 
 - **Route packets need slots of their own.** A 246-byte route packet takes 192 ms at SF7/250 and
@@ -463,7 +471,8 @@ time, so no receive duty cycling is needed in v1.
   certified off-the-shelf board than on one we build;
 - riders' tracks are personal data: what a companion logs, for how long and who sees it are design
   choices, though a private group ride likely falls under GDPR's household exemption
-  (Art. 2(2)(c));
+  (Art. 2(2)(c)). A hub that serves other groups does not, which is why it is designed to know
+  nothing ([01](01-goals.md));
 - the security design above, done properly.
 
 ## Ideas, not yet decisions
@@ -527,6 +536,8 @@ steps (Packet sketch above).
   acknowledged.
 - The tag length, and the key lifetime it implies.
 - Typed slots for routes and relays: sizes, and how often.
+- What a hub stores: the GPX itself, as other apps and services exchange it, or our binary geometry,
+  smaller and the same as over LoRa. It depends on how and with whom we integrate.
 - Relay selection from the hearing graph: how old a bitmap may be, the rule every radio computes,
   and what happens when the chosen relay drops out.
 - Receiving all the time on bike power versus duty-cycled reception on battery.
