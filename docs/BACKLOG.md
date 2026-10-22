@@ -162,7 +162,9 @@ After M7.
 ### T-survive: the app through a whole ride
 
 Samsung's sleeping apps, the battery exemption, reconnects, a soak run (E7). Much of it is in
-dmd2-lora-bridge already. Needed by M7.
+dmd2-lora-bridge already, including what its Bluetooth link learned on rides and the app's lean
+`BleBoardLink` leaves out: a bond gone stale on one side, and pinning the chosen board by name.
+Needed by M7.
 
 ## Firmware and boards
 

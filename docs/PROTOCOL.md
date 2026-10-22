@@ -69,20 +69,38 @@ counts the packets taken against the run of counters seen: their ratio is the de
 00 07 03 01 23 45 FA C5 43 0B 84 06 C5 56 28 87 04
 ```
 
-## Lines on the console
+## The phone API
 
-Each board prints what it does, one line each, as `key=value` tokens: the words the phone API
-takes over in M4 (ARCHITECTURE, D9).
+Text lines of `key=value` tokens after a word, ending in a newline (ARCHITECTURE, D9). The same
+on three transports:
+
+| Transport | Where | Details |
+|---|---|---|
+| Bluetooth | a board and the app | Nordic UART Service (`6e400001-b5a3-f393-e0a9-e50e24dcca9e`, commands to `…0002`, lines from `…0003`). The board advertises as `LoRaConvoy-` and eight hex digits of its address. Commands go only over an encrypted link: the first phone to pair (Just Works) owns the board and others are refused, until `FORGET` or the board's button held 3 s frees it (dmd2-lora-bridge's model) |
+| TCP | a simulated board and the app | `make -C firmware sim ARGS="serve 3"` serves board *i* on 127.0.0.1:4403+*i*; an Android emulator reaches it at 10.0.2.2 |
+| USB console | a board and a person | the same commands, typed; `FORGET` there is a hand on the board, like the button |
+
+**Version.** `proto=` in the status line, 1 for now. An app refuses a board with another (D3).
+
+| Phone to board | Board to phone |
+|---|---|
+| `STATUS` | `STATUS proto=1 board=… reset=… up=… slot=… group=… fix=… … power=… dbm=…` |
+| `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>` |
+| `SLOT <0–31>`, `GROUP <0–255>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |
+| `FORGET` | `FORGOTTEN` once the board has dropped its bond, or `ERR forget incomplete` |
+| `REBOOT`, and `BOOTLOADER` on the L1 Pro (its UF2 drive) | — |
+
+Unasked, the board sends a `RIDER` line for every packet it takes, and its status every 10 s while
+a phone is connected. The app sends `STATUS` every 10 s, which keeps the link from being dropped
+as silent. Commands are case-blind.
 
 ```
-TX counter=12 len=17 ok
-RIDER slot=2 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 rssi=-71 snr=8.25 rx=13/14
-GNSS fix=1 time=1 sats=9 hdop=0.9 bad=0
-STATUS slot=1 group=1 fix=1 lat=… lon=… sats=9 hdop=0.9 time=1 tx=12 skipped=0 duty=0.43% riders=2 bad=0 foreign=0 clash=0
+RIDER slot=2 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 rssi=-71 snr=8.25 rx=13/14
 ```
 
-Commands: `status`, `riders`, `slot N`, `group N`, `interval MS`, `power 0–3` (0 the strongest),
-`reboot`, and on the L1 Pro `bootloader`, which opens its UF2 drive for a new image.
+`fix_age` is in whole seconds and can be negative (the sender's clock is wrong) or `?` (this board
+has no time of its own); `heard` is in tenths of a second; `rx` is packets taken against the run of
+counters. On the console the board also prints `TX`, `RX dropped` and `GNSS` lines.
 
 ## What v1 changes
 

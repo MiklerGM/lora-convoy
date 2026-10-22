@@ -28,7 +28,7 @@ flowchart TD
 | M1 | Mock riders on the OsmAnd map | ✅ | | done, no hardware |
 | M2 | A route from outside | ✅ | | done, no hardware |
 | M3 | Protocol v0: a beacon and a receiver | | ✅ | done, no hardware |
-| M4 | A board and the app | ✅ | ✅ | planned |
+| M4 | A board and the app | ✅ | ✅ | done, no hardware |
 | M5 | A private group: invitation and encryption | ✅ | ✅ | planned |
 | M6 | Slots by GPS time | | ✅ | planned |
 | M7 | Ready for a first ride | ✅ | ✅ | planned |
@@ -139,6 +139,14 @@ power lines and the sync word are unchecked.
 connects to node 1 over TCP, and OsmAnd shows nodes 2 and 3 moving along their tracks.
 **Test on hardware:** the owner's phone paired with each board in turn, with the other board's
 rider on the map.
+
+**Result, 2026-10-22, without hardware:** the phone API is one handler (`firmware/src/api.c`) for
+Bluetooth, the console and TCP, with host tests. `sim serve` runs simulated boards in real time
+with the API on TCP; on the emulator the app connected to board 0 and OsmAnd showed boards 1 and 2
+moving around Vaduz. Bluetooth is dmd2-lora-bridge's, ported to both images (one owner, Just Works,
+FORGET and the button) and a leaner client in the app (`BleBoardLink`); it builds, and is untried
+until a board is on the bench. The app's riders now come from a chosen source: the mock, a
+simulated board, or a board over Bluetooth.
 
 ## M5. A private group: invitation and encryption
 

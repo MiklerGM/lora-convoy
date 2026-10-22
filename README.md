@@ -6,7 +6,8 @@ a moving group could do better.
 
 **Status:** research notes and calculation tools, and the start of building it: architecture,
 roadmap and backlog below; an app that shows riders and routes in OsmAnd, and firmware for the
-Heltec V4.3 and the Wio Tracker L1 Pro, all tested without hardware (M1–M3). Nothing has run on a
+Heltec V4.3 and the Wio Tracker L1 Pro that talks to it over Bluetooth, all tested without hardware
+(M1–M4). Nothing has run on a
 board yet, and nothing here has been ridden.
 
 ## Why this exists
@@ -44,7 +45,8 @@ Nothing is stable yet: the air format, the phone API and the app may all change 
 
 The app is in `android/`, the firmware in `firmware/`. `make check` runs every test that needs
 no hardware and builds both board images; `android/emulator.sh` sets up an emulator with OsmAnd,
-and `make -C firmware sim ARGS="10 2000 600"` simulates ten riders for ten minutes.
+`make -C firmware sim ARGS="10 2000 600"` simulates ten riders for ten minutes, and
+`make -C firmware sim ARGS="serve 3"` serves three simulated boards to the app.
 
 ## Tools
 
