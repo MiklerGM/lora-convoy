@@ -109,6 +109,10 @@ void port_wdt_feed(int watch) {
     if (watch >= 0) task_wdt_feed(watch);
 }
 
+void port_wdt_unwatch(int watch) {
+    if (watch >= 0) task_wdt_delete(watch);
+}
+
 /* ---- pins ------------------------------------------------------------------ */
 
 static const struct device *const s_gpio[] = {
@@ -123,6 +127,17 @@ void port_pin_input(int pin) { gpio_pin_configure(pin_port(pin), pin % 32, GPIO_
 /* Raw: the level on the wire, as the ESP32 builds mean it, not the devicetree's active sense. */
 void port_pin_set(int pin, int level) { gpio_pin_set_raw(pin_port(pin), pin % 32, level); }
 int port_pin_get(int pin) { return gpio_pin_get_raw(pin_port(pin), pin % 32); }
+
+static const struct gpio_dt_spec s_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
+
+/* Logical, so the devicetree's polarity and pull apply; configured on first use. */
+bool port_button_down(void) {
+    static bool ready;
+    if (!ready) {
+        ready = gpio_pin_configure_dt(&s_button, GPIO_INPUT) == 0;
+    }
+    return ready && gpio_pin_get_dt(&s_button) == 1;
+}
 
 /* ---- the radio's bus -------------------------------------------------------- */
 
@@ -192,6 +207,8 @@ static uint32_t note_once(void) {
     }
     return note;
 }
+
+uint32_t port_restart_note(void) { return note_once(); }
 
 /* The nRF52's reset reasons, in ESP-IDF's words where there is one. A brownout looks like a
  * power-on here: the chip keeps no separate flag for it. */

@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "api.h"
 #include "codec.h"
 #include "nmea.h"
 #include "node.h"
@@ -36,13 +37,13 @@ static void test_airtime(void) {
         }
     }
     phy_t p = PHY_V0;
-    assert(phy_valid(&p) && !phy_ldro(&p));
+    assert(phy_supported(&p) && !phy_ldro(&p));
     p.sf = 11, p.bw_hz = 125000;
     assert(phy_ldro(&p)); /* 16.384 ms symbols */
     p.sf = 10;
     assert(!phy_ldro(&p));
     p.bw_hz = 200000;
-    assert(!phy_valid(&p));
+    assert(!phy_supported(&p));
     printf("phy: airtime matches tools/airtime.py in %zu cases\n", sizeof(cases) / sizeof(cases[0]));
 }
 
@@ -288,8 +289,68 @@ static void test_node_hears(void) {
     node_format_rider(&blind, 2, 0, line, sizeof(line));
     assert(strstr(line, "fix_age=? "));
     node_format_status(&n, 9 * SEC, line, sizeof(line));
-    assert(strstr(line, "STATUS slot=1 group=7 fix=0 ") && strstr(line, "riders=3 "));
+    assert(strncmp(line, "slot=1 group=7 fix=0 ", 21) == 0 && strstr(line, "riders=3 "));
     printf("node: ages unwrapped and honest, the delivered share, and what it keeps out\n");
+}
+
+/* ---- the phone API ------------------------------------------------------------------ */
+
+static char replies[8][256];
+static int n_replies;
+
+static void collect(void *ctx, const char *line) {
+    (void)ctx;
+    assert(n_replies < 8);
+    snprintf(replies[n_replies++], sizeof(replies[0]), "%s", line);
+}
+
+static int dbm(uint8_t level) { return 22 - 2 * level; }
+
+static bool starts(const char *s, const char *prefix) { return strncmp(s, prefix, strlen(prefix)) == 0; }
+
+static void ask(api_t *api, const char *command) {
+    char line[64];
+    snprintf(line, sizeof(line), "%s", command);
+    n_replies = 0;
+    api_command(api, line, 10 * SEC, collect, NULL);
+}
+
+static void test_api(void) {
+    node_t n;
+    uint8_t b[PKT_POSITION_LEN];
+    node_init(&n, &CFG, 7, 0);
+    gnss_fix_t f = fix_at(1792670405000ll, true);
+    node_on_fix(&n, &f, 0);
+    node_on_packet(&n, b, packet(b, 7, 2, 10, 64192), -71, 33, 3 * SEC);
+    api_t api = {.node = &n, .board = "test", .reset = "poweron", .power = 3, .tx_dbm = dbm};
+
+    ask(&api, "STATUS");
+    assert(n_replies == 1 && starts(replies[0], "STATUS proto=1 board=test reset=poweron up=10 slot=1 "));
+    assert(strstr(replies[0], " power=3 dbm=16"));
+    ask(&api, "riders"); /* the console types it in lower case */
+    assert(n_replies == 2 && starts(replies[0], "RIDER slot=2 ") && strcmp(replies[1], "RIDERS 1") == 0);
+    assert(strstr(replies[0], " gps=1 help=0 stopped=0 "));
+
+    ask(&api, "SLOT 5");
+    assert(strcmp(replies[0], "OK slot=5") == 0 && n.cfg.slot == 5);
+    ask(&api, "SLOT 32");
+    assert(starts(replies[0], "ERR ") && n.cfg.slot == 5);
+    ask(&api, "GROUP 9");
+    ask(&api, "INTERVAL 499");
+    assert(starts(replies[0], "ERR ") && n.cfg.interval_ms == 2000 && n.cfg.group == 9);
+    ask(&api, "POWER 0");
+    assert(strcmp(replies[0], "OK power=0 dbm=22") == 0 && api.power == 0 && api.power_changed);
+
+    /* What only the caller can do is left to it, unanswered here. */
+    ask(&api, "FORGET");
+    assert(n_replies == 0 && api.forget);
+    ask(&api, "REBOOT");
+    assert(n_replies == 0 && api.restart);
+    ask(&api, "FORGET now");
+    assert(n_replies == 1 && starts(replies[0], "ERR "));
+    ask(&api, "");
+    assert(n_replies == 1 && starts(replies[0], "ERR "));
+    printf("api: status, riders, settings, and what it leaves to the caller\n");
 }
 
 int main(void) {
@@ -299,5 +360,6 @@ int main(void) {
     test_node_sends();
     test_node_duty();
     test_node_hears();
+    test_api();
     return 0;
 }

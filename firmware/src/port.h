@@ -40,7 +40,10 @@
  *   uint32_t port_random(void)                  from the chip's own generator
  *   size_t  port_device_id(uint8_t *out, size_t cap)   bytes that tell this chip from another
  *
- *   void    port_restart(uint32_t note)
+ *   bool    port_button_down(void)              the board's one button, held
+ *
+ *   void    port_restart(uint32_t note)         restarts, leaving the note for the next start
+ *   uint32_t port_restart_note(void)            that note once, then 0; 0 after a power loss
  *   const char *port_reset_cause(void)          poweron brownout panic int_wdt task_wdt wdt pin
  *                                               sw other - in ESP-IDF's words where it has one
  *

@@ -19,7 +19,7 @@ typedef struct {
 /* v0's one mode: SF7/250 at 869.525 MHz, the middle of 869.40-869.65 MHz. */
 extern const phy_t PHY_V0;
 
-bool phy_valid(const phy_t *p);
+bool phy_supported(const phy_t *p);
 
 /* Microseconds per symbol: exact for the four bandwidths above. */
 uint32_t phy_symbol_us(const phy_t *p);

@@ -78,6 +78,6 @@ bool node_utc_ms(const node_t *n, int64_t now_us, int64_t *utc_ms);
 /* Transmit time over the last 60 minutes, in milliseconds. */
 uint32_t node_duty_used_ms(const node_t *n, int64_t now_us);
 
-/* One line about one rider, or about ourselves: the console's words now, the phone API's in M4. */
+/* One RIDER line, and the node's part of the status line: the phone API's words (api.h). */
 int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf, size_t cap);
 int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap);

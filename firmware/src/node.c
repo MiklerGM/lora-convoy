@@ -175,10 +175,11 @@ int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf,
     const int snr = r->snr_db4 < 0 ? -r->snr_db4 : r->snr_db4;
     return snprintf(buf, cap,
                     "RIDER slot=%u lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
-                    "rssi=%d snr=%s%d.%02d rx=%lu/%lu",
+                    "help=%d stopped=%d rssi=%d snr=%s%d.%02d rx=%lu/%lu",
                     slot, deg(lat, sizeof(lat), r->last.lat_e7), deg(lon, sizeof(lon), r->last.lon_e7),
                     age, heard10 / 10, heard10 % 10, speed, course,
-                    (r->last.status & ST_GPS_OK) ? 1 : 0, r->rssi_dbm, r->snr_db4 < 0 ? "-" : "",
+                    (r->last.status & ST_GPS_OK) ? 1 : 0, (r->last.status & ST_HELP) ? 1 : 0,
+                    (r->last.status & ST_STOPPED) ? 1 : 0, r->rssi_dbm, r->snr_db4 < 0 ? "-" : "",
                     snr / 4, snr % 4 * 25, (unsigned long)r->received,
                     (unsigned long)(r->last.counter - r->first_counter + 1));
 }
@@ -190,7 +191,7 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     char lat[16], lon[16];
     const bool current = n->fix.valid && now_us - n->fix_us <= FIX_FRESH_US;
     return snprintf(buf, cap,
-                    "STATUS slot=%u group=%u fix=%d lat=%s lon=%s sats=%u hdop=%u.%u time=%d tx=%lu "
+                    "slot=%u group=%u fix=%d lat=%s lon=%s sats=%u hdop=%u.%u time=%d tx=%lu "
                     "skipped=%lu duty=%lu.%02lu%% riders=%d bad=%lu foreign=%lu clash=%lu",
                     n->cfg.slot, n->cfg.group, current ? 1 : 0, deg(lat, sizeof(lat), n->held.lat_e7),
                     deg(lon, sizeof(lon), n->held.lon_e7), n->fix.sats, n->fix.hdop10 / 10,

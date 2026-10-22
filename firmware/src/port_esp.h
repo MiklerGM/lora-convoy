@@ -41,7 +41,10 @@ bool port_task_create(void (*fn)(void *), const char *name, size_t stack, int pr
 int port_wdt_watch(void);
 void port_wdt_feed(int watch);
 
+bool port_button_down(void);
+
 void port_restart(uint32_t note);
+uint32_t port_restart_note(void);
 const char *port_reset_cause(void);
 
 void port_console_open(void);

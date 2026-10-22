@@ -33,6 +33,7 @@ bool port_task_create(void (*fn)(void *), const char *name, size_t stack, int pr
 
 int port_wdt_watch(void);
 void port_wdt_feed(int watch);
+void port_wdt_unwatch(int watch);
 
 void port_pin_output(int pin);
 void port_pin_input(int pin);
@@ -42,7 +43,10 @@ int port_pin_get(int pin);
 void port_radio_spi_init(int nss, int sck, int mosi, int miso);
 bool port_radio_spi_xfer(const uint8_t *tx, uint8_t *rx, size_t len);
 
+bool port_button_down(void);
+
 void port_restart(uint32_t note);
+uint32_t port_restart_note(void);
 const char *port_reset_cause(void);
 
 void port_console_open(void);

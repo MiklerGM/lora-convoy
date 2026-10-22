@@ -9,12 +9,15 @@ set(SHARED ${CMAKE_CURRENT_SOURCE_DIR}/../src)
 target_sources(app PRIVATE
     src/main.c
     src/port_zephyr.c
+    src/ble_nus.c
+    src/store.c
     ${SHARED}/run.c
     ${SHARED}/sx1262.c
     ${SHARED}/phy.c
     ${SHARED}/codec.c
     ${SHARED}/nmea.c
     ${SHARED}/node.c
+    ${SHARED}/api.c
 )
 target_include_directories(app PRIVATE src ${SHARED})
 # The board's pins, from its devicetree, ahead of everything else: sx1262.h's defaults are the

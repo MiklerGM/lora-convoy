@@ -15,7 +15,7 @@ const phy_t PHY_V0 = {
     .sync = {0x64, 0x74},
 };
 
-bool phy_valid(const phy_t *p) {
+bool phy_supported(const phy_t *p) {
     const bool bw = p->bw_hz == 62500 || p->bw_hz == 125000 || p->bw_hz == 250000 ||
                     p->bw_hz == 500000;
     return bw && p->sf >= 7 && p->sf <= 12 && p->cr >= 5 && p->cr <= 8 && p->preamble >= 6 &&

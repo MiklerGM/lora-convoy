@@ -411,7 +411,7 @@ void radio_init(void) {
 }
 
 bool radio_apply(const phy_t *phy, uint8_t power_level) {
-    if (!phy_valid(phy) || power_level > 3 || !bus_lock()) return false;
+    if (!phy_supported(phy) || power_level > 3 || !bus_lock()) return false;
     /* Forgotten before the first write: a sequence that stops partway leaves the chip partly on the
      * new mode, and radio_verify must not pass it. */
     s_applied = false;

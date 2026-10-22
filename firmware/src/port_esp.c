@@ -3,6 +3,7 @@
 
 #include "driver/uart.h"
 #include "driver/usb_serial_jtag.h"
+#include "esp_attr.h"
 #include "esp_mac.h"
 #include "esp_random.h"
 #include "esp_system.h"
@@ -29,9 +30,25 @@ void port_wdt_feed(int watch) {
     esp_task_wdt_reset();
 }
 
+#ifndef PIN_PAIR_BUTTON
+#error "PIN_PAIR_BUTTON must name this board's runtime BOOT button"
+#endif
+
+/* Pulled up and configured by main; BOOT is held when it reads low. */
+bool port_button_down(void) { return gpio_get_level((gpio_num_t)PIN_PAIR_BUTTON) == 0; }
+
+/* RTC memory survives a software restart but not a power loss. */
+static RTC_NOINIT_ATTR uint32_t s_restart_note;
+
 void port_restart(uint32_t note) {
-    (void)note;
+    s_restart_note = note;
     esp_restart();
+}
+
+uint32_t port_restart_note(void) {
+    const uint32_t note = s_restart_note;
+    s_restart_note = 0;
+    return note;
 }
 
 const char *port_reset_cause(void) {
