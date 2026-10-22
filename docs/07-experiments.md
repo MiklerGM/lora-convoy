@@ -110,7 +110,7 @@ None of E0–E12 has run yet. Measurements the documents already rely on:
   ([04](04-dmd-protocol.md)). It is a single point: longer packets are extrapolated from it, and it
   says nothing about delivery.
 - **DMD's delivery on two rides**, from dmd2-lora-bridge's logs: about 45 % of the other device's
-  packets on 2026-09-29 and 49 % on 10-02, on days with other known losses
+  packets on 2026-09-29, and 49 % between the tablet and the NOR7E on 10-02, with other known losses
   ([04](04-dmd-protocol.md)).
 - **Route sizes** ([06](06-own-protocol.md)): `python3 -I tools/route_size.py FILE...` with its
   default tolerances, 2 to 500 m. That is a 1e-5° grid, 230 bytes of route per packet and a 24-byte

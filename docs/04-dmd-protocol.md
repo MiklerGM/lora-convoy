@@ -56,10 +56,13 @@ It works for two or three riders close together.
    | 6 | 139 B | 724 ms | 4.0 s | 109 % | 18 % |
    | 9 | 195 B | 990 ms | 5.5 s | 162 % | 18 % |
 
-   On 09-29, with three devices, each of ours received about 45 % of the other's packets; 49 % on
-   10-02 [bench]. That is consistent with the table, though those days had other losses too: an
-   E220 on 3V3 transmitting 20–30 dB weak, and two of our devices falling into step and deafening
-   each other.
+   On 09-29, with three devices, each of ours received about 45 % of the other's packets; on 10-02
+   the tablet and the NOR7E heard each other 49 % of the time, all three riders within 10–300 m
+   [bench]. That is consistent with the table. Two known losses came on top, smaller than they
+   look: the phone's E220 ran on 3V3 and transmitted 20–30 dB weak, though the NOR7E still heard
+   it most of the time (the owner's account); and until 10-01 two of our devices could fall into
+   step and deafen each other, which randomised pacing fixed for 10-02 [bench: dmd2-lora-bridge
+   `docs/ROADMAP.md`].
 2. **Wasted airtime.** The binary packet goes out as base64 (+33 %), behind EBYTE's 8-byte header.
    A nine-rider packet takes about one second.
 3. **Ages on inconsistent clocks.** Each record carries a three-byte position age, but no absolute
