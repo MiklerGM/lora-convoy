@@ -15,7 +15,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 
-/** One screen: where the riders come from, what OsmAnd says, and the board's own state. */
+/** The main screen: where the riders come from, what OsmAnd says, and the board's own state. */
 class MainActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
@@ -47,6 +47,7 @@ class MainActivity : Activity() {
             setPadding(pad, pad, pad, pad)
             addView(TextView(this@MainActivity).apply { text = "LoRa Convoy $version"; textSize = 20f })
             addView(status)
+            addView(button("Group") { startActivity(Intent(this@MainActivity, GroupActivity::class.java)) })
             addView(button("Mock riders") { start(ConvoyService.Source.Mock) })
             addView(target)
             addView(button("Simulated board") { simulated()?.let(::start) })
@@ -156,7 +157,15 @@ class MainActivity : Activity() {
         val lines = mutableListOf(ConvoyService.sourceText ?: "", osmand)
         ConvoyService.linkState?.let { lines.add("Link: $it") }
         ConvoyService.board?.let {
-            lines.add("Board: ${it.board}, slot ${it.slot} of group ${it.group}, " +
+            val mine = GroupActivity.Group.load(this)
+            val tag = "%02x".format(it.group)
+            val group = when {
+                !it.keyed -> "no group key, so it sends nothing"
+                mine != null && it.group == mine.groupTag() -> "in ${mine.name}"
+                mine != null -> "in group $tag, not ${mine.name} yet"
+                else -> "in group $tag"
+            }
+            lines.add("Board: ${it.board}, rider ${it.slot + 1}, $group, " +
                 (if (it.fix) "GNSS fix" else "no GNSS fix") + ", ${it.riders} riders heard, " +
                 "${it.dbm ?: "?"} dBm, duty ${it.duty}, started after ${it.reset}")
         }

@@ -7,13 +7,16 @@ package io.github.miklergm.convoy
 object BoardLines {
 
     /** The version of the phone API this app speaks. A board with another is refused (D3). */
-    const val PROTO = 1
+    const val PROTO = 2
 
     /** The board's own state, from its STATUS line. */
     data class Status(
         val proto: Int,
         val board: String,
         val slot: Int,
+        /** Without a group key a board sends nothing, and hears nobody. */
+        val keyed: Boolean,
+        /** The group's tag, the second byte of its packets; 0 without a key. */
         val group: Int,
         val fix: Boolean,
         val riders: Int,
@@ -36,7 +39,8 @@ object BoardLines {
             proto = t["proto"]?.toIntOrNull() ?: return null,
             board = t["board"] ?: "?",
             slot = t["slot"]?.toIntOrNull() ?: return null,
-            group = t["group"]?.toIntOrNull() ?: return null,
+            keyed = t["keyed"] == "1",
+            group = t["group"]?.toIntOrNull(16) ?: return null,
             fix = t["fix"] == "1",
             riders = t["riders"]?.toIntOrNull() ?: 0,
             duty = t["duty"] ?: "?",
@@ -60,8 +64,9 @@ object BoardLines {
         if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
         return Rider(
             id = "slot$slot",
-            name = "Rider $slot",
-            short = "$slot",
+            // riders count from 1, as the group screen does; slots from 0
+            name = "Rider ${slot + 1}",
+            short = "${slot + 1}",
             color = PALETTE[slot % PALETTE.size],
             lat = lat,
             lon = lon,
@@ -75,7 +80,7 @@ object BoardLines {
         )
     }
 
-    /** One colour per slot until the invitation names riders (M5); red and grey are taken. */
+    /** One colour per slot, until riders have names; red and grey are taken. */
     private val PALETTE = intArrayOf(
         0xFF1E88E5.toInt(), 0xFF43A047.toInt(), 0xFFFB8C00.toInt(), 0xFF8E24AA.toInt(),
         0xFF00897B.toInt(), 0xFF6D4C41.toInt(), 0xFF3949AB.toInt(), 0xFFC0CA33.toInt(),

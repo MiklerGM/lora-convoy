@@ -16,8 +16,11 @@
 # M2: run route; in the app, Show in OsmAnd, then Navigate along it. A share (SEND) cannot be
 # tested from adb: `am start` grants only the intent's data, and a share grants its stream.
 #
-# M4: make -C ../firmware sim ARGS="serve 3" in another terminal; in the app, Simulated board with
-# 10.0.2.2:4403. OsmAnd shows the riders that board 0 hears.
+# M4 and M5: make -C ../firmware sim ARGS="serve 3" in another terminal. In the app, Group, and
+# create one of 3 riders; the app is rider 1 and sets board 0 up itself. Boards 1 and 2 get the same
+# key by hand, as their riders' apps would give it: the key is bytes 1-16 of the invitation
+# (`adb shell run-as io.github.miklergm.convoy cat shared_prefs/group.xml`), sent as KEY <32 hex>
+# to 127.0.0.1:4404 and :4405. Then Simulated board with 10.0.2.2:4403: OsmAnd shows riders 2 and 3.
 #
 # The image is Google APIs without the Play Store, so `adb root` works for looking inside apps.
 set -euo pipefail

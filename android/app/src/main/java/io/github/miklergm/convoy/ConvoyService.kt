@@ -31,6 +31,9 @@ class ConvoyService : Service() {
     @Volatile private var link: BoardLink? = null
     private val boardRiders = ConcurrentHashMap<String, Rider>()
     private var nextPoll = 0L
+    /** What this link's board has been sent: this phone's group, and the question for its riders. */
+    @Volatile private var sentGroup: Invitation? = null
+    @Volatile private var askedRiders = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -53,8 +56,12 @@ class ConvoyService : Service() {
         link = source.link(this)?.also { l ->
             l.open(::onLine) { s ->
                 linkState = s
-                // what the board knows already, without waiting for the next packets
-                if (s.startsWith("connected")) l.send("RIDERS")
+                // its version first: a board that speaks another protocol is asked nothing more
+                if (s.startsWith("connected")) {
+                    sentGroup = null
+                    askedRiders = false
+                    l.send("STATUS")
+                }
             }
         }
         worker.scheduleWithFixedDelay(::tick, 0, 1, TimeUnit.SECONDS)
@@ -70,6 +77,7 @@ class ConvoyService : Service() {
                 boardRiders.clear()
             } else {
                 board = status
+                setUp(status)
             }
             return
         }
@@ -82,6 +90,26 @@ class ConvoyService : Service() {
             return
         }
         BoardLines.rider(line, System.currentTimeMillis())?.let { boardRiders[it.id] = it }
+    }
+
+    /**
+     * This phone's group to the board, once per link and again when the group changes: the board
+     * keeps its riders for the key it has (firmware node_set_key). Then what the board knows,
+     * asked after the key, so no rider of a former group comes back in the answer.
+     */
+    private fun setUp(status: BoardLines.Status) {
+        val l = link ?: return
+        val mine = GroupActivity.Group.load(this)
+        if (mine != null && mine != sentGroup) {
+            if (!status.keyed || status.group != mine.groupTag()) boardRiders.clear()
+            mine.commands().forEach(l::send)
+            sentGroup = mine
+            askedRiders = false
+        }
+        if (!askedRiders) {
+            l.send("RIDERS")
+            askedRiders = true
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

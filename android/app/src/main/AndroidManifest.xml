@@ -37,6 +37,12 @@
             </intent-filter>
         </activity>
 
+        <!-- Joining a group with an invitation, or starting one. -->
+        <activity
+            android:name=".GroupActivity"
+            android:exported="false"
+            android:label="Group" />
+
         <!-- Routes from outside. Messengers and file managers label a GPX in several ways, octet
              stream included, so the activity reads the file and refuses whatever is not GPX. -->
         <activity
