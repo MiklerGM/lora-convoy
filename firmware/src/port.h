@@ -40,6 +40,9 @@
  *   uint32_t port_random(void)                  from the chip's own generator
  *   size_t  port_device_id(uint8_t *out, size_t cap)   bytes that tell this chip from another
  *
+ *   bool    port_setup_load(void *buf, size_t len)   the setup run.c keeps over a restart:
+ *   bool    port_setup_save(const void *buf, size_t len) the group's key, the slot, the interval
+ *
  *   bool    port_button_down(void)              the board's one button, held
  *
  *   void    port_restart(uint32_t note)         restarts, leaving the note for the next start

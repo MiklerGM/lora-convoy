@@ -14,6 +14,7 @@ target_sources(app PRIVATE
     ${SHARED}/run.c
     ${SHARED}/sx1262.c
     ${SHARED}/phy.c
+    ${SHARED}/crypto.c
     ${SHARED}/codec.c
     ${SHARED}/nmea.c
     ${SHARED}/node.c

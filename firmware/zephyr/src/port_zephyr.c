@@ -13,6 +13,7 @@
 #include <zephyr/fatal.h>
 #include <zephyr/logging/log.h>
 #include <zephyr/random/random.h>
+#include <zephyr/settings/settings.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/sys/ring_buffer.h>
 #include <zephyr/task_wdt/task_wdt.h>
@@ -127,6 +128,36 @@ void port_pin_input(int pin) { gpio_pin_configure(pin_port(pin), pin % 32, GPIO_
 /* Raw: the level on the wire, as the ESP32 builds mean it, not the devicetree's active sense. */
 void port_pin_set(int pin, int level) { gpio_pin_set_raw(pin_port(pin), pin % 32, level); }
 int port_pin_get(int pin) { return gpio_pin_get_raw(pin_port(pin), pin % 32); }
+
+/* ---- the setup, in settings beside the bonds ------------------------------------ */
+
+static uint8_t s_setup[64];
+static size_t s_setup_len;
+static bool s_setup_found;
+
+static int setup_set(const char *name, size_t len, settings_read_cb read_cb, void *cb_arg) {
+    if (strcmp(name, "setup") != 0 || len > sizeof(s_setup)) return -ENOENT;
+    const ssize_t n = read_cb(cb_arg, s_setup, len);
+    if (n < 0) return (int)n;
+    s_setup_len = (size_t)n;
+    s_setup_found = true;
+    return 0;
+}
+
+SETTINGS_STATIC_HANDLER_DEFINE(convoy, "convoy", NULL, setup_set, NULL, NULL);
+
+/* Loaded only after main has read the whole store (store_scan_bonds): Zephyr's loader deletes
+ * whatever it cannot read, whichever subtree it was asked for. */
+bool port_setup_load(void *buf, size_t len) {
+    s_setup_found = false;
+    if (settings_load_subtree("convoy") != 0 || !s_setup_found || s_setup_len != len) return false;
+    memcpy(buf, s_setup, len);
+    return true;
+}
+
+bool port_setup_save(const void *buf, size_t len) { return settings_save_one("convoy/setup", buf, len) == 0; }
+
+/* ---- the button --------------------------------------------------------------- */
 
 static const struct gpio_dt_spec s_button = GPIO_DT_SPEC_GET(DT_ALIAS(sw0), gpios);
 

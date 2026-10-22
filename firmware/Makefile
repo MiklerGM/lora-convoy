@@ -9,7 +9,7 @@
 
 CC ?= gcc
 CFLAGS = -std=c11 -Wall -Wextra -Werror -O2 -Isrc
-CORE = src/phy.c src/codec.c src/nmea.c src/node.c src/api.c
+CORE = src/phy.c src/crypto.c src/codec.c src/nmea.c src/node.c src/api.c
 HOST = build/host
 
 test: $(HOST)/test_core $(HOST)/test_sx1262 $(HOST)/sim

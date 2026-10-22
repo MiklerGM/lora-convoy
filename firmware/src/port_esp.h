@@ -41,6 +41,9 @@ bool port_task_create(void (*fn)(void *), const char *name, size_t stack, int pr
 int port_wdt_watch(void);
 void port_wdt_feed(int watch);
 
+bool port_setup_load(void *buf, size_t len);
+bool port_setup_save(const void *buf, size_t len);
+
 bool port_button_down(void);
 
 void port_restart(uint32_t note);

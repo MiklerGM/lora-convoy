@@ -26,8 +26,20 @@ void node_init(node_t *n, const node_config_t *cfg, uint32_t seed, int64_t now_u
     memset(n, 0, sizeof(*n));
     n->cfg = *cfg;
     n->rng = seed ? seed : 0x9E3779B9u;
+    /* The platform's seed is from the chip's own generator, so every start draws a new session. */
+    n->session = next_random(n);
+    if (cfg->keyed) group_key_init(&n->group, cfg->key);
     /* The first packet anywhere in one interval, so boards switched on together spread out. */
     n->next_tx_us = now_us + (int64_t)(next_random(n) % (cfg->interval_ms + 1)) * 1000;
+}
+
+void node_set_key(node_t *n, const uint8_t key[16]) {
+    /* the key it has, sent again by a phone that reconnects: the riders stay */
+    if (n->cfg.keyed && memcmp(n->cfg.key, key, 16) == 0) return;
+    memcpy(n->cfg.key, key, 16);
+    n->cfg.keyed = true;
+    group_key_init(&n->group, key);
+    memset(n->riders, 0, sizeof(n->riders));
 }
 
 void node_on_fix(node_t *n, const gnss_fix_t *fix, int64_t now_us) {
@@ -77,10 +89,11 @@ uint32_t node_duty_used_ms(const node_t *n, int64_t now_us) {
 size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
     if (now_us < n->next_tx_us) return 0;
     n->next_tx_us = now_us + jittered_us(n);
-    /* Nothing true to say before the first fix: no position, no time to stamp it with. */
+    /* Nothing true to say before the first fix: no position, no time to stamp it with. Nothing at all
+     * without a key: v1 has no clear text. */
     const uint32_t air_ms = (phy_airtime_us(&n->cfg.phy, PKT_POSITION_LEN) + 999) / 1000;
     const uint32_t limit_ms = 3600u * n->cfg.duty_permille;
-    if (!n->have_held || !n->have_time || cap < PKT_POSITION_LEN ||
+    if (!n->cfg.keyed || !n->have_held || !n->have_time || cap < PKT_POSITION_LEN ||
         node_duty_used_ms(n, now_us) + air_ms > limit_ms) {
         n->tx_skipped++;
         return 0;
@@ -90,9 +103,9 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
      * is also the GNSS's current fix. */
     const bool current = n->fix.valid && now_us - n->fix_us <= FIX_FRESH_US;
     position_t p = {
-        .group = n->cfg.group,
         .slot = n->cfg.slot,
-        .counter = n->counter++ & 0xFFFFFFu,
+        .session = n->session,
+        .counter = n->counter,
         .fix_time = (uint16_t)((h->utc_ms / 1000) & 0xFFFF),
         .lat_e7 = h->lat_e7,
         .lon_e7 = h->lon_e7,
@@ -101,50 +114,69 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
         .course2 = h->course_deg10 < 0 ? COURSE_UNKNOWN : (uint8_t)(((h->course_deg10 + 10) / 20) % 180),
         .status = current ? ST_GPS_OK : 0,
     };
+    /* The nonce must never repeat: before the counter wraps, a new session. */
+    if (++n->counter == 0) n->session = next_random(n);
+    n->sent++;
     duty_book(&n->duty, now_us, air_ms);
-    return pkt_encode(out, &p);
+    return pkt_seal(out, &p, &n->group);
 }
 
 /* ---- receiving ------------------------------------------------------------------- */
 
+/* How far back in time a new session's first fix may lie behind what we have and still be taken:
+ * a rider's own clock and ours disagree by a second or so. */
+#define REPLAY_SLACK_MS 2000
+
 bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int snr_db4, int64_t now_us) {
     position_t p;
-    if (!pkt_decode(buf, len, &p) || p.slot >= NODE_SLOTS) {
-        n->rx_bad++;
-        return false;
-    }
-    if (p.group != n->cfg.group) {
+    if (!n->cfg.keyed) {
         n->rx_foreign++;
         return false;
     }
+    switch (pkt_open(buf, len, &n->group, &p)) {
+        case PKT_OK: break;
+        case PKT_FOREIGN: n->rx_foreign++; return false;
+        case PKT_FORGED: n->rx_forged++; return false;
+        default: n->rx_bad++; return false;
+    }
+    if (p.slot >= NODE_SLOTS) {
+        n->rx_bad++;
+        return false;
+    }
     if (p.slot == n->cfg.slot) {
-        /* Two radios on one slot: in v1 their nonces would repeat, so it is counted, not hidden. */
+        /* Two radios on one slot: counted, not hidden. Their sessions keep the nonces apart. */
         n->rx_clash++;
         return false;
     }
-    rider_t *r = &n->riders[p.slot];
-    if (r->known && p.counter == r->last.counter) return false; /* the same packet again */
-    if (!r->known || p.counter < r->last.counter) {
-        /* new, or its counter went back: it restarted, and its run of counters starts here */
-        r->first_counter = p.counter;
-        r->received = 0;
-    }
-    r->received++;
-    r->known = true;
-    r->last = p;
-    r->heard_us = now_us;
-    r->rssi_dbm = (int16_t)rssi_dbm;
-    r->snr_db4 = (int16_t)snr_db4;
+    int64_t fix_utc_ms = 0;
     int64_t utc;
     if (node_utc_ms(n, now_us, &utc)) {
         /* The fix time is UTC seconds modulo 65536: unwrapped to the nearest, past or future. A
          * future one is a clock gone wrong, kept as such rather than read as fresh. */
         const int64_t now_s = utc / 1000;
         const uint16_t behind = (uint16_t)((uint16_t)now_s - p.fix_time);
-        r->fix_utc_ms = (behind < 0x8000 ? now_s - behind : now_s + (0x10000 - behind)) * 1000;
-    } else {
-        r->fix_utc_ms = 0;
+        fix_utc_ms = (behind < 0x8000 ? now_s - behind : now_s + (0x10000 - behind)) * 1000;
     }
+    rider_t *r = &n->riders[p.slot];
+    if (r->known) {
+        /* A repeat or a replay: within a session the counter only grows; a session we have not
+         * seen must bring a fix no older than the one we hold, or it is an old one played again. */
+        const bool same = p.session == r->last.session;
+        if ((same && p.counter <= r->last.counter) ||
+            (!same && fix_utc_ms && r->fix_utc_ms && fix_utc_ms < r->fix_utc_ms - REPLAY_SLACK_MS)) {
+            n->rx_replay++;
+            return false;
+        }
+        if (!same) r->received = 0;
+    }
+    if (!r->known || p.session != r->last.session) r->first_counter = p.counter;
+    r->received++;
+    r->known = true;
+    r->last = p;
+    r->heard_us = now_us;
+    r->rssi_dbm = (int16_t)rssi_dbm;
+    r->snr_db4 = (int16_t)snr_db4;
+    r->fix_utc_ms = fix_utc_ms;
     return true;
 }
 
@@ -181,7 +213,7 @@ int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf,
                     (r->last.status & ST_GPS_OK) ? 1 : 0, (r->last.status & ST_HELP) ? 1 : 0,
                     (r->last.status & ST_STOPPED) ? 1 : 0, r->rssi_dbm, r->snr_db4 < 0 ? "-" : "",
                     snr / 4, snr % 4 * 25, (unsigned long)r->received,
-                    (unsigned long)(r->last.counter - r->first_counter + 1));
+                    (unsigned long)((uint16_t)(r->last.counter - r->first_counter) + 1u));
 }
 
 int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
@@ -191,12 +223,14 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     char lat[16], lon[16];
     const bool current = n->fix.valid && now_us - n->fix_us <= FIX_FRESH_US;
     return snprintf(buf, cap,
-                    "slot=%u group=%u fix=%d lat=%s lon=%s sats=%u hdop=%u.%u time=%d tx=%lu "
-                    "skipped=%lu duty=%lu.%02lu%% riders=%d bad=%lu foreign=%lu clash=%lu",
-                    n->cfg.slot, n->cfg.group, current ? 1 : 0, deg(lat, sizeof(lat), n->held.lat_e7),
+                    "slot=%u keyed=%d group=%02x fix=%d lat=%s lon=%s sats=%u hdop=%u.%u time=%d tx=%lu "
+                    "skipped=%lu duty=%lu.%02lu%% riders=%d bad=%lu foreign=%lu forged=%lu replay=%lu clash=%lu",
+                    n->cfg.slot, n->cfg.keyed ? 1 : 0, n->cfg.keyed ? n->group.tag : 0, current ? 1 : 0,
+                    deg(lat, sizeof(lat), n->held.lat_e7),
                     deg(lon, sizeof(lon), n->held.lon_e7), n->fix.sats, n->fix.hdop10 / 10,
-                    n->fix.hdop10 % 10, n->have_time ? 1 : 0, (unsigned long)n->counter,
+                    n->fix.hdop10 % 10, n->have_time ? 1 : 0, (unsigned long)n->sent,
                     (unsigned long)n->tx_skipped, (unsigned long)(used / 36000),
                     (unsigned long)(used % 36000 / 360), known, (unsigned long)n->rx_bad,
-                    (unsigned long)n->rx_foreign, (unsigned long)n->rx_clash);
+                    (unsigned long)n->rx_foreign, (unsigned long)n->rx_forged, (unsigned long)n->rx_replay,
+                    (unsigned long)n->rx_clash);
 }

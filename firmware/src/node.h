@@ -17,7 +17,8 @@
 #define NODE_SLOTS 32
 
 typedef struct {
-    uint8_t group;
+    bool keyed;              /* without a key the board sends nothing: v1 has no clear text */
+    uint8_t key[16];         /* the group's key, from the invitation (M5) */
     uint8_t slot;            /* below NODE_SLOTS */
     uint32_t interval_ms;    /* mean time between our positions; each one is drawn +-20 % */
     uint16_t duty_permille;  /* the sub-band's duty cycle: 100 is 10 % an hour */
@@ -31,8 +32,8 @@ typedef struct {
     int64_t fix_utc_ms;      /* its fix in UTC, unwrapped against our time; 0 when we had none */
     int16_t rssi_dbm;
     int16_t snr_db4;         /* quarter dB */
-    uint32_t received;       /* packets taken from it */
-    uint32_t first_counter;  /* of the run of counters since it last started */
+    uint32_t received;       /* packets taken from it in this session */
+    uint16_t first_counter;  /* the session's first counter we took */
 } rider_t;
 
 /* Transmit time over the last hour, a minute at a time. */
@@ -47,16 +48,21 @@ typedef struct {
     int64_t fix_us;
     gnss_fix_t held;         /* the last valid position */
     bool have_held;
+    group_key_t group;       /* what the key gives: CCM key and tag */
+    uint32_t session;        /* ours, drawn at start and when the counter wraps */
     bool have_time;          /* our UTC is time_utc_ms at time_us on our clock */
     int64_t time_utc_ms;
     int64_t time_us;
-    uint32_t counter;
+    uint16_t counter;        /* the next packet's, within the session */
+    uint32_t sent;           /* packets handed over to send since start */
     int64_t next_tx_us;
     uint32_t rng;
     duty_t duty;
     rider_t riders[NODE_SLOTS];
-    uint32_t rx_foreign;     /* decoded, but another group's */
-    uint32_t rx_bad;         /* not a v0 position at all */
+    uint32_t rx_foreign;     /* another group's tag */
+    uint32_t rx_bad;         /* not a v1 position at all */
+    uint32_t rx_forged;      /* our tag, and an authentication tag that does not check */
+    uint32_t rx_replay;      /* genuine, but older than what we have: a repeat or a replay */
     uint32_t rx_clash;       /* our own slot, from another radio: a configuration error */
     uint32_t tx_skipped;     /* intervals that passed without a position to send, or duty left */
 } node_t;
@@ -65,7 +71,10 @@ void node_init(node_t *n, const node_config_t *cfg, uint32_t seed, int64_t now_u
 
 void node_on_fix(node_t *n, const gnss_fix_t *fix, int64_t now_us);
 
-/* True if the packet was ours to take: a v0 position of our group from another slot. */
+/* A group key, from the app: the riders heard under another key are forgotten. */
+void node_set_key(node_t *n, const uint8_t key[16]);
+
+/* True if the packet was ours to take: a genuine, fresh v1 position of our group from another slot. */
 bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int snr_db4, int64_t now_us);
 
 /* A packet to send now, its length returned, or 0. Its airtime is booked against the duty cycle

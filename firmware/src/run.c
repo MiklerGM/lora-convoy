@@ -12,11 +12,8 @@
 
 #define TAG "convoy"
 
-/* Until M5's invitation sets them: the group by hand, the slot from the chip's ID unless the build
- * or a command names one. */
-#ifndef NODE_GROUP
-#define NODE_GROUP 1
-#endif
+/* Until the app gives a setup from an invitation (KEY, SLOT): no key, so silent, and a slot from the
+ * chip's ID unless the build names one. */
 #ifndef NODE_INTERVAL_MS
 #define NODE_INTERVAL_MS 2000
 #endif
@@ -28,6 +25,18 @@
 #define VERIFY_US (30 * 1000000ll)
 #define GNSS_LOG_US (60 * 1000000ll)
 #define STATUS_PUSH_MS 10000
+
+/* What a board keeps over a restart, so it can ride as a beacon with no phone: the setup the app
+ * gave it from the invitation. */
+typedef struct {
+    uint8_t version;      /* SETUP_VERSION; anything else is ignored */
+    uint8_t keyed;
+    uint8_t slot;
+    uint8_t reserved;
+    uint8_t key[16];
+    uint32_t interval_ms;
+} setup_t;
+#define SETUP_VERSION 1
 
 static node_t s_node;
 static api_t s_api;
@@ -79,7 +88,7 @@ void run_erase_when_asked(const char *why, int watch, void (*erase)(void)) {
  * their own. */
 #define REPLY_LINES (NODE_SLOTS + 2)
 typedef struct {
-    char line[REPLY_LINES][256];
+    char line[REPLY_LINES][400];
     int n;
 } replies_t;
 
@@ -96,8 +105,14 @@ static bool command(char *line, replies_t *out) {
     api_command(&s_api, line, port_uptime_us(), gather, out);
     const bool forget = s_api.forget, restart = s_api.restart, bootloader = s_api.bootloader;
     if (s_api.power_changed) atomic_store(&s_reapply, true);
-    s_api.forget = s_api.restart = s_api.bootloader = s_api.power_changed = false;
+    setup_t setup = {.version = SETUP_VERSION, .keyed = s_node.cfg.keyed, .slot = s_node.cfg.slot,
+                     .interval_ms = s_node.cfg.interval_ms};
+    memcpy(setup.key, s_node.cfg.key, sizeof(setup.key));
+    const bool save = s_api.setup_changed;
+    s_api.forget = s_api.restart = s_api.bootloader = s_api.power_changed = s_api.setup_changed = false;
     port_mutex_give(s_lock);
+    if (save && !port_setup_save(&setup, sizeof(setup))) gather(out, "ERR the setup could not be kept");
+    memset(&setup, 0, sizeof(setup));
     if (restart) port_restart(0);
 #ifdef PORT_BOOTLOADER
     /* the UF2 drive, for a new image without the reset button's double tap */
@@ -244,7 +259,7 @@ static void service_task(void *arg) {
     const int watch = port_wdt_watch();
     int held_ms = 0, tick_ms = 0, status_ms = 0;
     bool fired = false;
-    char text[300];
+    char text[400];
     for (;;) {
         port_wdt_feed(watch);
         if ((tick_ms += 100) >= 1000) {
@@ -301,20 +316,26 @@ void run_start(const char *board, const char *reset) {
 #else
     const uint8_t slot = (uint8_t)(h % NODE_SLOTS);
 #endif
-    const node_config_t cfg = {.group = NODE_GROUP, .slot = slot, .interval_ms = NODE_INTERVAL_MS,
-                               .duty_permille = 100, .phy = PHY_V0};
+    node_config_t cfg = {.slot = slot, .interval_ms = NODE_INTERVAL_MS, .duty_permille = 100, .phy = PHY_V0};
+    setup_t setup;
+    const bool kept = port_setup_load(&setup, sizeof(setup)) && setup.version == SETUP_VERSION &&
+                      setup.slot < NODE_SLOTS && setup.interval_ms >= 500 && setup.interval_ms <= 60000;
+    if (kept) {
+        cfg.keyed = setup.keyed;
+        memcpy(cfg.key, setup.key, sizeof(cfg.key));
+        cfg.slot = setup.slot;
+        cfg.interval_ms = setup.interval_ms;
+    }
+    memset(&setup, 0, sizeof(setup));
     s_lock = port_mutex_create();
     node_init(&s_node, &cfg, port_random() ^ h, port_uptime_us());
     s_api = (api_t){.node = &s_node, .board = board, .reset = s_reset, .power = NODE_POWER_LEVEL,
                     .tx_dbm = radio_tx_dbm};
-    LOGI(TAG, "LoRa Convoy, protocol v%d, phone API %d, on %s after %s: group %u, slot %u%s, %u ms, %d dBm",
-         PKT_VERSION, API_PROTO, board, s_reset, cfg.group, cfg.slot,
-#ifdef NODE_SLOT
-         " (from the build)",
-#else
-         " (from the chip's ID; SLOT N changes it)",
-#endif
-         (unsigned)cfg.interval_ms, radio_tx_dbm(s_api.power));
+    LOGI(TAG, "LoRa Convoy, protocol v%d, phone API %d, on %s after %s: %s, slot %u%s, %u ms, %d dBm",
+         PKT_VERSION, API_PROTO, board, s_reset,
+         cfg.keyed ? "keyed" : "no key yet: silent until the app or KEY gives one", cfg.slot,
+         kept ? " (kept)" : " (from the chip's ID; SLOT N changes it)", (unsigned)cfg.interval_ms,
+         radio_tx_dbm(s_api.power));
     ble_nus_init(on_ble_line, on_ble_revoke, on_ble_bonds_cleared);
     port_task_create(gnss_task, "gnss", 4096, 4);
     port_task_create(radio_task, "radio", 6144, 5);

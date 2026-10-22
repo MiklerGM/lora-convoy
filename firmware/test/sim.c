@@ -9,7 +9,8 @@
  *   sim                       the checks: three riders hear each other; twenty show plain ALOHA
  *   sim N INTERVAL_MS S       N riders, every INTERVAL_MS, for S seconds of virtual time
  *   sim serve N [PORT]        N boards in real time, each with the phone API on 127.0.0.1:PORT+i
- *                             (default 4403); an Android emulator reaches them at 10.0.2.2
+ *                             (default 4403); an Android emulator reaches them at 10.0.2.2. Like
+ *                             boards fresh from flashing, they have no key: KEY sets one
  */
 #define _DEFAULT_SOURCE
 #include <arpa/inet.h>
@@ -52,6 +53,7 @@ typedef struct {
     int64_t duration_us;
     double loss;           /* random loss per packet and receiver */
     uint32_t seed;
+    int groups;            /* riders split into this many groups, each with its own key; 0: no key */
 } scenario_t;
 
 typedef struct {
@@ -118,8 +120,11 @@ static void world_init(world_t *w, const scenario_t *sc, int64_t utc0_ms) {
     w->rng = sc->seed ? sc->seed : 1;
     w->utc0_ms = utc0_ms;
     for (int i = 0; i < sc->nodes; i++) {
-        node_config_t cfg = {.group = 7, .slot = (uint8_t)i, .interval_ms = sc->interval_ms,
+        /* group g has the key g, g, g ...; riders split into groups by halves, thirds ... */
+        const int g = sc->groups ? i * sc->groups / sc->nodes : 0;
+        node_config_t cfg = {.keyed = sc->groups > 0, .slot = (uint8_t)i, .interval_ms = sc->interval_ms,
                              .duty_permille = 100, .phy = PHY_V0};
+        memset(cfg.key, g + 1, sizeof(cfg.key));
         node_init(&w->node[i], &cfg, splitmix(sc->seed * 1000u + (uint32_t)i), 0);
     }
 }
@@ -250,7 +255,7 @@ static void drop(board_t *b, int i) {
 static void send_line(void *ctx, const char *line) {
     board_t *b = ctx;
     if (b->client < 0) return;
-    char out[300];
+    char out[450];
     const int n = snprintf(out, sizeof(out), "%s\n", line);
     if (send(b->client, out, (size_t)n, MSG_NOSIGNAL) != n) drop(b, (int)(b - s_boards));
 }
@@ -281,7 +286,7 @@ static void serve(int n, int port) {
     static world_t w;
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
-    const scenario_t sc = {n, 2000, 0, 0, (uint32_t)now.tv_sec};
+    const scenario_t sc = {n, 2000, 0, 0, (uint32_t)now.tv_sec, 0};
     world_init(&w, &sc, (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000);
     w.on_taken = on_taken;
     w.ctx = &w;
@@ -344,7 +349,7 @@ static void serve(int n, int port) {
         for (int i = 0; i < n; i++) {
             board_t *b = &s_boards[i];
             if (b->client < 0 || t < b->next_status) continue;
-            char line[300];
+            char line[400];
             api_status(&b->api, t, line, sizeof(line));
             send_line(b, line);
             b->next_status = t + 10 * SEC;
@@ -364,7 +369,7 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc == 4) {
-        const scenario_t sc = {atoi(argv[1]), (uint32_t)atoi(argv[2]), atoll(argv[3]) * SEC, 0, 42};
+        const scenario_t sc = {atoi(argv[1]), (uint32_t)atoi(argv[2]), atoll(argv[3]) * SEC, 0, 42, 1};
         const outcome_t o = run(&sc, true);
         printf("%d riders every %u ms for %s s: %d sent, %d collided, %.1f %% delivered, "
                "fix age shown p50 %.1f s, p95 %.1f s\n", sc.nodes, sc.interval_ms, argv[3], o.sent,
@@ -373,26 +378,44 @@ int main(int argc, char **argv) {
     }
 
     /* Three riders, a packet every 2 s: each hears the others, with fixes a few seconds old. */
-    const scenario_t three = {3, 2000, 600 * SEC, 0, 1};
+    const scenario_t three = {3, 2000, 600 * SEC, 0, 1, 1};
     outcome_t o = run(&three, false);
     printf("sim: 3 riders every 2 s: %.1f %% delivered, %d collisions, fix age p50 %.1f s, p95 %.1f s\n",
            100 * o.delivered, o.collisions, o.age_p50, o.age_p95);
     assert(o.delivered > 0.90 && o.age_p95 <= 5);
 
     /* With 10 % random loss on top, still everyone, a little older. */
-    const scenario_t lossy = {3, 2000, 600 * SEC, 0.10, 2};
+    const scenario_t lossy = {3, 2000, 600 * SEC, 0.10, 2, 1};
     o = run(&lossy, false);
     printf("sim: 3 riders, 10 %% random loss: %.1f %% delivered, fix age p50 %.1f s, p95 %.1f s\n",
            100 * o.delivered, o.age_p50, o.age_p95);
     assert(o.delivered > 0.80 && o.delivered < 0.90 && o.age_p95 <= 7);
 
-    /* Twenty riders every 2 s on random access: the channel carries G = 20 x 25.7 ms / 2 s = 0.26 of
-     * its time, and pure ALOHA delivers about exp(-2G) = 60 %, less what the receivers' own sending
-     * costs them. The reason v1 schedules its slots (M6). */
-    const scenario_t twenty = {20, 2000, 600 * SEC, 0, 3};
+    /* Twenty riders every 2 s on random access: the channel carries G = 20 x 30.8 ms / 2 s = 0.31 of
+     * its time, and pure ALOHA delivers about exp(-2G) = 54 %, less what the receivers' own sending
+     * costs them. The reason slots by GPS time come next (M6). */
+    const scenario_t twenty = {20, 2000, 600 * SEC, 0, 3, 1};
     o = run(&twenty, false);
-    printf("sim: 20 riders every 2 s on random access: %.1f %% delivered (pure ALOHA predicts about 58 %%), "
+    printf("sim: 20 riders every 2 s on random access: %.1f %% delivered (pure ALOHA predicts about 54 %%), "
            "fix age p50 %.1f s, p95 %.1f s\n", 100 * o.delivered, o.age_p50, o.age_p95);
-    assert(o.delivered > 0.50 && o.delivered < 0.66);
+    assert(o.delivered > 0.45 && o.delivered < 0.62);
+
+    /* Two groups of three on one channel: each sees only its own riders, and drops the other's
+     * packets by their tag; the air they share still costs both their collisions. */
+    static world_t w;
+    const scenario_t two = {6, 2000, 300 * SEC, 0, 4, 2};
+    world_init(&w, &two, 1792670400000ll);
+    for (int64_t t = 0; t < two.duration_us; t += STEP_US) world_step(&w, t);
+    unsigned long foreign = 0;
+    for (int i = 0; i < 6; i++) {
+        foreign += w.node[i].rx_foreign;
+        assert(w.node[i].rx_forged == 0 && w.node[i].rx_bad == 0);
+        for (int j = 0; j < 6; j++) {
+            if (j != i) assert(w.node[i].riders[j].known == (i / 3 == j / 3));
+        }
+    }
+    printf("sim: two groups of 3 on one channel: each knows only its own riders; %lu packets of the other "
+           "group dropped by their tag\n", foreign);
+    assert(foreign > 0);
     return 0;
 }

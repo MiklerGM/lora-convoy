@@ -8,6 +8,7 @@
 #include "esp_random.h"
 #include "esp_system.h"
 #include "esp_task_wdt.h"
+#include "nvs.h"
 
 #define TAG "port"
 
@@ -28,6 +29,25 @@ int port_wdt_watch(void) {
 void port_wdt_feed(int watch) {
     (void)watch;
     esp_task_wdt_reset();
+}
+
+/* In NVS, beside the Bluetooth bonds; main has opened it. */
+bool port_setup_load(void *buf, size_t len) {
+    nvs_handle_t h;
+    if (nvs_open("convoy", NVS_READONLY, &h) != ESP_OK) return false;
+    size_t n = len;
+    const esp_err_t err = nvs_get_blob(h, "setup", buf, &n);
+    nvs_close(h);
+    return err == ESP_OK && n == len;
+}
+
+bool port_setup_save(const void *buf, size_t len) {
+    nvs_handle_t h;
+    if (nvs_open("convoy", NVS_READWRITE, &h) != ESP_OK) return false;
+    esp_err_t err = nvs_set_blob(h, "setup", buf, len);
+    if (err == ESP_OK) err = nvs_commit(h);
+    nvs_close(h);
+    return err == ESP_OK;
 }
 
 #ifndef PIN_PAIR_BUTTON

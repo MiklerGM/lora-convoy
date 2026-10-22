@@ -47,21 +47,70 @@ static void test_airtime(void) {
     printf("phy: airtime matches tools/airtime.py in %zu cases\n", sizeof(cases) / sizeof(cases[0]));
 }
 
+/* ---- crypto ---------------------------------------------------------------------- */
+
+static void test_crypto(void) {
+    /* FIPS-197, appendix C.1 */
+    static const uint8_t key[16] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                                    0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
+    static const uint8_t pt[16] = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
+                                   0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
+    static const uint8_t ct[16] = {0x69, 0xc4, 0xe0, 0xd8, 0x6a, 0x7b, 0x04, 0x30,
+                                   0xd8, 0xcd, 0xb7, 0x80, 0x70, 0xb4, 0xc5, 0x5a};
+    aes128_t aes;
+    uint8_t out[32];
+    aes128_init(&aes, key);
+    aes128_encrypt(&aes, pt, out);
+    assert(memcmp(out, ct, 16) == 0);
+
+    /* RFC 3610, packet vector 1: 8 bytes of associated data, 23 of message, an 8-byte tag */
+    uint8_t k3610[16], msg[31];
+    for (int i = 0; i < 16; i++) k3610[i] = (uint8_t)(0xC0 + i);
+    for (int i = 0; i < 31; i++) msg[i] = (uint8_t)i;
+    static const uint8_t nonce[CCM_NONCE_LEN] = {0x00, 0x00, 0x00, 0x03, 0x02, 0x01, 0x00,
+                                                 0xA0, 0xA1, 0xA2, 0xA3, 0xA4, 0xA5};
+    static const uint8_t want1[31] = {0x58, 0x8C, 0x97, 0x9A, 0x61, 0xC6, 0x63, 0xD2, 0xF0, 0x66, 0xD0,
+                                      0xC2, 0xC0, 0xF9, 0x89, 0x80, 0x6D, 0x5F, 0x6B, 0x61, 0xDA, 0xC3,
+                                      0x84, 0x17, 0xE8, 0xD1, 0x2C, 0xFD, 0xF9, 0x26, 0xE0};
+    aes128_init(&aes, k3610);
+    ccm_seal(&aes, nonce, msg, 8, &msg[8], 23, out, &out[23], 8);
+    assert(memcmp(out, want1, sizeof(want1)) == 0);
+    uint8_t back[23];
+    assert(ccm_open(&aes, nonce, msg, 8, out, 23, &out[23], 8, back) && memcmp(back, &msg[8], 23) == 0);
+    out[3] ^= 0x01; /* one bit of ciphertext: refused, and nothing comes out */
+    assert(!ccm_open(&aes, nonce, msg, 8, out, 23, &out[23], 8, back) && back[0] == 0 && back[22] == 0);
+
+    /* The shape v1 uses - 9 bytes associated, 11 of message, a 4-byte tag - from OpenSSL. */
+    static const uint8_t want2[15] = {0x59, 0x8F, 0x96, 0x9D, 0x60, 0xC5, 0x62, 0xCD,
+                                      0xF1, 0x65, 0xD1, 0x55, 0x6F, 0xE1, 0x87};
+    ccm_seal(&aes, nonce, msg, 9, &msg[9], 11, out, &out[11], 4);
+    assert(memcmp(out, want2, sizeof(want2)) == 0);
+    printf("crypto: AES-128 and CCM match FIPS-197, RFC 3610 and OpenSSL\n");
+}
+
 /* ---- codec ----------------------------------------------------------------------- */
 
+static const uint8_t KEY[16] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                                0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
+
 static void test_codec(void) {
-    /* The vector in docs/PROTOCOL.md: slot 3 of group 7, fix 2026-10-22 12:00:05 UTC. */
-    static const uint8_t want[PKT_POSITION_LEN] = {0x00, 0x07, 0x03, 0x01, 0x23, 0x45, 0xFA, 0xC5, 0x43,
-                                                   0x0B, 0x84, 0x06, 0xC5, 0x56, 0x28, 0x87, 0x04};
-    const position_t p = {.group = 7, .slot = 3, .counter = 0x012345, .fix_time = 64197,
+    /* The vector in docs/PROTOCOL.md, from an independent implementation on OpenSSL: slot 3,
+     * session 0x01020304, counter 5, a fix at 2026-10-22 12:00:05 UTC, under the key 00 01 .. 0f. */
+    static const uint8_t want[PKT_POSITION_LEN] = {0x40, 0x86, 0x03, 0x01, 0x02, 0x03, 0x04, 0x00,
+                                                   0x05, 0xEE, 0x37, 0x9D, 0x2B, 0x30, 0xA8, 0x88,
+                                                   0x6B, 0x0E, 0x6D, 0x72, 0x6C, 0x62, 0x59, 0xB0};
+    group_key_t g;
+    group_key_init(&g, KEY);
+    assert(g.tag == 0x86);
+    const position_t p = {.slot = 3, .session = 0x01020304, .counter = 5, .fix_time = 64197,
                           .lat_e7 = 471410000, .lon_e7 = 95215000, .speed_kmh = 40,
                           .course2 = 135, .status = ST_GPS_OK};
     uint8_t b[PKT_POSITION_LEN];
-    assert(pkt_encode(b, &p) == PKT_POSITION_LEN && memcmp(b, want, sizeof(want)) == 0);
+    assert(pkt_seal(b, &p, &g) == PKT_POSITION_LEN && memcmp(b, want, sizeof(want)) == 0);
 
     position_t q;
-    assert(pkt_decode(b, sizeof(b), &q));
-    assert(q.group == 7 && q.slot == 3 && q.counter == 0x012345 && q.fix_time == 64197);
+    assert(pkt_open(b, sizeof(b), &g, &q) == PKT_OK);
+    assert(q.group == 0x86 && q.slot == 3 && q.session == 0x01020304 && q.counter == 5 && q.fix_time == 64197);
     assert(q.speed_kmh == 40 && q.course2 == 135 && q.status == ST_GPS_OK);
     /* half a step at most: 1.07e-5 degrees of latitude, 2.15e-5 of longitude */
     assert(labs((long)q.lat_e7 - 471410000) <= 54 && labs((long)q.lon_e7 - 95215000) <= 108);
@@ -73,18 +122,30 @@ static void test_codec(void) {
         position_t c = p;
         c.lat_e7 = lats[i];
         c.lon_e7 = lons[i];
-        pkt_encode(b, &c);
-        assert(pkt_decode(b, sizeof(b), &q));
+        pkt_seal(b, &c, &g);
+        assert(pkt_open(b, sizeof(b), &g, &q) == PKT_OK);
         assert(labs((long)q.lat_e7 - lats[i]) <= 108 && labs((long)q.lon_e7 - lons[i]) <= 215);
     }
 
-    /* not a v0 position: another length, version or type */
-    assert(!pkt_decode(b, sizeof(b) - 1, &q));
-    b[0] = 1 << 6;
-    assert(!pkt_decode(b, sizeof(b), &q));
-    b[0] = 1 << 4;
-    assert(!pkt_decode(b, sizeof(b), &q));
-    printf("codec: the fixed vector, the world's corners, and refusals\n");
+    /* Every byte is covered: the clear header, the body and the tag. */
+    for (size_t i = 0; i < sizeof(b); i++) {
+        pkt_seal(b, &p, &g);
+        b[i] ^= 0x20;
+        const pkt_result_t r = pkt_open(b, sizeof(b), &g, &q);
+        assert(i == 0 ? r == PKT_MALFORMED : i == 1 ? r == PKT_FOREIGN : r == PKT_FORGED);
+    }
+    /* Another group's key: its tag differs, and so would its authentication. */
+    uint8_t other[16];
+    memcpy(other, KEY, 16);
+    other[15] ^= 1;
+    group_key_t h;
+    group_key_init(&h, other);
+    pkt_seal(b, &p, &h);
+    assert(h.tag != g.tag && pkt_open(b, sizeof(b), &g, &q) == PKT_FOREIGN);
+    b[1] = g.tag; /* even wearing our tag */
+    assert(pkt_open(b, sizeof(b), &g, &q) == PKT_FORGED);
+    assert(pkt_open(b, sizeof(b) - 1, &g, &q) == PKT_MALFORMED);
+    printf("codec: the fixed vector, the world's corners, and every byte authenticated\n");
 }
 
 /* ---- nmea ------------------------------------------------------------------------- */
@@ -147,7 +208,10 @@ static void test_nmea(void) {
 
 /* ---- node ------------------------------------------------------------------------- */
 
-static const node_config_t CFG = {.group = 7, .slot = 1, .interval_ms = 2000, .duty_permille = 100,
+static const node_config_t CFG = {.keyed = true,
+                                  .key = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
+                                          0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f},
+                                  .slot = 1, .interval_ms = 2000, .duty_permille = 100,
                                   .phy = {869525000, 250000, 7, 5, 8, {0x64, 0x74}}};
 
 static gnss_fix_t fix_at(int64_t utc_ms, bool valid) {
@@ -158,12 +222,14 @@ static gnss_fix_t fix_at(int64_t utc_ms, bool valid) {
 static void test_node_sends(void) {
     node_t n;
     uint8_t b[32];
+    group_key_t g;
+    group_key_init(&g, KEY);
     node_init(&n, &CFG, 12345, 0);
     /* Silent before the first fix, whatever the time. */
     for (int64_t t = 0; t < 10 * SEC; t += 100000) assert(node_poll_tx(&n, t, b, sizeof(b)) == 0);
     assert(n.tx_skipped >= 4);
 
-    /* Then a packet every 1.6 to 2.4 s, each with the next counter. */
+    /* Then a packet every 1.6 to 2.4 s, each with the next counter of one session. */
     const int64_t utc0 = 1792670405000ll;
     int64_t last = -1, t = 10 * SEC, shortest = 10 * SEC, longest = 0;
     int sent = 0;
@@ -175,8 +241,8 @@ static void test_node_sends(void) {
         }
         const size_t len = node_poll_tx(&n, t, b, sizeof(b));
         if (!len) continue;
-        assert(len == PKT_POSITION_LEN && pkt_decode(b, len, &p));
-        assert(p.counter == (uint32_t)sent && p.slot == 1 && p.group == 7 && (p.status & ST_GPS_OK));
+        assert(len == PKT_POSITION_LEN && pkt_open(b, len, &g, &p) == PKT_OK);
+        assert(p.counter == (uint16_t)sent && p.session == n.session && p.slot == 1 && (p.status & ST_GPS_OK));
         if (last >= 0) {
             assert(t - last >= 1600000 - 10000 && t - last <= 2400000 + 10000);
             if (t - last < shortest) shortest = t - last;
@@ -194,15 +260,33 @@ static void test_node_sends(void) {
     node_on_fix(&n, &lost, t);
     for (; t < 80 * SEC; t += 10000) {
         if (node_poll_tx(&n, t, b, sizeof(b))) {
-            assert(pkt_decode(b, PKT_POSITION_LEN, &p) && !(p.status & ST_GPS_OK));
+            assert(pkt_open(b, PKT_POSITION_LEN, &g, &p) == PKT_OK && !(p.status & ST_GPS_OK));
             assert(p.fix_time == (uint16_t)((utc0 + 59000) / 1000)); /* the last valid one, at 69 s */
         }
     }
-    printf("node: silent before a fix, then on its interval, and a lost fix sent as held\n");
+
+    /* The counter never wraps within a session: its last value, then a new session. */
+    n.counter = 0xFFFF;
+    const uint32_t before = n.session;
+    while (!node_poll_tx(&n, t, b, sizeof(b))) t += 10000;
+    assert(pkt_open(b, PKT_POSITION_LEN, &g, &p) == PKT_OK && p.counter == 0xFFFF && p.session == before);
+    while (!node_poll_tx(&n, t, b, sizeof(b))) t += 10000;
+    assert(pkt_open(b, PKT_POSITION_LEN, &g, &p) == PKT_OK && p.counter == 0 && p.session != before);
+
+    /* Without a key, nothing goes out at all: v1 has no clear text. */
+    node_config_t bare = CFG;
+    bare.keyed = false;
+    node_t quiet;
+    node_init(&quiet, &bare, 1, 0);
+    for (int64_t s = 0; s < 20 * SEC; s += 100000) {
+        node_on_fix(&quiet, &(gnss_fix_t){.time_valid = true, .valid = true, .utc_ms = utc0}, s);
+        assert(node_poll_tx(&quiet, s, b, sizeof(b)) == 0);
+    }
+    printf("node: silent before a fix or a key, then on its interval; sessions and counters\n");
 }
 
 static void test_node_duty(void) {
-    /* 1 per mille is 3.6 s an hour: 138 packets of 26 ms, and then silence. */
+    /* 1 per mille is 3.6 s an hour: 116 packets of 31 ms, and then silence. */
     node_config_t cfg = CFG;
     cfg.duty_permille = 1;
     cfg.interval_ms = 1000;
@@ -215,14 +299,14 @@ static void test_node_duty(void) {
         node_on_fix(&n, &f, t);
         sent += node_poll_tx(&n, t, b, sizeof(b)) > 0;
     }
-    assert(sent == 138 && node_duty_used_ms(&n, 30 * 60 * SEC) == 138 * 26);
+    assert(sent == 116 && node_duty_used_ms(&n, 30 * 60 * SEC) == 116 * 31);
     /* The hour, to the minute: what was booked in minute 0 counts through minute 59, not 60. */
     node_t one;
     node_init(&one, &cfg, 1, 0);
     node_on_fix(&one, &f, 0);
     while (!node_poll_tx(&one, one.next_tx_us, b, sizeof(b))) {
     }
-    assert(node_duty_used_ms(&one, 59 * 60 * SEC + 59 * SEC) == 26);
+    assert(node_duty_used_ms(&one, 59 * 60 * SEC + 59 * SEC) == 31);
     assert(node_duty_used_ms(&one, 60 * 60 * SEC) == 0);
     /* An hour after the first packets the budget comes back. */
     int later = 0;
@@ -234,68 +318,79 @@ static void test_node_duty(void) {
     printf("node: the duty cycle stops it at the limit, and the budget returns after the hour\n");
 }
 
-static size_t packet(uint8_t *b, uint8_t group, uint8_t slot, uint32_t counter, uint16_t fix_time) {
-    const position_t p = {.group = group, .slot = slot, .counter = counter, .fix_time = fix_time,
+static size_t packet(uint8_t *b, const group_key_t *g, uint8_t slot, uint32_t session, uint16_t counter,
+                     uint16_t fix_time) {
+    const position_t p = {.slot = slot, .session = session, .counter = counter, .fix_time = fix_time,
                           .lat_e7 = 471500000, .lon_e7 = 95100000, .speed_kmh = 33, .course2 = 10,
                           .status = ST_GPS_OK};
-    return pkt_encode(b, &p);
+    return pkt_seal(b, &p, g);
 }
 
 static void test_node_hears(void) {
     node_t n;
     uint8_t b[PKT_POSITION_LEN];
-    char line[256];
+    char line[400];
+    group_key_t g, other;
+    group_key_init(&g, KEY);
+    uint8_t other_key[16] = {0};
+    group_key_init(&other, other_key);
     node_init(&n, &CFG, 7, 0);
     const int64_t utc0 = 1792670405000ll; /* 12:00:05, 64197 modulo 65536 */
     gnss_fix_t f = fix_at(utc0, true);
     node_on_fix(&n, &f, 0);
 
     /* Rider 2, its fix 5 s before ours, heard 3 s after our fix. */
-    assert(node_on_packet(&n, b, packet(b, 7, 2, 10, 64192), -71, 33, 3 * SEC));
+    assert(node_on_packet(&n, b, packet(b, &g, 2, 100, 10, 64192), -71, 33, 3 * SEC));
     node_format_rider(&n, 2, 3 * SEC, line, sizeof(line));
     assert(strstr(line, "fix_age=8 ") && strstr(line, "lat=47.15000") && strstr(line, "rssi=-71 "));
     assert(strstr(line, "snr=8.25 ") && strstr(line, "speed=33 course=20 gps=1"));
 
-    /* Delivered share: counters 10, 11, 13 make three of four. */
-    node_on_packet(&n, b, packet(b, 7, 2, 11, 64194), -70, 30, 5 * SEC);
-    assert(!node_on_packet(&n, b, packet(b, 7, 2, 11, 64194), -70, 30, 5 * SEC)); /* again */
-    node_on_packet(&n, b, packet(b, 7, 2, 13, 64198), -70, 30, 7 * SEC);
+    /* Delivered share: counters 10, 11, 13 make three of four; 11 again is a repeat. */
+    assert(node_on_packet(&n, b, packet(b, &g, 2, 100, 11, 64194), -70, 30, 5 * SEC));
+    assert(!node_on_packet(&n, b, packet(b, &g, 2, 100, 11, 64194), -70, 30, 5 * SEC) && n.rx_replay == 1);
+    assert(node_on_packet(&n, b, packet(b, &g, 2, 100, 13, 64198), -70, 30, 7 * SEC));
     node_format_rider(&n, 2, 7 * SEC, line, sizeof(line));
     assert(strstr(line, "rx=3/4"));
-    /* It restarted: its counter went back, and its run starts again. */
-    node_on_packet(&n, b, packet(b, 7, 2, 0, 64200), -70, 30, 9 * SEC);
+    /* It restarted: a new session, a fresh fix, and its run starts again. */
+    assert(node_on_packet(&n, b, packet(b, &g, 2, 200, 0, 64200), -70, 30, 9 * SEC));
     node_format_rider(&n, 2, 9 * SEC, line, sizeof(line));
     assert(strstr(line, "rx=1/1"));
+    /* The old session played back: its fix is older than the one we hold, so it is not taken. */
+    assert(!node_on_packet(&n, b, packet(b, &g, 2, 100, 14, 64199 - 3), -70, 30, 9 * SEC) && n.rx_replay == 2);
 
     /* A fix stamped in the future (its clock is wrong) shows as such, not as fresh. */
-    node_on_packet(&n, b, packet(b, 7, 3, 0, 64197 + 20), -80, 0, 2 * SEC);
+    node_on_packet(&n, b, packet(b, &g, 3, 1, 0, 64197 + 20), -80, 0, 2 * SEC);
     node_format_rider(&n, 3, 2 * SEC, line, sizeof(line));
     assert(strstr(line, "fix_age=-18 "));
     /* 65000 s ago reads as 536 s ahead: past half its range the nearest wins (RFC 1982). */
-    node_on_packet(&n, b, packet(b, 7, 4, 0, (uint16_t)(64197 - 65000)), -80, 0, 0);
+    node_on_packet(&n, b, packet(b, &g, 4, 1, 0, (uint16_t)(64197 - 65000)), -80, 0, 0);
     node_format_rider(&n, 4, 0, line, sizeof(line));
     assert(strstr(line, "fix_age=65000 ") == NULL && strstr(line, "fix_age=-536 "));
 
-    /* Another group, our own slot, and noise are counted and kept out. */
-    assert(!node_on_packet(&n, b, packet(b, 8, 5, 0, 64197), -80, 0, 0) && n.rx_foreign == 1);
-    assert(!node_on_packet(&n, b, packet(b, 7, 1, 0, 64197), -80, 0, 0) && n.rx_clash == 1);
+    /* Another group, a forgery, our own slot and noise are counted and kept out. */
+    assert(!node_on_packet(&n, b, packet(b, &other, 5, 1, 0, 64197), -80, 0, 0) && n.rx_foreign == 1);
+    packet(b, &g, 5, 1, 0, 64197);
+    b[12] ^= 0x01;
+    assert(!node_on_packet(&n, b, PKT_POSITION_LEN, -80, 0, 0) && n.rx_forged == 1);
+    assert(!node_on_packet(&n, b, packet(b, &g, 1, 1, 0, 64197), -80, 0, 0) && n.rx_clash == 1);
     assert(!node_on_packet(&n, b, 5, -80, 0, 0) && n.rx_bad == 1);
     assert(!n.riders[5].known && !n.riders[1].known);
 
     /* Without a time of our own, an age cannot be told: it says so. */
     node_t blind;
     node_init(&blind, &CFG, 7, 0);
-    node_on_packet(&blind, b, packet(b, 7, 2, 0, 64192), -71, 33, 0);
+    node_on_packet(&blind, b, packet(b, &g, 2, 1, 0, 64192), -71, 33, 0);
     node_format_rider(&blind, 2, 0, line, sizeof(line));
     assert(strstr(line, "fix_age=? "));
     node_format_status(&n, 9 * SEC, line, sizeof(line));
-    assert(strncmp(line, "slot=1 group=7 fix=0 ", 21) == 0 && strstr(line, "riders=3 "));
-    printf("node: ages unwrapped and honest, the delivered share, and what it keeps out\n");
+    assert(strncmp(line, "slot=1 keyed=1 group=86 fix=0 ", 30) == 0 && strstr(line, "riders=3 "));
+    assert(strstr(line, " foreign=1 forged=1 replay=2 clash=1"));
+    printf("node: ages honest, the delivered share, and forgeries, replays and strangers kept out\n");
 }
 
 /* ---- the phone API ------------------------------------------------------------------ */
 
-static char replies[8][256];
+static char replies[8][400];
 static int n_replies;
 
 static void collect(void *ctx, const char *line) {
@@ -318,26 +413,44 @@ static void ask(api_t *api, const char *command) {
 static void test_api(void) {
     node_t n;
     uint8_t b[PKT_POSITION_LEN];
+    group_key_t g;
+    group_key_init(&g, KEY);
     node_init(&n, &CFG, 7, 0);
     gnss_fix_t f = fix_at(1792670405000ll, true);
     node_on_fix(&n, &f, 0);
-    node_on_packet(&n, b, packet(b, 7, 2, 10, 64192), -71, 33, 3 * SEC);
+    node_on_packet(&n, b, packet(b, &g, 2, 1, 10, 64192), -71, 33, 3 * SEC);
     api_t api = {.node = &n, .board = "test", .reset = "poweron", .power = 3, .tx_dbm = dbm};
 
     ask(&api, "STATUS");
-    assert(n_replies == 1 && starts(replies[0], "STATUS proto=1 board=test reset=poweron up=10 slot=1 "));
+    assert(n_replies == 1 && starts(replies[0], "STATUS proto=2 board=test reset=poweron up=10 slot=1 keyed=1 group=86 "));
     assert(strstr(replies[0], " power=3 dbm=16"));
     ask(&api, "riders"); /* the console types it in lower case */
     assert(n_replies == 2 && starts(replies[0], "RIDER slot=2 ") && strcmp(replies[1], "RIDERS 1") == 0);
     assert(strstr(replies[0], " gps=1 help=0 stopped=0 "));
 
+    /* The key it has, sent again by a phone that reconnects: the riders stay. */
+    ask(&api, "KEY 000102030405060708090a0b0c0d0e0f");
+    assert(strcmp(replies[0], "OK keyed group=86") == 0);
+    ask(&api, "RIDERS");
+    assert(n_replies == 2);
+    /* A new key: another group, so the riders heard under the old one go. */
+    ask(&api, "KEY 000102030405060708090A0B0C0D0E0e");
+    assert(starts(replies[0], "OK keyed group=") && api.setup_changed);
+    ask(&api, "RIDERS");
+    assert(n_replies == 1 && strcmp(replies[0], "RIDERS 0") == 0);
+    ask(&api, "KEY 0001020304050607");
+    assert(starts(replies[0], "ERR "));
+    ask(&api, "KEY 000102030405060708090a0b0c0d0eXY");
+    assert(starts(replies[0], "ERR "));
+
     ask(&api, "SLOT 5");
     assert(strcmp(replies[0], "OK slot=5") == 0 && n.cfg.slot == 5);
     ask(&api, "SLOT 32");
     assert(starts(replies[0], "ERR ") && n.cfg.slot == 5);
-    ask(&api, "GROUP 9");
+    ask(&api, "GROUP 9"); /* gone: the group follows from the key */
+    assert(starts(replies[0], "ERR "));
     ask(&api, "INTERVAL 499");
-    assert(starts(replies[0], "ERR ") && n.cfg.interval_ms == 2000 && n.cfg.group == 9);
+    assert(starts(replies[0], "ERR ") && n.cfg.interval_ms == 2000);
     ask(&api, "POWER 0");
     assert(strcmp(replies[0], "OK power=0 dbm=22") == 0 && api.power == 0 && api.power_changed);
 
@@ -350,11 +463,12 @@ static void test_api(void) {
     assert(n_replies == 1 && starts(replies[0], "ERR "));
     ask(&api, "");
     assert(n_replies == 1 && starts(replies[0], "ERR "));
-    printf("api: status, riders, settings, and what it leaves to the caller\n");
+    printf("api: status, riders, the key, settings, and what it leaves to the caller\n");
 }
 
 int main(void) {
     test_airtime();
+    test_crypto();
     test_codec();
     test_nmea();
     test_node_sends();

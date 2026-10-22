@@ -3,14 +3,20 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "crypto.h"
+
 /*
- * The air format, v0: one packet type, a rider's own position, 17 bytes in clear. Bench only:
- * nothing is ridden before authenticated encryption (docs/PROTOCOL.md, ARCHITECTURE D11).
+ * The air format, v1: a rider's own position, 24 bytes, under the group's key (docs/PROTOCOL.md).
+ * The header goes in clear and is authenticated; the position is encrypted; a 4-byte tag ends it
+ * (AES-128-CCM). v0, the same fields in clear, is gone (D3).
  */
 
-#define PKT_VERSION 0
+#define PKT_VERSION 1
 #define PKT_TYPE_POSITION 0
-#define PKT_POSITION_LEN 17
+#define PKT_HEADER_LEN 9
+#define PKT_BODY_LEN 11
+#define PKT_TAG_LEN 4
+#define PKT_POSITION_LEN (PKT_HEADER_LEN + PKT_BODY_LEN + PKT_TAG_LEN)
 
 #define SPEED_UNKNOWN 255
 #define COURSE_UNKNOWN 255
@@ -22,9 +28,10 @@
 #define ST_BATTERY_LOW (1u << 3)
 
 typedef struct {
-    uint8_t group;      /* which group: v0 sets it by hand, v1 derives it from the key */
+    uint8_t group;      /* the group's tag: a byte of the key's own, so others' packets drop early */
     uint8_t slot;       /* which rider */
-    uint32_t counter;   /* 24 bits, per sender, from 0 at every start */
+    uint32_t session;   /* drawn at random at every start: with the counter, the nonce never repeats */
+    uint16_t counter;   /* per session; a new session before it wraps */
     uint16_t fix_time;  /* UTC seconds of the fix, modulo 65536 */
     int32_t lat_e7;     /* degrees x 1e7 */
     int32_t lon_e7;
@@ -33,9 +40,25 @@ typedef struct {
     uint8_t status;
 } position_t;
 
-/* Writes PKT_POSITION_LEN bytes. Coordinates round to 1.07e-5 degrees of latitude and 2.15e-5 of
- * longitude: 1.2 m north-south, 2.4 m east-west at the equator. */
-size_t pkt_encode(uint8_t out[PKT_POSITION_LEN], const position_t *p);
+/* What the 16-byte group key gives: the CCM key and the tag, each from the key by AES on a block
+ * that starts with a byte no CCM block can (bit 7 set), so neither can stand in for the other. */
+typedef struct {
+    uint8_t tag;
+    aes128_t ccm;
+} group_key_t;
 
-/* False for anything that is not a v0 position packet, without touching *p. */
-bool pkt_decode(const uint8_t *buf, size_t len, position_t *p);
+void group_key_init(group_key_t *g, const uint8_t key[16]);
+
+/* Writes PKT_POSITION_LEN bytes; p->group is ignored, the key's tag goes out. Coordinates round to
+ * 1.07e-5 degrees of latitude and 2.15e-5 of longitude: 1.2 m, and 2.4 m at the equator. */
+size_t pkt_seal(uint8_t out[PKT_POSITION_LEN], const position_t *p, const group_key_t *g);
+
+typedef enum {
+    PKT_OK,
+    PKT_MALFORMED, /* not a v1 position at all */
+    PKT_FOREIGN,   /* another group's tag */
+    PKT_FORGED,    /* our tag, and a CCM tag that does not check */
+} pkt_result_t;
+
+/* *p is written only for PKT_OK. */
+pkt_result_t pkt_open(const uint8_t *buf, size_t len, const group_key_t *g, position_t *p);

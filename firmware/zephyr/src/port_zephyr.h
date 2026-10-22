@@ -43,6 +43,9 @@ int port_pin_get(int pin);
 void port_radio_spi_init(int nss, int sck, int mosi, int miso);
 bool port_radio_spi_xfer(const uint8_t *tx, uint8_t *rx, size_t len);
 
+bool port_setup_load(void *buf, size_t len);
+bool port_setup_save(const void *buf, size_t len);
+
 bool port_button_down(void);
 
 void port_restart(uint32_t note);
