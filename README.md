@@ -4,8 +4,8 @@ Research into sharing positions within a group ride over LoRa, with no mobile ne
 infrastructure: what existing systems do, where they fall short, and what a protocol designed for
 a moving group could do better.
 
-**Status:** research notes and calculation tools. No firmware or app yet, and nothing here has
-been ridden.
+**Status:** research notes and calculation tools, and the start of building it: architecture,
+roadmap and backlog below. No firmware or app yet, and nothing here has been ridden.
 
 ## Why this exists
 
@@ -28,6 +28,16 @@ protocol, with OsmAnd as the map.
 | 06 | [**Our own protocol**](docs/06-own-protocol.md) | What a purpose-built design could do better, and at what cost |
 | 07 | [Experiments](docs/07-experiments.md) | What to measure, and the results |
 | 08 | [Regions](docs/08-regions.md) | Which bands, power and access rules apply in which country |
+
+## Building it
+
+| Document | What it answers |
+|---|---|
+| [Architecture](docs/ARCHITECTURE.md) | How board, app and OsmAnd split the work; the decisions behind it |
+| [Roadmap](docs/ROADMAP.md) | Milestones in order, each with a test without hardware and one on it |
+| [Backlog](docs/BACKLOG.md) | Open decisions and features not yet in a milestone, one ticket each |
+
+Nothing is stable yet: the air format, the phone API and the app may all change together.
 
 ## Tools
 
