@@ -36,6 +36,8 @@ object BoardLines {
         val reset: String,
         /** False when the board could not save its setup: switched off, it would forget it. */
         val kept: Boolean,
+        /** The slots of the riders the board knows: the others are no longer on its map. */
+        val known: Set<Int>?,
     )
 
     /** What a board took from a GROUP: the group's tag, and its slot, slots and interval. */
@@ -83,6 +85,7 @@ object BoardLines {
             dbm = t["dbm"]?.toIntOrNull(),
             reset = t["reset"] ?: "?",
             kept = t["kept"] != "0",
+            known = t["known"]?.toLongOrNull(16)?.let { bits -> (0 until 32).filter { bits shr it and 1L == 1L }.toSet() },
         )
     }
 

@@ -183,10 +183,11 @@ The key `00 01 … 0f`, slot 2 of 5, every 2 s, "Alps ride", riders Ann, Bob, Ci
 
 The app sends it to the board as one `GROUP` once per connection, and again when the phone joins
 another group; a board takes it whole or not at all, and keeps its riders when the key is the one
-it has. Once the board says it took the group, the app asks for its riders, and takes the board's
-table in place of its own: riders of the group before, and riders the board no longer knows, go.
-The app keeps the group it wants, and shows the board in it only once the board has said so, never
-by the tag, which two keys can share.
+it has. Once the board says it took the group, the app asks for its riders and its status. The
+status names whom the board knows (`known=`), and riders it does not know leave the app's map: of
+the group before, or forgotten, whatever lines were lost on the way. The app keeps the group it
+wants, and shows the board in it only once the board has said so, never by the tag, which two keys
+can share.
 
 ## The phone API
 
@@ -203,8 +204,8 @@ on three transports:
 
 | Phone to board | Board to phone |
 |---|---|
-| `STATUS` | `STATUS proto=5 board=… reset=… up=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … power=… dbm=… kept=…` |
-| `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>`: the board's whole table |
+| `STATUS` | `STATUS proto=5 board=… reset=… up=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … riders=… known=… … power=… dbm=… kept=…` |
+| `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>` |
 | `GROUP <32 hex digits> <slot> <slots> <interval>` | `OK group=<tag> slot=… slots=… interval=…`: a group's whole setup, from the invitation, checked whole and taken whole; or `ERR group: …`, and nothing changes |
 | `LEDGER` | `LEDGER minutes=60 limit_ms=… used_ms=… positions_ms=…`: the duty ledger, transmit time a minute at a time over the last hour, oldest first, by category |
 | `KEY <32 hex digits>` | `OK keyed group=<tag>`; riders heard under another key are forgotten, and the answers to our call |
@@ -215,7 +216,9 @@ on three transports:
 | `REBOOT`, and `BOOTLOADER` on the L1 Pro (its UF2 drive) | — |
 
 The board keeps its key, slots, interval and mode across restarts; `kept=0` says it could not save
-them, and would come back without them. `KEY`, `SLOT`, `SLOTS` and `INTERVAL` set one each, for a
+them, and would come back without them. `known=` is the riders it knows, a bit a slot, in hex:
+`0000000c` for slots 2 and 3. A reply over Bluetooth stops at a line the board could not send,
+never its end after a gap. `KEY`, `SLOT`, `SLOTS` and `INTERVAL` set one each, for a
 person at the console. No command reads the key back: the
 status shows `keyed=` and the group's tag in hex, `00` without a key, and counts the packets
 refused as `foreign=`, `forged=`, `replay=` and `clash=`. Of its time it shows where it comes from

@@ -515,7 +515,9 @@ static void test_node_hears(void) {
     node_format_rider(&blind, 2, 0, line, sizeof(line));
     assert(strstr(line, "fix_age=? "));
     node_format_status(&n, 9 * SEC, line, sizeof(line));
-    assert(strncmp(line, "slot=1 slots=4 keyed=1 group=86 mode=7/250 fix=0 ", 49) == 0 && strstr(line, "riders=3 "));
+    assert(strncmp(line, "slot=1 slots=4 keyed=1 group=86 mode=7/250 fix=0 ", 49) == 0);
+    /* whom it knows, by slot: what the app keeps on its map, whatever lines it missed */
+    assert(strstr(line, " riders=3 known=0000001c "));
     assert(strstr(line, " time=nmea err=1.") && strstr(line, " budget=183.5 lag=? "));
     assert(strstr(line, " foreign=1 forged=1 replay=2 clash=1"));
     printf("node: ages honest, the delivered share, and forgeries, replays and strangers kept out\n");
@@ -683,7 +685,7 @@ static void test_api(void) {
 
     ask(&api, "STATUS");
     assert(n_replies == 1 && starts(replies[0], "STATUS proto=5 board=test reset=poweron up=10 slot=1 slots=4 keyed=1 group=86 "));
-    assert(strstr(replies[0], " stopped=0 help=0 heard=0 "));
+    assert(strstr(replies[0], " stopped=0 help=0 heard=0 ") && strstr(replies[0], " riders=1 known=00000004 "));
     assert(strstr(replies[0], " power=3 dbm=16"));
     ask(&api, "riders"); /* the console types it in lower case */
     assert(n_replies == 2 && starts(replies[0], "RIDER slot=2 ") && strcmp(replies[1], "RIDERS 1") == 0);

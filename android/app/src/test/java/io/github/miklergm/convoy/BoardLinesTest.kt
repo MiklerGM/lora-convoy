@@ -79,6 +79,8 @@ class BoardLinesTest {
         assertEquals("0.43%", s.duty)
         assertEquals(16, s.dbm)
         assertTrue(s.kept)
+        assertNull(s.known)
+        assertEquals(setOf(2, 3, 31), BoardLines.status("STATUS proto=5 slot=0 group=86 known=8000000c")!!.known)
         assertFalse(BoardLines.status("STATUS proto=5 slot=0 group=86 kept=0")!!.kept)
         // without a version it is not a status this app can trust
         assertNull(BoardLines.status("STATUS slot=0 keyed=1 group=86"))

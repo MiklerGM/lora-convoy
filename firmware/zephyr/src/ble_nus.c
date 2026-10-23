@@ -569,7 +569,9 @@ struct out_line {
     char text[NUS_LINE_MAX];
 };
 
-K_MSGQ_DEFINE(s_out, sizeof(struct out_line), 8, 4);
+/* A whole reply at once, as the receive thread queues it before this one runs: RIDERS, a line a
+ * rider and its end (run.c, REPLY_LINES), and room for lines unasked meanwhile. */
+K_MSGQ_DEFINE(s_out, sizeof(struct out_line), 40, 4);
 
 bool ble_nus_send_line(const char *line) {
     /*

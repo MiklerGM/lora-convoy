@@ -12,7 +12,7 @@
  *
  *   phone -> board                 board -> phone
  *   STATUS                         STATUS proto=5 board=... kept=<0|1> (also sent unasked)
- *   RIDERS                         RIDER ... for each rider known, then RIDERS <n>: the whole table
+ *   RIDERS                         RIDER ... for each rider known, then RIDERS <n>
  *   GROUP <key> <slot> <slots> <ms> OK group=<tag> slot= slots= interval=: a group's whole setup,
  *                                  taken whole or not at all, from the invitation
  *   LEDGER                         LEDGER ...: transmit time a minute at a time, over the hour

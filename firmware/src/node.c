@@ -439,7 +439,11 @@ int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf,
 int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     const uint32_t used = node_duty_used_ms(n, now_us);
     int known = 0;
-    for (int i = 0; i < NODE_SLOTS; i++) known += n->riders[i].known;
+    uint32_t slots = 0;   /* whom it knows, a bit a slot */
+    for (int i = 0; i < NODE_SLOTS; i++) {
+        known += n->riders[i].known;
+        if (n->riders[i].known) slots |= 1u << i;
+    }
     char lat[16], lon[16], err_ms[48] = "?", lag[48] = "?";
     const bool current = n->fix.valid && now_us - n->fix_us <= FIX_FRESH_US;
     static const char *const SOURCE[] = {"none", "nmea", "pps"};
@@ -456,7 +460,7 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     return snprintf(buf, cap,
                     "slot=%u slots=%u keyed=%d group=%02x mode=%u/%lu fix=%d stopped=%d help=%d heard=%d lat=%s lon=%s sats=%u "
                     "hdop=%u.%u time=%s err=%s "
-                    "budget=%lld.%lld lag=%s tx=%lu late=%lu unsure=%lu skipped=%lu duty=%lu.%02lu%% riders=%d "
+                    "budget=%lld.%lld lag=%s tx=%lu late=%lu unsure=%lu skipped=%lu duty=%lu.%02lu%% riders=%d known=%08lx "
                     "bad=%lu foreign=%lu forged=%lu replay=%lu clash=%lu",
                     n->cfg.slot, n->cfg.slots, n->cfg.keyed ? 1 : 0, n->cfg.keyed ? n->group.tag : 0, n->cfg.phy.sf,
                     (unsigned long)(n->cfg.phy.bw_hz / 1000),
@@ -466,7 +470,7 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
                     n->fix.hdop10 % 10, SOURCE[n->time], err_ms, (long long)(budget / 1000),
                     (long long)(budget % 1000 / 100), lag, (unsigned long)n->sent, (unsigned long)n->tx_late,
                     (unsigned long)n->tx_unsure, (unsigned long)n->tx_skipped, (unsigned long)(used / 36000),
-                    (unsigned long)(used % 36000 / 360), known, (unsigned long)n->rx_bad,
+                    (unsigned long)(used % 36000 / 360), known, (unsigned long)slots, (unsigned long)n->rx_bad,
                     (unsigned long)n->rx_foreign, (unsigned long)n->rx_forged, (unsigned long)n->rx_replay,
                     (unsigned long)n->rx_clash);
 }

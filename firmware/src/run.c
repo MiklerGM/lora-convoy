@@ -154,7 +154,14 @@ static void on_ble_line(const char *line, size_t len) {
         ble_nus_forget_bonds();
         return;
     }
-    for (int i = 0; i < replies.n; i++) ble_nus_send_line(replies.line[i]);
+    /* A reply goes whole or stops where a line did not: never its end after a gap, which the
+     * phone would take for the whole of it. */
+    for (int i = 0; i < replies.n; i++) {
+        if (!ble_nus_send_line(replies.line[i])) {
+            LOGW(TAG, "reply cut short: line %d of %d not sent", i + 1, replies.n);
+            break;
+        }
+    }
 }
 
 /* Nothing the phone asked for is queued, so a session that ends leaves nothing to fence. */

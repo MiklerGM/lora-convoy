@@ -9,21 +9,24 @@ class BoardRidersTest {
         47.0, 9.0, fixAtMs = 0, heardAtMs = 0, speedKmh = null, courseDeg = null, help = help)
 
     @Test
-    fun `the board's table takes the place of ours, a group's riders going with their group`() {
+    fun `riders the board no longer knows leave with its status, whatever lines were lost`() {
         val riders = BoardRiders()
         // the group before: two riders, one calling for help
-        riders.take(rider(1))
-        riders.take(rider(2, help = true))
-        // another group set up, and its table asked: one rider so far, and one heard meanwhile
-        riders.asked()
-        riders.take(rider(3))
-        riders.take(rider(4))
-        assertEquals(4, riders.all.size)
-        riders.ended()
-        assertEquals(setOf("slot3", "slot4"), riders.all.map { it.id }.toSet())
-        // and lines after it are taken as they come
-        riders.take(rider(5))
-        riders.ended()
-        assertEquals(3, riders.all.size)
+        riders.take(rider(1), 0)
+        riders.take(rider(2, help = true), 0)
+        // another group set up: its table asked for lost its end, and one rider's line came
+        riders.take(rider(3), 9_000)
+        riders.known(setOf("slot3"), 10_000)
+        assertEquals(setOf("slot3"), riders.all.map { it.id }.toSet())
+    }
+
+    @Test
+    fun `a rider whose line has just come stays, as a status may be older than the line`() {
+        val riders = BoardRiders()
+        riders.take(rider(4), 10_000)
+        riders.known(emptySet(), 11_000)
+        assertEquals(1, riders.all.size)
+        riders.known(emptySet(), 20_000)
+        assertEquals(0, riders.all.size)
     }
 }

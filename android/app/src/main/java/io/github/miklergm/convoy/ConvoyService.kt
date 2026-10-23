@@ -82,6 +82,7 @@ class ConvoyService : Service() {
                 boardRiders.clear()
             } else {
                 board = status
+                status.known?.let { slots -> boardRiders.known(slots.map { "slot$it" }.toSet(), System.currentTimeMillis()) }
                 lastClash?.let { if (status.clash > it) clashAtMs = System.currentTimeMillis() }
                 lastClash = status.clash
                 setUp()
@@ -89,8 +90,8 @@ class ConvoyService : Service() {
             return
         }
         BoardLines.setup(line)?.let { taken ->
-            // the board has the group this phone sent, whole: then its riders, for the riders of
-            // the group before to go (BoardRiders)
+            // the board has the group this phone sent, whole: then its riders, and its status,
+            // which names whom it knows, for the riders of the group before to go (BoardRiders)
             val sent = sentGroup ?: return
             if (taken.of(sent)) {
                 confirmed = sent
@@ -104,10 +105,6 @@ class ConvoyService : Service() {
             linkState = "the board refused ${sentGroup?.name ?: "the group"}: $line"
             return
         }
-        if (line.startsWith("RIDERS ")) {
-            boardRiders.ended()
-            return
-        }
         if (line == "FORGOTTEN") {
             // the board has dropped us; Android's own bond goes too, and the board stops being ours
             (link as? BleBoardLink)?.removeBond()
@@ -116,15 +113,16 @@ class ConvoyService : Service() {
             stopSelf()
             return
         }
-        BoardLines.rider(line, System.currentTimeMillis(), group)?.let(boardRiders::take)
+        val now = System.currentTimeMillis()
+        BoardLines.rider(line, now, group)?.let { boardRiders.take(it, now) }
     }
 
     /**
      * This phone's group to the board, whole, once per link and again when the group changes: the
      * board keeps its riders for the key it has (firmware node_set_key). Its riders are asked once
-     * it has taken the group. ponytail: a RIDER line the board made just before the new key and
-     * sent just after its table would bring a rider of the group before back, until the next link;
-     * a group's number in the lines would end it.
+     * it has taken the group. A RIDER line the board made before the new key and sent after it
+     * brings a rider of the group before back, however late it comes: until a status that names
+     * whom the board knows, some 10 s, and BoardRiders.GRACE_MS more.
      */
     private fun setUp() {
         val l = link ?: return
@@ -142,8 +140,8 @@ class ConvoyService : Service() {
     private fun askRiders() {
         val l = link ?: return
         askedRiders = true
-        boardRiders.asked()
         l.send("RIDERS")
+        l.send("STATUS")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
