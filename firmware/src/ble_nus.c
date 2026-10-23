@@ -644,6 +644,15 @@ bool ble_nus_send_line(const char *line) {
     }
     uint16_t conn = target.conn;
 
+    /* The lines carry the riders' positions in clear, so only an encrypted link, which only the
+     * paired phone can make, gets them; the commands are WRITE_ENC already. A phone may subscribe
+     * before it pairs, and hears nothing until it has. */
+    struct ble_gap_conn_desc desc;
+    if (ble_gap_conn_find(conn, &desc) != 0 || !desc.sec_state.encrypted) {
+        xSemaphoreGive(s_send_lock);
+        return false;
+    }
+
     /* A notification carries at most ATT_MTU-3 bytes and the stack silently truncates the
      * rest. Lines here can reach hundreds of characters, and if MTU negotiation failed we are on
      * the 23-byte default, so fragmenting is not optional. The receiver reassembles on the

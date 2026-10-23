@@ -169,7 +169,7 @@ def up(phones: int) -> None:
     print("up: each phone's Bluetooth identity key: " + ", ".join(k[:8] for k in irks))
     # the boards' Bluetooth after the phones': netsim starts with the first emulator
     for b in range(phones + 1):
-        start(f"board-{b}", str(VENV / "bin/python"), "-I", str(ROOT / "tools/bench/ble_board.py"), str(b), str(PORT))
+        start(f"board-{b}", *board_command_line(b))
     apk = ROOT / "android/app/build/outputs/apk/debug/app-debug.apk"
     for i in range(phones):
         adb(phone(i), "install", "-r", str(apk))
@@ -309,6 +309,12 @@ def board_says(board: int, text: str, timeout=30) -> None:
         time.sleep(1)
 
 
+def board_command_line(board: int) -> list:
+    """Board 1 serves Bluetooth as the L1's Zephyr does, the others as the Heltec's NimBLE."""
+    return [str(VENV / "bin/python"), "-I", str(ROOT / "tools/bench/ble_board.py"), str(board), str(PORT)] + \
+        (["--l1"] if board == 1 else [])
+
+
 def restart_board(board: int, forget=False) -> None:
     """Its power cycled; with forget, its bonds cleared too, as its button held down while its
     phone is out of reach does."""
@@ -316,8 +322,7 @@ def restart_board(board: int, forget=False) -> None:
     time.sleep(2)
     if forget:
         (CACHE / f"board-{board}.json").unlink(missing_ok=True)
-    start(f"board-{board}", str(VENV / "bin/python"), "-I", str(ROOT / "tools/bench/ble_board.py"), str(board),
-          str(PORT))
+    start(f"board-{board}", *board_command_line(board))
     board_says(board, "advertising", 60)
 
 

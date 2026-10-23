@@ -6,7 +6,10 @@ radio (netsim), served as the firmware's ble_nus.c serves one: the Nordic UART S
 written only over an encrypted link (Just Works pairing), one owner at a time, and FORGET dropping
 the bond. Lines go both ways between the phone and the board's phone API.
 
-    ble_board.py I [PORT]    board I as LoRaConvoy-C0FFEE0I, bridged to 127.0.0.1:PORT+I (4403)
+    ble_board.py I [PORT] [--l1]    board I as LoRaConvoy-C0FFEE0I, bridged to 127.0.0.1:PORT+I (4403)
+
+Both boards notify their lines only over an encrypted link. The Heltec's NimBLE lets a phone
+subscribe before it pairs; the L1's Zephyr (--l1) takes the subscription itself only encrypted.
 
 One board a process: a second netsim chip in the same process never comes up.
 
@@ -20,7 +23,7 @@ import sys
 
 from bumble.core import UUID, AdvertisingData
 from bumble.device import Device
-from bumble.gatt import Characteristic, CharacteristicValue, Service
+from bumble.gatt import GATT_CLIENT_CHARACTERISTIC_CONFIGURATION_DESCRIPTOR, Characteristic, CharacteristicValue, Service
 from bumble.hci import Address
 from bumble.keys import JsonKeyStore
 from bumble.pairing import PairingConfig, PairingDelegate
@@ -39,8 +42,9 @@ BONDS = pathlib.Path.home() / ".cache/lora-convoy/bench"
 
 
 class Board:
-    def __init__(self, index: int, port: int):
+    def __init__(self, index: int, port: int, l1: bool = False):
         self.index = index
+        self.l1 = l1
         self.port = port
         # a random static address (its top two bits set); the firmware's name is the prefix and
         # four bytes of its address
@@ -84,6 +88,10 @@ class Board:
                 delegate=PairingDelegate(io_capability=PairingDelegate.NO_OUTPUT_NO_INPUT),
                 identity_address_type=PairingConfig.AddressType.RANDOM)
             device.add_service(self.service)
+            if self.l1:  # Zephyr's CCC with BT_GATT_PERM_READ_ENCRYPT | BT_GATT_PERM_WRITE_ENCRYPT
+                for a in device.gatt_server.attributes:
+                    if a.type == GATT_CLIENT_CHARACTERISTIC_CONFIGURATION_DESCRIPTOR:
+                        a.permissions |= Characteristic.READ_REQUIRES_ENCRYPTION | Characteristic.WRITE_REQUIRES_ENCRYPTION
             device.on("connection", self.on_connection)
             await device.power_on()
             await self.advertise()
@@ -142,6 +150,8 @@ class Board:
             await self.notify(connection, line)
 
     async def notify(self, connection, data: bytes):
+        if not connection.is_encrypted:  # as both firmwares: positions only to the paired phone
+            return
         chunk = max(20, connection.att_mtu - 3)
         for i in range(0, len(data), chunk):
             try:
@@ -178,5 +188,6 @@ if __name__ == "__main__":
     logging.basicConfig(level=os.environ.get("BENCH_LOG", "WARNING").upper())
     if len(sys.argv) < 2:
         sys.exit(__doc__)
-    index = int(sys.argv[1])
-    asyncio.run(Board(index, (int(sys.argv[2]) if len(sys.argv) > 2 else 4403) + index).run())
+    args = [a for a in sys.argv[1:] if a != "--l1"]
+    index = int(args[0])
+    asyncio.run(Board(index, (int(args[1]) if len(args) > 1 else 4403) + index, "--l1" in sys.argv).run())

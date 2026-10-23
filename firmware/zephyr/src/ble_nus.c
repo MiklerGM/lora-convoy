@@ -279,7 +279,8 @@ BT_GATT_SERVICE_DEFINE(s_nus,
                            BT_GATT_PERM_WRITE_ENCRYPT, NULL, on_rx, NULL),
     BT_GATT_CHARACTERISTIC(&s_uuid_tx.uuid, BT_GATT_CHRC_NOTIFY, BT_GATT_PERM_NONE,
                            NULL, NULL, NULL),
-    BT_GATT_CCC(NULL, BT_GATT_PERM_READ | BT_GATT_PERM_WRITE),
+    /* Subscribing takes an encrypted link: the lines carry the riders' positions in clear. */
+    BT_GATT_CCC(NULL, BT_GATT_PERM_READ_ENCRYPT | BT_GATT_PERM_WRITE_ENCRYPT),
 );
 
 /* The TX characteristic's value, the attribute a notification names. */
@@ -609,6 +610,12 @@ static void send_now(const struct out_line *line) {
     /* Unsubscribed since it was queued: refused at the first fragment, which would read as a
      * torn line and cost the link. */
     if (!bt_gatt_is_subscribed(target.conn, NUS_TX_ATTR, BT_GATT_CCC_NOTIFY)) {
+        target_release(&target);
+        return;
+    }
+    /* A bonded phone's subscription is restored as it connects, before the link is encrypted:
+     * nothing goes out until it is. */
+    if (bt_conn_get_security(target.conn) < BT_SECURITY_L2) {
         target_release(&target);
         return;
     }

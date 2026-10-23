@@ -151,24 +151,22 @@ class BleBoardLink(context: Context, private val address: String) : BoardLink {
                     fail("not a LoRa Convoy board")
                     return
                 }
-                val subscribed = g.setCharacteristicNotification(tx, true) &&
-                    if (Build.VERSION.SDK_INT >= 33) {
-                        g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) ==
-                            BluetoothStatusCodes.SUCCESS
-                    } else {
-                        @Suppress("DEPRECATION")
-                        cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
-                        @Suppress("DEPRECATION")
-                        g.writeDescriptor(cccd)
-                    }
-                // without it nothing would ever arrive, and the link would look healthy while deaf
-                if (!subscribed) fail("could not subscribe to the board's lines")
+                subscribe(g, tx!!, cccd)
             }
         }
 
         override fun onDescriptorWrite(g: BluetoothGatt, d: BluetoothGattDescriptor, status: Int) {
             synchronized(this@BleBoardLink) {
                 if (g !== gatt || d.uuid != CCCD_UUID) return
+                // 5 and 15: a board that takes subscriptions only over an encrypted link (the L1's
+                // Zephyr). Android starts pairing; the subscription goes again once that is done.
+                if (status == GATT_INSUFFICIENT_AUTHENTICATION || status == GATT_INSUFFICIENT_ENCRYPTION) {
+                    if (g.device.bondState == BluetoothDevice.BOND_BONDED) authenticationRejected = true
+                    onState("pairing with the board: accept Android's pairing request")
+                    handler.postDelayed({ synchronized(this@BleBoardLink) { if (gatt === g) subscribe(g, d.characteristic, d) } },
+                        PAIRING_WAIT_MS)
+                    return
+                }
                 if (status != BluetoothGatt.GATT_SUCCESS) {
                     fail("subscription refused ($status)")
                     return
@@ -216,6 +214,22 @@ class BleBoardLink(context: Context, private val address: String) : BoardLink {
                 handler.postDelayed({ pump() }, delay)
             }
         }
+    }
+
+    /** The board's lines, notified. Without them nothing would ever arrive, and the link would look
+     * healthy while deaf. */
+    @Synchronized
+    private fun subscribe(g: BluetoothGatt, tx: BluetoothGattCharacteristic, cccd: BluetoothGattDescriptor) {
+        val subscribed = g.setCharacteristicNotification(tx, true) &&
+            if (Build.VERSION.SDK_INT >= 33) {
+                g.writeDescriptor(cccd, BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE) == BluetoothStatusCodes.SUCCESS
+            } else {
+                @Suppress("DEPRECATION")
+                cccd.value = BluetoothGattDescriptor.ENABLE_NOTIFICATION_VALUE
+                @Suppress("DEPRECATION")
+                g.writeDescriptor(cccd)
+            }
+        if (!subscribed) fail("could not subscribe to the board's lines")
     }
 
     private fun inbound(g: BluetoothGatt, c: BluetoothGattCharacteristic, value: ByteArray) {
