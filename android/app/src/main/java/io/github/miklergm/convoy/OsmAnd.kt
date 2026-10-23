@@ -52,6 +52,13 @@ class OsmAnd(private val context: Context) {
             api = null
             state = State.CONNECTING
         }
+
+        // OsmAnd stopped by hand or updated: this binding never comes back by itself, so a new one.
+        // Without it the riders stayed off the map until our service was restarted (the bench).
+        override fun onBindingDied(name: ComponentName?) {
+            disconnect()
+            connect()
+        }
     }
 
     /** Which OsmAnd is installed: OsmAnd+ and OsmAnd~ share a package; then the free one, a nightly. */
