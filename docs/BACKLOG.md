@@ -216,8 +216,10 @@ for some kinds of app, which matters once it is published (T-app-id). An hour on
 against a simulated board kept the link and flat memory (ROADMAP, M7); a phone over Bluetooth,
 asleep in a pocket, is the test that counts. The Bluetooth client now runs on the emulator bench
 against boards in netsim ([tools/bench](../tools/bench/README.md)): pairing with Android's consent,
-encrypted writes, a bond kept across a board's restart, FORGET from either side. A bond gone stale
-on one side can be made there too: stop a board, delete its bond file, start it again.
+encrypted writes, a bond kept across a board's restart, FORGET from either side, and a bond gone
+stale on the phone's side, the board reset by its button while the phone was away. Android 15
+pairs again by itself there, once the rider agrees; for phones that keep the stale key, as the
+bridge met on rides, the app drops it after two refused sessions (BondHealth).
 Needed by M7.
 
 ## Firmware and boards
