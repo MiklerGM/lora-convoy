@@ -14,11 +14,17 @@ import org.junit.Test
 
 class OsmAndLayerTest {
 
-    /** OsmAnd's side, as its AIDL API 5.4 keeps layers: an update adds and moves points, and never takes one away. */
+    /**
+     * OsmAnd's side, as its AIDL API 5.4 keeps layers (ConnectedApp): an update adds and moves
+     * points, and never takes one away; and so does adding a layer that is there already.
+     */
     private val layers = mutableMapOf<String, MutableMap<String, AMapPoint>>()
     private val osmand = Proxy.newProxyInstance(javaClass.classLoader, arrayOf(IOsmAndAidlInterface::class.java)) { _, m, args ->
         when (m.name) {
-            "addMapLayer" -> (args[0] as AddMapLayerParams).layer.let { layers[it.id] = it.points.associateBy { p -> p.id }.toMutableMap() } != null
+            "addMapLayer" -> (args[0] as AddMapLayerParams).layer.let { l ->
+                layers.getOrPut(l.id) { mutableMapOf() }.putAll(l.points.associateBy { it.id })
+                true
+            }
             "updateMapLayer" -> (args[0] as UpdateMapLayerParams).layer.let { l -> layers[l.id]?.putAll(l.points.associateBy { it.id }) } != null
             "removeMapLayer" -> layers.remove((args[0] as RemoveMapLayerParams).id) != null
             "removeMapPoint" -> (args[0] as RemoveMapPointParams).let { layers[it.layerId]?.remove(it.pointId) } != null
