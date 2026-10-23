@@ -128,6 +128,10 @@ int64_t node_time_budget_us(const node_t *n);
 /* Transmit time over the last 60 minutes, in milliseconds. */
 uint32_t node_duty_used_ms(const node_t *n, int64_t now_us);
 
+/* The duty ledger (01, requirements): transmit time a minute at a time over the last hour, oldest
+ * first, by category. Positions are the only category so far. */
+int node_format_ledger(const node_t *n, int64_t now_us, char *buf, size_t cap);
+
 /* One RIDER line, and the node's part of the status line: the phone API's words (api.h). */
 int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf, size_t cap);
 int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap);

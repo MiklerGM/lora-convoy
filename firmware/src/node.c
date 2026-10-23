@@ -148,6 +148,18 @@ uint32_t node_duty_used_ms(const node_t *n, int64_t now_us) {
     return sum;
 }
 
+int node_format_ledger(const node_t *n, int64_t now_us, char *buf, size_t cap) {
+    const int64_t minute = now_us / 60000000;
+    int len = snprintf(buf, cap, "LEDGER minutes=60 limit_ms=%lu used_ms=%lu positions_ms=",
+                       (unsigned long)(3600u * n->cfg.duty_permille), (unsigned long)node_duty_used_ms(n, now_us));
+    for (int64_t m = minute - 59; m <= minute && len > 0 && (size_t)len < cap; m++) {
+        const int b = (int)(((m % 60) + 60) % 60);
+        const uint32_t ms = m >= 0 && n->duty.minute[b] == m ? n->duty.used_ms[b] : 0;
+        len += snprintf(buf + len, cap - (size_t)len, m < minute ? "%lu," : "%lu", (unsigned long)ms);
+    }
+    return len;
+}
+
 /* ---- the schedule ---------------------------------------------------------------- */
 
 /* Frames are numbered from 1970 in UTC: frame k starts at k intervals. A frame holds a slot per

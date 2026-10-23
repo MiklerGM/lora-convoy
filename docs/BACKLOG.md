@@ -217,7 +217,9 @@ engine start ([01](01-goals.md), wishes; E7).
 ### T-ledger: exporting the duty ledger
 
 Transmit time per hour by category: positions, relays, routes, retries, control
-([01](01-goals.md), requirements). Needed by M7.
+([01](01-goals.md), requirements). **So far:** `LEDGER` gives the last hour a minute at a time, with
+positions the only category yet ([PROTOCOL](PROTOCOL.md)). Still open: keeping it over a restart,
+and the app saving it with the ride. Needed by M7.
 
 ### T-flasher: flashing without a toolchain
 

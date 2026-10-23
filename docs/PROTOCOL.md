@@ -190,6 +190,7 @@ on three transports:
 |---|---|
 | `STATUS` | `STATUS proto=4 board=… reset=… up=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … power=… dbm=…` |
 | `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>` |
+| `LEDGER` | `LEDGER minutes=60 limit_ms=… used_ms=… positions_ms=…`: the duty ledger, transmit time a minute at a time over the last hour, oldest first, by category |
 | `KEY <32 hex digits>` | `OK keyed group=<tag>`; riders heard under another key are forgotten |
 | `HELP <0–1>` | `OK help=<0–1>`: our rider's call for help, off or on; each time on, who answers starts afresh |
 | `SLOT <0–31>`, `SLOTS <1–32>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |

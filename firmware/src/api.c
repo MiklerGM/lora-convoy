@@ -53,6 +53,8 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
             known++;
         }
         snprintf(out, sizeof(out), "RIDERS %d", known);
+    } else if (strcasecmp(line, "ledger") == 0 && !arg) {
+        node_format_ledger(api->node, now_us, out, sizeof(out));
     } else if (strcasecmp(line, "key") == 0 && hex_key(arg, key)) {
         node_set_key(api->node, key);
         memset(key, 0, sizeof(key));
@@ -87,7 +89,7 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         api->bootloader = true;
         return;
     } else {
-        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, KEY <32 hex>, HELP 0-1, SLOT 0-%d, SLOTS 1-%d, "
+        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, LEDGER, KEY <32 hex>, HELP 0-1, SLOT 0-%d, SLOTS 1-%d, "
                  "INTERVAL 500-60000, POWER 0-3 (0 strongest), FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
                  NODE_SLOTS);
     }

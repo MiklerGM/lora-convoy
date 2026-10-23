@@ -227,6 +227,8 @@ static gnss_fix_t fix_at(int64_t utc_ms, bool valid) {
 #define UTC0_MS 1792670405000ll
 #define T0 (10 * SEC)
 
+static bool starts(const char *s, const char *prefix);
+
 static void tick(node_t *n, int64_t t) {
     if (t >= T0 && t % SEC == 0) {
         gnss_fix_t f = fix_at(UTC0_MS + (t - T0) / 1000, true);
@@ -397,6 +399,18 @@ static void test_node_duty(void) {
     assert(t < 60 * SEC);
     assert(node_duty_used_ms(&one, 59 * 60 * SEC + 59 * SEC) == 31);
     assert(node_duty_used_ms(&one, 60 * 60 * SEC) == 0);
+    /* The ledger: the hour a minute at a time, oldest first; the first minute's 116 packets. */
+    char ledger[API_LINE];
+    node_format_ledger(&n, 30 * 60 * SEC, ledger, sizeof(ledger));
+    assert(starts(ledger, "LEDGER minutes=60 limit_ms=3600 used_ms=3596 positions_ms=0,"));
+    assert(strstr(ledger, ",0,0,") && strlen(ledger) < API_LINE);
+    int sum = 0;
+    for (const char *c = strstr(ledger, "positions_ms=") + 13; *c; c++) {
+        sum += atoi(c);
+        while (*c && *c != ',') c++;
+        if (!*c) break;
+    }
+    assert(sum == 3596);
     /* An hour after the first packets the budget comes back. */
     int later = 0;
     for (t = 70 * 60 * SEC; t < 75 * 60 * SEC; t += 1000) {
@@ -622,6 +636,8 @@ static void test_api(void) {
     assert(strcmp(replies[0], "OK slot=5") == 0 && n.cfg.slot == 5);
     ask(&api, "SLOT 32");
     assert(starts(replies[0], "ERR ") && n.cfg.slot == 5);
+    ask(&api, "LEDGER");
+    assert(n_replies == 1 && starts(replies[0], "LEDGER minutes=60 limit_ms=360000 used_ms=0 positions_ms=0,"));
     ask(&api, "HELP 1");
     assert(strcmp(replies[0], "OK help=1") == 0 && n.help);
     ask(&api, "HELP 2");

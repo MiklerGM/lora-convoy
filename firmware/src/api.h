@@ -13,6 +13,7 @@
  *   phone -> board                 board -> phone
  *   STATUS                         STATUS proto=4 board=... (also sent unasked)
  *   RIDERS                         RIDER ... for each rider known, then RIDERS <n>
+ *   LEDGER                         LEDGER ...: transmit time a minute at a time, over the hour
  *   KEY <32 hex digits>            OK keyed group=<tag>: the group's key, from the invitation
  *   HELP <0|1>                     OK help=<0|1>: our rider's call for help, off or on
  *   SLOT <0-31>, SLOTS <1-32>,     OK <key>=<value>, or ERR <why>
