@@ -10,6 +10,9 @@
                            calls for help and the others' boards answer; phone 1 forgets its board
     bench.py down          stop it all
     bench.py ui PHONE list|tap TEXT     look at or tap a phone's screen, by hand
+    bench.py engine PHONE opengl|v1     OsmAnd's map engine on that phone, OsmAnd restarted
+    bench.py map PHONE [FRAMES]         in how many of FRAMES screenshots (30) its OsmAnd shows all
+                                        the other riders: the OpenGL engine's blinking, measured
 
 The AVD is prepared once, by android/emulator.sh up, install and map, with OsmAnd's plugin for
 LoRa Convoy switched on (emulator.sh, M1). Bonds live in ~/.cache/lora-convoy/bench; a run's logs
@@ -103,6 +106,8 @@ def bluetooth_on(serial: str, on: bool, timeout=30) -> None:
         if time.time() > deadline:
             sys.exit(f"{serial}: Bluetooth would not turn {'on' if on else 'off'}")
         time.sleep(1)
+    # the setting flips before the adapter is up; an app that scans meanwhile finds Bluetooth off
+    adb(serial, "shell", "cmd", "bluetooth_manager", f"wait-for-state:STATE_{'ON' if on else 'OFF'}", check=False)
 
 
 def own_bluetooth_keys(serial: str, taken: list) -> str:
@@ -323,6 +328,48 @@ def board_command(board: int, *commands: str) -> list:
         return [line for line in c.recv(65536).decode().splitlines() if line.startswith(("OK", "ERR"))]
 
 
+# ---- OsmAnd's map, measured ----------------------------------------------------------------
+
+OSMAND_SETTINGS = "/data/data/net.osmand.plus/shared_prefs/net.osmand.settings.xml"
+
+
+def engine(serial: str, which: str) -> None:
+    """OsmAnd reads use_opengl_render when it starts its map; the default is OpenGL on 64-bit
+    Android 9 and later (AppInitializer)."""
+    adb(serial, "root", check=False)
+    deadline = time.time() + 60
+    while adb(serial, "shell", "id", "-u", check=False).strip() != "0":
+        if time.time() > deadline:
+            sys.exit(f"{serial}: adb would not run as root")
+        time.sleep(1)
+    value = "true" if which == "opengl" else "false"
+    adb(serial, "shell", "am", "force-stop", "net.osmand.plus", check=False)
+    owner = adb(serial, "shell", "stat", "-c", "%u:%g", OSMAND_SETTINGS).strip()
+    xml = adb(serial, "shell", "cat", OSMAND_SETTINGS)
+    entry = f'<boolean name="use_opengl_render" value="{value}" />'
+    xml = re.sub(r'<boolean name="use_opengl_render" value="\w+" />', entry, xml) if "use_opengl_render" in xml \
+        else xml.replace("</map>", f"    {entry}\n</map>")
+    staged = "/data/local/tmp/net.osmand.settings.xml"
+    subprocess.run(["adb", "-s", serial, "shell", f"cat > {staged}"], input=xml, text=True, check=True)
+    adb(serial, "shell", f"cp {staged} {OSMAND_SETTINGS} && chown {owner} {OSMAND_SETTINGS} && "
+                         f"chmod 660 {OSMAND_SETTINGS} && restorecon {OSMAND_SETTINGS}")
+    adb(serial, "shell", "am", "start", "-n", "net.osmand.plus/net.osmand.plus.activities.MapActivity", check=False)
+    time.sleep(15)
+    settle(serial)
+    tap(serial, "Zoom out", exact=True)
+    time.sleep(3)
+    print(f"engine: phone {serial} now draws with {which}")
+
+
+def measure_map(i: int, frames: int) -> None:
+    boards = int((RUN / "phones").read_text()) + 1
+    others = [s for s in range(boards) if s != i]
+    seen = riders_on_map(phone(i), others, frames)
+    whole = sum(all(s in f for s in others) for f in seen)
+    each = ", ".join(f"{NAMES[s]} {sum(s in f for f in seen)}" for s in others)
+    print(f"map: phone {i} showed all {len(others)} others in {whole} of {frames} frames ({each})")
+
+
 # ---- the ride ----------------------------------------------------------------------------
 
 def step(text: str) -> None:
@@ -396,11 +443,9 @@ def ride() -> None:
     wait_tap(p1, "Call off help")
     wait_status(p1, r"^(?!.*calling for help).*Board:", 30)
 
-    adb(p0, "shell", "am", "start", "-n", "net.osmand.plus/net.osmand.plus.activities.MapActivity", check=False)
-    time.sleep(10)
-    settle(p0)
-    tap(p0, "Zoom out", exact=True)  # the riders circle a few hundred metres out
-    time.sleep(3)
+    # OsmAnd stopped and started again, as a rider or an update does: the app binds to it anew. The
+    # Version 1 engine, as OpenGL hides moving points in a share of frames (T-osmand-opengl).
+    engine(p0, "v1")
     others = list(range(1, boards))
     seen = riders_on_map(p0, others)
     with open(RUN / "phone-0-map.png", "wb") as f:
@@ -408,8 +453,8 @@ def ride() -> None:
     missing = [names[s] for s in others if not any(s in f for f in seen)]
     assert not missing, f"phone 0's map never showed {missing} in {len(seen)} frames"
     whole = sum(all(s in f for s in others) for f in seen)
-    step(f"phone 0's OsmAnd shows the {len(others)} others, all of them in {whole} of {len(seen)} frames "
-         f"({RUN / 'phone-0-map.png'})")
+    step(f"OsmAnd restarted, and phone 0's map shows the {len(others)} others again, all of them in {whole} of "
+         f"{len(seen)} frames ({RUN / 'phone-0-map.png'})")
 
     restart_board(0)
     wait_status(p0, rf"{names[0]}, rider 1 of {boards}.*{boards - 1} riders heard", 90)
@@ -465,6 +510,10 @@ if __name__ == "__main__":
             raise
     elif cmd == "down":
         down()
+    elif cmd == "engine" and len(sys.argv) == 4 and sys.argv[3] in ("opengl", "v1"):
+        engine(phone(int(sys.argv[2])), sys.argv[3])
+    elif cmd == "map" and len(sys.argv) >= 3:
+        measure_map(int(sys.argv[2]), int(sys.argv[3]) if len(sys.argv) > 3 else 30)
     elif cmd == "ui" and len(sys.argv) >= 4:
         serial = phone(int(sys.argv[2]))
         if sys.argv[3] == "list":

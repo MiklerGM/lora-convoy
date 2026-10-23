@@ -45,9 +45,10 @@ flowchart LR
    invitation; the last board rides alone, keyed by hand, as a beacon.
 3. Every phone's board hears all the others.
 4. Phone 1 calls for help, and every other board answers it.
-5. Phone 0's OsmAnd shows every other rider: their colours are looked for in ten screenshots,
-   and how many frames had them all measures the OpenGL engine's blinking (T-osmand-opengl). The
-   last frame is kept, for a look at the names.
+5. OsmAnd is stopped and started again, as a rider or an update does, and phone 0's map shows
+   every other rider again: their colours are looked for in ten screenshots. The last frame is
+   kept, for a look at the names. `bench.py engine` and `map` measure the OpenGL engine's
+   blinking the same way, on the bench or on a real phone over adb.
 6. Board 0 restarts and keeps its bond, as a board keeps it in flash: phone 0 comes back to it
    without pairing again.
 7. Board 0 is reset by its button while phone 0 is out of reach, so phone 0's bond is stale: the
