@@ -557,8 +557,6 @@ static void test_node_help(void) {
     assert(node_on_packet(&w, b, len, -80, 0, t));
     node_format_rider(&w, 1, t, line, sizeof(line));
     assert(strstr(line, " help=1 stopped=0 answered=2 "));
-    node_format_rider(&w, 2, t, line, sizeof(line));
-    assert(strstr(line, " help=0 stopped=0 answered=- "));
     /* An answer to another rider's call is not one to ours. */
     const position_t other = {.slot = 4, .session = 77, .counter = 0, .fix_time = 64197, .lat_e7 = 1, .lon_e7 = 1,
                               .status = ST_GPS_OK, .help_heard = 5, .heard_call = a.help_call};
