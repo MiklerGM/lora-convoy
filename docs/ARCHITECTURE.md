@@ -193,3 +193,14 @@ against FIPS-197, RFC 3610 and OpenSSL, and the app derives the group tag with J
   check wipes the plaintext, but AES looks its S-box up in a table, whose timing depends on the key
   where caches are involved; over the air the timing is buried under the random interval, and
   nobody else's code runs on a board. A review before the first ride is part of T-tag and T-nonce.
+
+### D14. GPL-3.0-or-later (2026-10-23)
+
+The whole repository: firmware, app, tools and documents.
+
+- **Why:** the app ships OsmAnd's `android-aidl-lib`, built from OsmAnd's repository, whose code is
+  GPLv3 with no exception for that module [code: `LICENSE` at `a68b83f`]; and GPL keeps MeshAnd's
+  and Meshtastic's code open to us. The code taken from dmd2-lora-bridge (Apache-2.0) is the same
+  owner's.
+- **Cost:** nobody can build a closed product on this firmware or protocol code; the protocol
+  itself, as documented, stays free to implement.

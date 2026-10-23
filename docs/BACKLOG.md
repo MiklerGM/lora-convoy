@@ -9,14 +9,12 @@ freshness, set the default radio mode in M5.
 
 ## For the owner
 
-### T-licence: the licence, and publishing
+### T-licence: publishing
 
-Apache-2.0, as dmd2-lora-bridge, or GPL-3.0, which reusing MeshAnd's or Meshtastic's code would
-require. The owner is open to GPL-3.0 if we take MeshAnd's code as well as the bridge's
-(2026-10-22). Settled the first time code is copied from a GPL project, and before the repository is
-published. The app already ships one library from a GPL project: OsmAnd's `android-aidl-lib`, built
-from `OsmAnd-api/` in OsmAnd's repository, whose code is GPLv3 with no exception for that module
-[code: `LICENSE` at `a68b83f`]. The rest of the app is ours or the bridge's.
+**Licence decided, 2026-10-23:** GPL-3.0-or-later for the whole repository (ARCHITECTURE, D14).
+Before the repository goes public: a history check (done 2026-10-23: no secrets, no DMD2 4.036
+internals; the author's address is public already), CI that runs `make check`, a README for
+strangers, and SECURITY.md saying the cipher is our own and unreviewed.
 
 ### T-app-id: the app's name and package
 

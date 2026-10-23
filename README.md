@@ -75,6 +75,11 @@ Meshtastic's firmware branch `develop` (pinned here at `fad52bb`) is ahead of th
 boards, 2.7.26 (tag `54e0d8d`): several behaviours below exist only in `develop`, and each says
 which.
 
+## Licence
+
+GPL-3.0-or-later ([LICENSE](LICENSE)), for the firmware, the app, the tools and the documents
+([ARCHITECTURE](docs/ARCHITECTURE.md), D14).
+
 ## Reviews
 
 Two AI reviews, each re-deriving the figures and checking claims against pinned sources, have been
