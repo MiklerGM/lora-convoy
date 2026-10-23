@@ -293,6 +293,28 @@ int64_t node_next_tx_us(const node_t *n, int64_t now_us) {
  * a rider's own clock and ours disagree by a second or so. */
 #define REPLAY_SLACK_MS 2000
 
+/* Where a session is among a rider's latest, or -1. */
+static int session_seen(const rider_t *r, uint32_t session) {
+    for (int i = 0; i < r->sessions_seen; i++) {
+        if (r->session_seen[i] == session) return i;
+    }
+    return -1;
+}
+
+/* The highest counter taken in a session; a session not among them goes in first, and the oldest
+ * of them goes. */
+static void remember_session(rider_t *r, uint32_t session, uint16_t counter) {
+    int i = session_seen(r, session);
+    if (i < 0) {
+        const int keep = r->sessions_seen < NODE_SESSIONS ? r->sessions_seen++ : NODE_SESSIONS - 1;
+        memmove(&r->session_seen[1], &r->session_seen[0], (size_t)keep * sizeof(r->session_seen[0]));
+        memmove(&r->counter_seen[1], &r->counter_seen[0], (size_t)keep * sizeof(r->counter_seen[0]));
+        r->session_seen[0] = session;
+        i = 0;
+    }
+    r->counter_seen[i] = counter;
+}
+
 bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int snr_db4, int64_t now_us) {
     position_t p;
     if (!n->cfg.keyed) {
@@ -325,16 +347,21 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
     }
     rider_t *r = &n->riders[p.slot];
     if (r->known) {
-        /* A repeat or a replay: within a session the counter only grows; a session we have not
-         * seen must bring a fix no older than the one we hold, or it is an old one played again. */
-        const bool same = p.session == r->last.session;
-        if ((same && p.counter <= r->last.counter) ||
-            (!same && fix_utc_ms && r->fix_utc_ms && fix_utc_ms < r->fix_utc_ms - REPLAY_SLACK_MS)) {
+        /* A repeat or a replay: in each of its latest sessions the counter only grows, whichever
+         * was heard last; and a packet of any session but the last must bring a fix no older than
+         * the one we hold, or it is an old one played again. ponytail: four sessions a rider, so a
+         * replay cycling through more of them, recorded close in time, gets through; the frame
+         * number in the nonce would end it (T-nonce). */
+        const int seen = session_seen(r, p.session);
+        if ((seen >= 0 && p.counter <= r->counter_seen[seen]) ||
+            (p.session != r->last.session && fix_utc_ms && r->fix_utc_ms &&
+             fix_utc_ms < r->fix_utc_ms - REPLAY_SLACK_MS)) {
             n->rx_replay++;
             return false;
         }
-        if (!same) r->received = 0;
+        if (p.session != r->last.session) r->received = 0;
     }
+    remember_session(r, p.session, p.counter);
     if (!r->known || p.session != r->last.session) r->first_counter = p.counter;
     r->received++;
     r->known = true;

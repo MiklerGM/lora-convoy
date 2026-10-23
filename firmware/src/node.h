@@ -15,6 +15,8 @@
  */
 
 #define NODE_SLOTS 32
+/* Sessions remembered for each rider, with the highest counter taken in each. */
+#define NODE_SESSIONS 4
 
 typedef struct {
     bool keyed;              /* without a key the board sends nothing: v1 has no clear text */
@@ -42,6 +44,11 @@ typedef struct {
     int16_t snr_db4;         /* quarter dB */
     uint32_t received;       /* packets taken from it in this session */
     uint16_t first_counter;  /* the session's first counter we took */
+    /* Its latest sessions, the newest first, and the highest counter taken in each: in any of
+     * them a packet must bring a higher one, whichever session was heard last. */
+    uint32_t session_seen[NODE_SESSIONS];
+    uint16_t counter_seen[NODE_SESSIONS];
+    uint8_t sessions_seen;
 } rider_t;
 
 /* Transmit time over the last hour, a minute at a time. */

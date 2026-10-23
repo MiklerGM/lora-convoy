@@ -471,6 +471,23 @@ static void test_node_hears(void) {
     /* The old session played back: its fix is older than the one we hold, so it is not taken. */
     assert(!node_on_packet(&n, b, packet(b, &g, 2, 100, 14, 64199 - 3), -70, 30, 9 * SEC) && n.rx_replay == 2);
 
+    /* A rider that restarted within the second: both sessions' packets are genuine, and played
+     * back in turn, each would look like a new session to a receiver that remembered only the
+     * last one. Two hundred of them, and none is taken. */
+    node_t twice;
+    node_init(&twice, &CFG, 9);
+    node_on_fix(&twice, &f, 0);
+    uint8_t rec[4][PKT_POSITION_LEN];
+    packet(rec[0], &g, 6, 300, 10, 64197);
+    packet(rec[1], &g, 6, 300, 11, 64198);
+    packet(rec[2], &g, 6, 400, 0, 64198);
+    packet(rec[3], &g, 6, 400, 1, 64199);
+    for (int k = 0; k < 4; k++) assert(node_on_packet(&twice, rec[k], PKT_POSITION_LEN, -70, 30, k * SEC));
+    for (int k = 0; k < 200; k++) {
+        assert(!node_on_packet(&twice, rec[k % 2 ? 3 : 1], PKT_POSITION_LEN, -70, 30, (5 + k) * SEC));
+    }
+    assert(twice.rx_replay == 200);
+
     /* A fix stamped in the future (its clock is wrong) shows as such, not as fresh. */
     node_on_packet(&n, b, packet(b, &g, 3, 1, 0, 64197 + 20), -80, 0, 2 * SEC);
     node_format_rider(&n, 3, 2 * SEC, line, sizeof(line));
