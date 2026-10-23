@@ -4,6 +4,8 @@ import android.util.Log
 import java.io.IOException
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.util.concurrent.Executors
+import java.util.concurrent.RejectedExecutionException
 
 /**
  * A board's phone API over some byte stream: lines in, lines out, one board at a time. Over TCP
@@ -13,7 +15,7 @@ interface BoardLink {
     /** Starts connecting, and reconnects until [close]. Lines and states arrive on the link's own thread. */
     fun open(onLine: (String) -> Unit, onState: (String) -> Unit)
 
-    /** One line to the board; false if it could not go. */
+    /** One line to the board, from any thread, the main one included; false if it could not go. */
     fun send(line: String): Boolean
 
     fun close()
@@ -60,6 +62,8 @@ class TcpBoardLink(private val host: String, private val port: Int) : BoardLink 
 
     @Volatile private var socket: Socket? = null
     @Volatile private var closed = false
+    /** Writes on a thread of their own, in order: the service sends from the main thread too. */
+    private val writer = Executors.newSingleThreadExecutor { r -> Thread(r, "board-tcp-write").apply { isDaemon = true } }
 
     override fun open(onLine: (String) -> Unit, onState: (String) -> Unit) {
         Thread({
@@ -99,17 +103,22 @@ class TcpBoardLink(private val host: String, private val port: Int) : BoardLink 
     override fun send(line: String): Boolean {
         val s = socket ?: return false
         return try {
-            synchronized(this) {
-                s.getOutputStream().apply { write("$line\n".toByteArray(Charsets.US_ASCII)); flush() }
+            writer.execute {
+                try {
+                    s.getOutputStream().apply { write("$line\n".toByteArray(Charsets.US_ASCII)); flush() }
+                } catch (e: IOException) {
+                    Log.w(TAG, "board link: ${e.message}")
+                }
             }
             true
-        } catch (e: IOException) {
-            false
+        } catch (e: RejectedExecutionException) {
+            false // closed meanwhile
         }
     }
 
     override fun close() {
         closed = true
+        writer.shutdown()
         try {
             socket?.close()
         } catch (e: IOException) {
