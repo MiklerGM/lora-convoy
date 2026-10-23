@@ -234,7 +234,10 @@ percentile; out of it, the last fix stays on the map and ages; a stopped rider's
 by twelve at once and four more as they come by. Two riders given one slot now find out within
 half a minute or so, and the app says so. The duty ledger comes over the phone API (`LEDGER`), and
 the app asks to be let run in the background. A bench guide ([BENCH](BENCH.md)) lists what to
-check once the boards are there.
+check once the boards are there. A soak run of an hour on the emulator, OsmAnd in front and the
+app on a simulated board in a group of three: the link never dropped, the app's memory stayed at
+41–44 MB and OsmAnd's at 280–321 MB without growing, and nothing crashed. Setting it up found a
+crash, now fixed: a call for help from the main thread wrote to the TCP link there.
 
 ## Later: research first
 

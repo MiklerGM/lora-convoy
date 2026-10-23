@@ -214,7 +214,9 @@ Samsung's sleeping apps, the battery exemption, reconnects, a soak run (E7). Muc
 dmd2-lora-bridge already, including what its Bluetooth link learned on rides and the app's lean
 `BleBoardLink` leaves out: a bond gone stale on one side, and pinning the chosen board by name.
 **So far:** the app asks for the battery exemption as the bridge did; Play allows that request only
-for some kinds of app, which matters once it is published (T-app-id).
+for some kinds of app, which matters once it is published (T-app-id). An hour on the emulator
+against a simulated board kept the link and flat memory (ROADMAP, M7); a phone over Bluetooth,
+asleep in a pocket, is the test that counts.
 Needed by M7.
 
 ## Firmware and boards
