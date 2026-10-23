@@ -1,9 +1,10 @@
 /*
  * Several node cores on simulated air (ARCHITECTURE, testing without hardware).
  *
- * The air, for now: everyone hears everyone; a packet is lost to a receiver that transmits during
- * any of it, to everyone when two transmissions overlap (no capture effect), and at random with a
- * set probability. Each rider rides a circle around Vaduz. Each board has its own clock, off by its
+ * The air: everyone hears everyone, or, given a range, everyone within it and fewer and fewer up to
+ * half as far again. A packet is lost to a receiver that transmits during any of it, to one that
+ * hears two transmissions overlap (no capture effect), and at random with a set probability. Each
+ * rider rides a circle around Vaduz, or a road out of it in a column that spreads out. Each board has its own clock, off by its
  * crystal's drift, and a GNSS that gives a PPS edge on the second, where the board has the line,
  * and its fix some 100 ms later; for some, nothing for a while, as in a tunnel.
  *
@@ -72,6 +73,8 @@ typedef struct {
     uint32_t seed;
     int groups;            /* riders split into this many groups, each with its own key; 0: no key */
     clocks_t clocks;
+    double range_m;        /* how far a radio is heard for sure; 0 for everywhere */
+    bool column;           /* riders on one road at their own speeds, one stopping, not on circles */
 } scenario_t;
 
 typedef struct {
@@ -103,6 +106,7 @@ typedef struct {
         int64_t fix_second;  /* ... and naming this second */
     } clock[MAX_NODES];
     int group_of[MAX_NODES], slot_of[MAX_NODES], size_of[MAX_NODES]; /* size: of i's group */
+    double north_m[MAX_NODES], east_m[MAX_NODES]; /* where each rider is, from Vaduz, this second */
     int sent, collisions, within, sent_by[MAX_NODES];
     long taken, expected, taken_from[MAX_NODES];
     /* told of every packet a node takes, for a phone connected to it */
@@ -150,6 +154,48 @@ static int64_t local_us(const world_t *w, int i, int64_t t) {
     return w->clock[i].offset_us + t + (int64_t)((double)t * w->clock[i].drift);
 }
 
+/* A column on a road north-east out of Vaduz: rider i starts 100 m behind the one before, rides at
+ * 50-74 km/h, and the column spreads out; rider STOPPER stops for five minutes. */
+#define STOPPER 5
+#define STOP_FROM (600 * SEC)
+#define STOP_FOR (300 * SEC)
+
+static double column_m(int i, int64_t t_us) {
+    const double kmh = 50 + (i * 7) % 25;
+    int64_t moving = t_us;
+    if (i == STOPPER && t_us > STOP_FROM) moving -= t_us - STOP_FROM < STOP_FOR ? t_us - STOP_FROM : STOP_FOR;
+    return -100.0 * i + kmh / 3.6 * (double)moving / SEC;
+}
+
+static gnss_fix_t column_fix(int i, int64_t t_us, int64_t utc0_ms) {
+    const double m = column_m(i, t_us), north = m * cos(PI / 4), east = m * sin(PI / 4);
+    const bool stopped = i == STOPPER && t_us > STOP_FROM && t_us < STOP_FROM + STOP_FOR;
+    return (gnss_fix_t){.time_valid = true, .valid = true, .utc_ms = utc0_ms + t_us / 1000,
+                        .lat_e7 = (int32_t)lround((47.1410 + north / 111320.0) * 1e7),
+                        .lon_e7 = (int32_t)lround((9.5215 + east / (111320.0 * cos(47.1410 * PI / 180))) * 1e7),
+                        .speed_kmh10 = stopped ? 0 : (50 + (i * 7) % 25) * 10, .course_deg10 = 450,
+                        .sats = 9, .hdop10 = 9};
+}
+
+static gnss_fix_t where(const world_t *w, int i, int64_t t_us) {
+    return w->sc.column ? column_fix(i, t_us, w->utc0_ms) : ride(i, t_us, w->utc0_ms);
+}
+
+static double distance_m(const world_t *w, int a, int b) {
+    const double dn = w->north_m[a] - w->north_m[b], de = w->east_m[a] - w->east_m[b];
+    return sqrt(dn * dn + de * de);
+}
+
+/* Whether receiver i is in reach of sender j, this once: for sure within the range, then less and
+ * less likely up to half as far again. */
+static bool reaches(world_t *w, int j, int i) {
+    if (w->sc.range_m <= 0) return true;
+    const double d = distance_m(w, i, j), r = w->sc.range_m;
+    if (d <= r) return true;
+    if (d >= 1.5 * r) return false;
+    return (double)(rnd(&w->rng) % 1000000) / 1e6 < (1.5 * r - d) / (0.5 * r);
+}
+
 static void world_init(world_t *w, const scenario_t *sc, int64_t utc0_ms) {
     memset(w, 0, sizeof(*w));
     w->sc = *sc;
@@ -190,8 +236,13 @@ static void world_step(world_t *w, int64_t t) {
             w->clock[i].fix_due = t + c->lag_us + jitter;
             w->clock[i].fix_second = t;
         }
+        if (t % SEC == 0) {
+            const gnss_fix_t here = where(w, i, t);
+            w->north_m[i] = (here.lat_e7 / 1e7 - 47.1410) * 111320.0;
+            w->east_m[i] = (here.lon_e7 / 1e7 - 9.5215) * 111320.0 * cos(47.1410 * PI / 180);
+        }
         if (w->clock[i].fix_pending && t >= w->clock[i].fix_due) {
-            gnss_fix_t f = ride(i, w->clock[i].fix_second, w->utc0_ms);
+            gnss_fix_t f = where(w, i, w->clock[i].fix_second);
             node_on_fix(&w->node[i], &f, local_us(w, i, w->clock[i].fix_due));
             w->clock[i].fix_pending = false;
         }
@@ -225,14 +276,18 @@ static void world_step(world_t *w, int64_t t) {
         }
         w->collisions += collided;
         w->within += within;
-        for (int i = 0; i < w->sc.nodes && !collided; i++) {
-            if (i == x->from) continue;
-            /* half duplex: a receiver sending during any of it hears none of it */
-            bool busy = false;
-            for (int j = 0; j < w->in_air; j++) {
-                if (w->air[j].from == i && w->air[j].start < x->end && w->air[j].end > x->start) busy = true;
+        for (int i = 0; i < w->sc.nodes; i++) {
+            if (i == x->from || !reaches(w, x->from, i)) continue;
+            /* half duplex: a receiver sending during any of it hears none of it; and one that also
+             * hears another packet over it hears neither */
+            bool lost = false;
+            for (int j = 0; j < w->in_air && !lost; j++) {
+                const transmission_t *o = &w->air[j];
+                if (j == k || o->start >= x->end || o->end <= x->start) continue;
+                lost = o->from == i || w->sc.range_m <= 0 ||
+                       distance_m(w, o->from, i) < 1.5 * w->sc.range_m;
             }
-            if (busy || (double)(rnd(&w->rng) % 1000000) / 1e6 < w->sc.loss) continue;
+            if (lost || (double)(rnd(&w->rng) % 1000000) / 1e6 < w->sc.loss) continue;
             if (node_on_packet(&w->node[i], x->bytes, x->len, -90, 20, local_us(w, i, t))) {
                 w->taken++;
                 w->taken_from[x->from]++;
@@ -366,7 +421,7 @@ static void serve(int n, int port) {
     static world_t w;
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
-    const scenario_t sc = {n, 2000, 0, 0, (uint32_t)now.tv_sec, 0, GOOD};
+    const scenario_t sc = {n, 2000, 0, 0, (uint32_t)now.tv_sec, 0, GOOD, 0, false};
     /* on a whole second, as GNSS time is, so the PPS edges and the fixes pair up */
     world_init(&w, &sc, (int64_t)now.tv_sec * 1000);
     w.on_taken = on_taken;
@@ -450,7 +505,7 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc == 4) {
-        const scenario_t sc = {atoi(argv[1]), (uint32_t)atoi(argv[2]), atoll(argv[3]) * SEC, 0, 42, 1, GOOD};
+        const scenario_t sc = {atoi(argv[1]), (uint32_t)atoi(argv[2]), atoll(argv[3]) * SEC, 0, 42, 1, GOOD, 0, false};
         const outcome_t o = run(&sc, true);
         printf("%d riders every %u ms for %s s: %d sent, %d collided (%d within the group), %.1f %% delivered, "
                "fix age shown p50 %.1f s, p95 %.1f s, %lu slots passed over unsure of the time\n", sc.nodes,
@@ -460,21 +515,21 @@ int main(int argc, char **argv) {
     }
 
     /* Three riders, a slot each every 2 s: each hears the others every frame. */
-    const scenario_t three = {3, 2000, 600 * SEC, 0, 1, 1, GOOD};
+    const scenario_t three = {3, 2000, 600 * SEC, 0, 1, 1, GOOD, 0, false};
     outcome_t o = run(&three, false);
     printf("sim: 3 riders every 2 s: %.1f %% delivered, %d collisions, fix age p50 %.1f s, p95 %.1f s\n",
            100 * o.delivered, o.collisions, o.age_p50, o.age_p95);
     assert(o.delivered > 0.99 && o.collisions == 0 && o.age_p95 <= 3.5);
 
     /* With 10 % random loss on top, still everyone, a little older. */
-    const scenario_t lossy = {3, 2000, 600 * SEC, 0.10, 2, 1, GOOD};
+    const scenario_t lossy = {3, 2000, 600 * SEC, 0.10, 2, 1, GOOD, 0, false};
     o = run(&lossy, false);
     printf("sim: 3 riders, 10 %% random loss: %.1f %% delivered, fix age p50 %.1f s, p95 %.1f s\n",
            100 * o.delivered, o.age_p50, o.age_p95);
     assert(o.delivered > 0.85 && o.delivered < 0.95 && o.age_p95 <= 5.5);
 
     /* Twenty riders every 2 s: random access lost 45 % of them to collisions (M5); slots lose none. */
-    const scenario_t twenty = {20, 2000, 600 * SEC, 0, 3, 1, GOOD};
+    const scenario_t twenty = {20, 2000, 600 * SEC, 0, 3, 1, GOOD, 0, false};
     o = run(&twenty, false);
     printf("sim: 20 riders every 2 s in slots: %.1f %% delivered, %d collisions, fix age p50 %.1f s, p95 %.1f s "
            "(random access: 55 %%, p95 8.5 s)\n", 100 * o.delivered, o.collisions, o.age_p50, o.age_p95);
@@ -484,7 +539,7 @@ int main(int argc, char **argv) {
      * whose NMEA comes 120 ms after the second, give or take 5 ms, and are told so. */
     const clocks_t mixed = {.drift_ppm = 20, .nmea_only = 10, .lag_us = 120000, .jitter_us = 5000,
                             .told_lag_us = 120000, .told_err_us = 10000};
-    const scenario_t real = {20, 2000, 600 * SEC, 0, 5, 1, mixed};
+    const scenario_t real = {20, 2000, 600 * SEC, 0, 5, 1, mixed, 0, false};
     o = run(&real, false);
     printf("sim: 20 riders, half without PPS, crystals 20 ppm off: %.1f %% delivered, %d collisions\n",
            100 * o.delivered, o.collisions);
@@ -495,7 +550,7 @@ int main(int argc, char **argv) {
      * the fix. Nobody collides. */
     const clocks_t tunnel = {.drift_ppm = 20, .lag_us = 100000, .told_err_us = 100000, .dark = 3,
                              .dark_from_us = 60 * SEC, .dark_us = 900 * SEC};
-    const scenario_t dark = {20, 2000, 1200 * SEC, 0, 6, 1, tunnel};
+    const scenario_t dark = {20, 2000, 1200 * SEC, 0, 6, 1, tunnel, 0, false};
     o = run(&dark, false);
     unsigned long quiet = 0, after = 0;
     for (int i = 17; i < 20; i++) {
@@ -511,11 +566,11 @@ int main(int argc, char **argv) {
      * rider's slot, every frame: why E0 measures the lag before a ride. Told it is unsure, as boards
      * are by default (100 ms), it keeps quiet in a group this size instead. */
     const clocks_t careless = {.nmea_only = 1, .lag_us = 100000, .jitter_us = 5000, .told_err_us = 10000};
-    const scenario_t wrong = {20, 2000, 600 * SEC, 0, 7, 1, careless};
+    const scenario_t wrong = {20, 2000, 600 * SEC, 0, 7, 1, careless, 0, false};
     o = run(&wrong, false);
     const int wrong_within = o.within;
     const clocks_t honest = {.nmea_only = 1, .lag_us = 100000, .jitter_us = 5000, .told_err_us = 100000};
-    const scenario_t unsure = {20, 2000, 600 * SEC, 0, 7, 1, honest};
+    const scenario_t unsure = {20, 2000, 600 * SEC, 0, 7, 1, honest, 0, false};
     o = run(&unsure, false);
     printf("sim: an L1 told nothing of its NMEA's lag, and sure of it, collides with the next rider in every "
            "frame (%d packets); told it is unsure, it keeps quiet (%d silent, %d collisions)\n", wrong_within,
@@ -526,7 +581,7 @@ int main(int argc, char **argv) {
      * packets lost; how long until one of the others answers, and until all of them have. */
     {
         static world_t h;
-        const scenario_t helpers = {20, 2000, 0, 0.10, 9, 1, GOOD};
+        const scenario_t helpers = {20, 2000, 0, 0.10, 9, 1, GOOD, 0, false};
         world_init(&h, &helpers, 1792670400000ll);
         double first[20], all[20];
         int64_t t = 0;
@@ -554,10 +609,56 @@ int main(int argc, char **argv) {
         assert(first[19] < 5 && all[19] < 20);
     }
 
+    /* A column of twenty on one road, spreading out to some 9 km in 20 minutes, its radios in reach
+     * for sure within 1 km, as in forest (06: out of range means stale, not lost). Rider 6 stops
+     * after ten minutes for five, and calls for help: those in reach answer at once, those behind as
+     * they come by, and those ahead not at all. */
+    {
+        static world_t c;
+        const scenario_t road = {20, 2000, 1200 * SEC, 0, 10, 1, GOOD, 1000, true};
+        world_init(&c, &road, 1792670400000ll);
+        static double near[20 * 19 * 1200], far[20 * 19 * 1200];
+        size_t n_near = 0, n_far = 0;
+        int quick = 0, by_end = 0;
+        for (int64_t t = 0; t < road.duration_us; t += STEP_US) {
+            world_step(&c, t);
+            if (t == STOP_FROM) node_set_help(&c.node[STOPPER], true);
+            if (t == STOP_FROM + 10 * SEC) quick = __builtin_popcount(c.node[STOPPER].help_heard_by);
+            if (t == STOP_FROM + STOP_FOR) {
+                by_end = __builtin_popcount(c.node[STOPPER].help_heard_by);
+                node_set_help(&c.node[STOPPER], false);
+            }
+            if (t % SEC != SEC / 2 || t < 20 * SEC) continue;
+            for (int i = 0; i < 20; i++) {
+                int64_t utc;
+                if (!node_utc_ms(&c.node[i], local_us(&c, i, t), &utc)) continue;
+                for (int j = 0; j < 20; j++) {
+                    if (j == i) continue;
+                    const rider_t *r = &c.node[i].riders[c.slot_of[j]];
+                    const double age = r->known ? (double)(utc - r->fix_utc_ms) / 1000 : 1e9, d = distance_m(&c, i, j);
+                    if (d <= road.range_m) near[n_near++] = age;
+                    if (d >= 1.5 * road.range_m) far[n_far++] = age;
+                }
+            }
+        }
+        double spread = 0;
+        for (int i = 0; i < 20; i++) {
+            for (int j = 0; j < 20; j++) spread = fmax(spread, distance_m(&c, i, j));
+        }
+        qsort(near, n_near, sizeof(double), by_value);
+        qsort(far, n_far, sizeof(double), by_value);
+        printf("sim: a column of 20 spreading to %.1f km, radios reaching 1 km: in reach, fixes %.1f s old at the "
+               "95th percentile; out of it, the last fix stays, %.0f s old at the median. A call for help from a "
+               "stopped rider: %d answer within 10 s, %d of 19 before it rides on\n", spread / 1000,
+               near[n_near * 95 / 100], far[n_far / 2], quick, by_end);
+        assert(spread > 7000 && near[n_near * 95 / 100] <= 3.5 && far[n_far / 2] > 30 && far[n_far / 2] < 1e9);
+        assert(quick >= 8 && by_end > quick && by_end < 19);
+    }
+
     /* Two groups of three on one channel: each sees only its own riders, and drops the other's
      * packets by their tag. */
     static world_t w;
-    const scenario_t two = {6, 2000, 300 * SEC, 0, 4, 2, GOOD};
+    const scenario_t two = {6, 2000, 300 * SEC, 0, 4, 2, GOOD, 0, false};
     world_init(&w, &two, 1792670400000ll);
     for (int64_t t = 0; t < two.duration_us; t += STEP_US) world_step(&w, t);
     unsigned long foreign = 0;
@@ -573,7 +674,7 @@ int main(int argc, char **argv) {
     /* Two groups of ten, the same frame, on one channel: never within a group; between them, in the
      * frames whose phases fall within a packet of each other, about a third, and no rider worse off
      * than the rest. */
-    const scenario_t neighbours = {20, 2000, 600 * SEC, 0, 8, 2, GOOD};
+    const scenario_t neighbours = {20, 2000, 600 * SEC, 0, 8, 2, GOOD, 0, false};
     o = run(&neighbours, false);
     printf("sim: two groups of 10 on one channel: %.1f %% delivered, the worst rider %.1f %%, %d collisions, "
            "%d of them within a group\n", 100 * o.delivered, 100 * o.worst, o.collisions, o.within);
