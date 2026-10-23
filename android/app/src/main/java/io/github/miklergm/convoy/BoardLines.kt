@@ -7,7 +7,7 @@ package io.github.miklergm.convoy
 object BoardLines {
 
     /** The version of the phone API this app speaks. A board with another is refused (D3). */
-    const val PROTO = 4
+    const val PROTO = 5
 
     /** The board's own state, from its STATUS line. */
     data class Status(
@@ -81,7 +81,8 @@ object BoardLines {
         val heardS = t["heard"]?.toDoubleOrNull() ?: return null
         if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
         // riders count from 1, as the group screen does; slots from 0
-        val name = group?.riderName(slot) ?: "Rider ${slot + 1}"
+        fun nameOf(s: Int) = group?.riderName(s) ?: "Rider ${s + 1}"
+        val name = nameOf(slot)
         return Rider(
             id = "slot$slot",
             name = name,
@@ -97,7 +98,7 @@ object BoardLines {
             help = t["help"] == "1",
             stopped = t["stopped"] == "1",
             gpsOk = t["gps"] == "1",
-            acks = t["acks"]?.toIntOrNull()?.let { "slot$it" },
+            answeredBy = t["answered"]?.split(',')?.mapNotNull { it.toIntOrNull() }?.map(::nameOf) ?: emptyList(),
         )
     }
 

@@ -42,6 +42,9 @@ void node_init(node_t *n, const node_config_t *cfg, uint32_t seed) {
     n->rng = seed ? seed : 0x9E3779B9u;
     /* The platform's seed is from the chip's own generator, so every start draws a new session. */
     n->session = next_random(n);
+    /* Calls are numbered on from where the session puts them, so a call after a restart seldom
+     * takes the number of the one before it, which others may still be answering. */
+    n->help_call = (uint8_t)(n->session % HELP_CALLS);
     if (cfg->keyed) group_key_init(&n->group, cfg->key);
     n->last_frame = n->phase_frame = -1;
 }
@@ -54,10 +57,14 @@ void node_set_key(node_t *n, const uint8_t key[16]) {
     group_key_init(&n->group, key);
     n->phase_frame = -1;
     memset(n->riders, 0, sizeof(n->riders));
+    n->help_heard_by = 0;
 }
 
 void node_set_help(node_t *n, bool on) {
-    if (on && !n->help) n->help_heard_by = 0;
+    if (on && !n->help) {
+        n->help_call = (uint8_t)(n->help_call % HELP_CALLS + 1);
+        n->help_heard_by = 0;
+    }
     n->help = on;
 }
 
@@ -202,17 +209,20 @@ static int64_t our_slot(node_t *n, int64_t k) {
 
 /* ---- sending ------------------------------------------------------------------- */
 
-/* A rider calling for help whom we hear, to answer in our packet: each in turn, when several are. */
-static uint8_t help_to_answer(node_t *n, int64_t now_us) {
+/* A rider calling for help whom we hear, to answer in our packet, with the number of the call we
+ * heard: each in turn, when several call. */
+static void help_to_answer(node_t *n, int64_t now_us, position_t *p) {
+    p->help_heard = HELP_HEARD_NONE;
     for (int i = 0; i < NODE_SLOTS; i++) {
         const int s = (n->help_next + i) % NODE_SLOTS;
         const rider_t *r = &n->riders[s];
         if (r->known && (r->last.status & ST_HELP) && now_us - r->heard_us <= HELP_FRESH_US) {
             n->help_next = (uint8_t)((s + 1) % NODE_SLOTS);
-            return (uint8_t)s;
+            p->help_heard = (uint8_t)s;
+            p->heard_call = r->last.call;
+            return;
         }
     }
-    return HELP_HEARD_NONE;
 }
 
 size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
@@ -269,8 +279,9 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
                      : h->speed_kmh10 >= 2540 ? 254 : (uint8_t)((h->speed_kmh10 + 5) / 10),
         .course2 = h->course_deg10 < 0 ? COURSE_UNKNOWN : (uint8_t)(((h->course_deg10 + 10) / 20) % 180),
         .status = (uint8_t)((current ? ST_GPS_OK : 0) | (n->help ? ST_HELP : 0) | (n->stopped ? ST_STOPPED : 0)),
-        .help_heard = help_to_answer(n, now_us),
+        .call = n->help ? n->help_call : 0,
     };
+    help_to_answer(n, now_us, &p);
     /* The nonce must never repeat: before the counter wraps, a new session. */
     if (++n->counter == 0) n->session = next_random(n);
     n->sent++;
@@ -362,6 +373,8 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
         if (p.session != r->last.session) r->received = 0;
     }
     remember_session(r, p.session, p.counter);
+    /* Another call, or none: who answered the one before has not answered this one. */
+    if (r->known && p.call != r->last.call) r->answered_by = 0;
     if (!r->known || p.session != r->last.session) r->first_counter = p.counter;
     r->received++;
     r->known = true;
@@ -370,8 +383,17 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
     r->rssi_dbm = (int16_t)rssi_dbm;
     r->snr_db4 = (int16_t)snr_db4;
     r->fix_utc_ms = fix_utc_ms;
-    /* It hears our call for help. */
-    if (n->help && p.help_heard == n->cfg.slot) n->help_heard_by |= 1u << p.slot;
+    /* It hears a call for help: ours, or another rider's, and the call it names, not one before.
+     * ponytail: an answer counts for the rest of the call, however long ago it came; the answerer's
+     * own heard= tells how long since we heard it at all. */
+    if (p.help_heard == n->cfg.slot) {
+        if (n->help && p.heard_call == n->help_call) n->help_heard_by |= 1u << p.slot;
+    } else if (p.help_heard < NODE_SLOTS) {
+        rider_t *caller = &n->riders[p.help_heard];
+        if (caller->known && (caller->last.status & ST_HELP) && caller->last.call == p.heard_call) {
+            caller->answered_by |= 1u << p.slot;
+        }
+    }
     return true;
 }
 
@@ -395,19 +417,21 @@ int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf,
     } else {
         snprintf(age, sizeof(age), "?");
     }
-    char speed[8] = "?", course[8] = "?", acks[8] = "-";
-    if (r->last.help_heard < NODE_SLOTS) snprintf(acks, sizeof(acks), "%u", r->last.help_heard);
+    char speed[8] = "?", course[8] = "?", answered[96] = "-";
+    for (int s = 0, at = 0; s < NODE_SLOTS; s++) {
+        if (r->answered_by >> s & 1) at += snprintf(answered + at, sizeof(answered) - at, "%s%d", at ? "," : "", s);
+    }
     if (r->last.speed_kmh != SPEED_UNKNOWN) snprintf(speed, sizeof(speed), "%u", r->last.speed_kmh);
     if (r->last.course2 != COURSE_UNKNOWN) snprintf(course, sizeof(course), "%u", r->last.course2 * 2u);
     const long long heard10 = (now_us - r->heard_us) / 100000;
     const int snr = r->snr_db4 < 0 ? -r->snr_db4 : r->snr_db4;
     return snprintf(buf, cap,
                     "RIDER slot=%u lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
-                    "help=%d stopped=%d acks=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu",
+                    "help=%d stopped=%d answered=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu",
                     slot, deg(lat, sizeof(lat), r->last.lat_e7), deg(lon, sizeof(lon), r->last.lon_e7),
                     age, heard10 / 10, heard10 % 10, speed, course,
                     (r->last.status & ST_GPS_OK) ? 1 : 0, (r->last.status & ST_HELP) ? 1 : 0,
-                    (r->last.status & ST_STOPPED) ? 1 : 0, acks, r->rssi_dbm, r->snr_db4 < 0 ? "-" : "",
+                    (r->last.status & ST_STOPPED) ? 1 : 0, answered, r->rssi_dbm, r->snr_db4 < 0 ? "-" : "",
                     snr / 4, snr % 4 * 25, (unsigned long)r->received,
                     (unsigned long)((uint16_t)(r->last.counter - r->first_counter) + 1u));
 }

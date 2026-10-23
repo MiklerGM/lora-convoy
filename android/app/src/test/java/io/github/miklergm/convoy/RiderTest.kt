@@ -97,13 +97,9 @@ class RiderTest {
     @Test
     fun `a call for help shows who answers it`() {
         val now = start
-        fun rider(id: String, help: Boolean = false, acks: String? = null) = Rider(id, "Rider $id", id, 0,
-            lat0, lon0, fixAtMs = now, heardAtMs = now, speedKmh = 0, courseDeg = null, help = help, acks = acks)
-        val riders = withAnswers(listOf(rider("2", help = true), rider("3", acks = "2"), rider("4", acks = "2"),
-            rider("5", acks = "7")))
-        assertEquals(listOf("Rider 3", "Rider 4"), riders[0].answeredBy)
-        assertTrue(riders.drop(1).all { it.answeredBy.isEmpty() })
-        assertEquals("Answered by Rider 3, Rider 4", riders[0].toPoint(now).details[1])
+        val caller = Rider("2", "Rider 2", "2", 0, lat0, lon0, fixAtMs = now, heardAtMs = now, speedKmh = 0,
+            courseDeg = null, help = true, answeredBy = listOf("Rider 3", "Rider 4"))
+        assertEquals("Answered by Rider 3, Rider 4", caller.toPoint(now).details[1])
     }
 
     @Test

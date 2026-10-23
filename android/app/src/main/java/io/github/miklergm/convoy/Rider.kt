@@ -26,16 +26,9 @@ data class Rider(
     val help: Boolean = false,
     val stopped: Boolean = false,
     val gpsOk: Boolean = true,
-    /** The id of a rider whose call for help this one's board answers, if any. */
-    val acks: String? = null,
-    /** For a rider who needs help: the names of those whose boards answer them (withAnswers). */
+    /** For a rider who needs help: the names of those whose boards have answered this call, as the board heard them. */
     val answeredBy: List<String> = emptyList(),
 )
-
-/** Each rider who needs help, with the names of the riders whose boards say they hear the call. */
-fun withAnswers(riders: List<Rider>): List<Rider> = riders.map { r ->
-    if (r.help) r.copy(answeredBy = riders.filter { it.acks == r.id }.map { it.name }) else r
-}
 
 /** What OsmAnd draws for a rider, as plain data so the rules are tested without Android. */
 data class PointSpec(

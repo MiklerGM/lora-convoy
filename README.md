@@ -39,7 +39,7 @@ protocol, with OsmAnd as the map.
 | [Architecture](docs/ARCHITECTURE.md) | How board, app and OsmAnd split the work; the decisions behind it |
 | [Roadmap](docs/ROADMAP.md) | Milestones in order, each with a test without hardware and one on it |
 | [Backlog](docs/BACKLOG.md) | Open decisions and features not yet in a milestone, one ticket each |
-| [Protocol](docs/PROTOCOL.md) | The air format, radio mode, invitation and phone API, as built: v2 |
+| [Protocol](docs/PROTOCOL.md) | The air format, radio mode, invitation and phone API, as built: v3 |
 | [Bench](docs/BENCH.md) | What to flash and check, step by step, once the boards are on the bench |
 
 Nothing is stable yet: the air format, the phone API and the app may all change together.

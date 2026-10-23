@@ -15,8 +15,9 @@
  *  14-16 longitude, signed, 180 degrees = 2^23
  *  17    speed, km/h
  *  18    course, 2-degree steps
- *  19    status
- *  20    help heard: a slot whose call for help the sender hears, 255 for none
+ *  19    status in bits 3-0; the call for help's number in bits 6-4, 0 without one
+ *  20    help heard: a call for help the sender hears, the caller's slot in bits 4-0 and the
+ *        call's number in bits 7-5; 0 for none
  *  21-24 tag
  *
  * Nonce, 13 bytes: slot, session, counter, then zeros. A sender's slot and session make it unique
@@ -87,8 +88,8 @@ size_t pkt_seal(uint8_t out[PKT_POSITION_LEN], const position_t *p, const group_
     put24(&body[5], (uint32_t)to24(p->lon_e7, 1800000000ll) & 0xFFFFFFu);
     body[8] = p->speed_kmh;
     body[9] = p->course2;
-    body[10] = p->status;
-    body[11] = p->help_heard;
+    body[10] = (uint8_t)((p->status & 0x0F) | (p->call & 7) << 4);
+    body[11] = p->help_heard == HELP_HEARD_NONE ? 0 : (uint8_t)((p->heard_call & 7) << 5 | (p->help_heard & 0x1F));
     uint8_t nonce[CCM_NONCE_LEN];
     nonce_of(out, nonce);
     ccm_seal(&g->ccm, nonce, out, PKT_HEADER_LEN, body, PKT_BODY_LEN, &out[PKT_HEADER_LEN],
@@ -114,7 +115,9 @@ pkt_result_t pkt_open(const uint8_t *buf, size_t len, const group_key_t *g, posi
     p->lon_e7 = from24(sign24(get24(&body[5])), 1800000000ll);
     p->speed_kmh = body[8];
     p->course2 = body[9];
-    p->status = body[10];
-    p->help_heard = body[11];
+    p->status = body[10] & 0x0F;
+    p->call = body[10] >> 4 & 7;
+    p->heard_call = body[11] >> 5;
+    p->help_heard = p->heard_call ? body[11] & 0x1F : HELP_HEARD_NONE;
     return PKT_OK;
 }

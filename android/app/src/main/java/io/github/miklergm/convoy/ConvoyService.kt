@@ -141,7 +141,7 @@ class ConvoyService : Service() {
                     link?.send("STATUS")
                     nextPoll = now + 10_000
                 }
-                withAnswers(boardRiders.values.toList())
+                boardRiders.values.toList()
             }
             if (riders != null) osmand.show(riders.map { it.toPoint(now) })
             state = osmand.state

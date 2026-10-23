@@ -15,7 +15,7 @@ Both boards answer the phone API's commands typed on the console ([PROTOCOL](PRO
 
 ## 1. One board alone (M3)
 
-- The start line: `LoRa Convoy, protocol v2, phone API 4, on heltec_v4 after poweron: no key yet …,
+- The start line: `LoRa Convoy, protocol v3, phone API 5, on heltec_v4 after poweron: no key yet …,
   slot N of 32, every 2000 ms, 14 dBm`.
 - Outdoors, within a few minutes: `GNSS fix=1 time=1 sats=…`. If the Heltec's GNSS stays silent,
   VEXT (GPIO 36, active low) may need to be on as well (firmware/src/main.c).

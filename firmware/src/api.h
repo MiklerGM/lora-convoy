@@ -11,7 +11,7 @@
  * app that does not know it refuses the board (D3).
  *
  *   phone -> board                 board -> phone
- *   STATUS                         STATUS proto=4 board=... (also sent unasked)
+ *   STATUS                         STATUS proto=5 board=... (also sent unasked)
  *   RIDERS                         RIDER ... for each rider known, then RIDERS <n>
  *   LEDGER                         LEDGER ...: transmit time a minute at a time, over the hour
  *   KEY <32 hex digits>            OK keyed group=<tag>: the group's key, from the invitation
@@ -25,7 +25,7 @@
  *
  * Commands are case-blind, so the console takes them as typed.
  */
-#define API_PROTO 4
+#define API_PROTO 5
 
 /* The longest line either way, newline aside; the app takes up to 512 characters. */
 #define API_LINE 480

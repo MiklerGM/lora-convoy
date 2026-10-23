@@ -49,6 +49,7 @@ typedef struct {
     uint32_t session_seen[NODE_SESSIONS];
     uint16_t counter_seen[NODE_SESSIONS];
     uint8_t sessions_seen;
+    uint32_t answered_by;    /* while it calls for help: the slots heard answering this call */
 } rider_t;
 
 /* Transmit time over the last hour, a minute at a time. */
@@ -80,7 +81,8 @@ typedef struct {
     /* From a PPS edge to the NMEA fix of its second, where a board has both: E0's number. */
     int64_t lag_us, lag_min_us, lag_max_us;
     bool help;               /* our rider asks for help (the app's HELP) ... */
-    uint32_t help_heard_by;  /* ... and these slots say they hear it, a bit each */
+    uint8_t help_call;       /* ... in the call of this number ... */
+    uint32_t help_heard_by;  /* ... and these slots say they hear that call, a bit each */
     uint8_t help_next;       /* where the search for a call for help to answer starts */
     bool stopped;            /* slower than walking for a minute */
     int64_t slow_since_us;   /* when it last went under 5 km/h; 0 while faster */
@@ -91,7 +93,7 @@ typedef struct {
     duty_t duty;
     rider_t riders[NODE_SLOTS];
     uint32_t rx_foreign;     /* another group's tag */
-    uint32_t rx_bad;         /* not a v1 position at all */
+    uint32_t rx_bad;         /* not a position of this version at all */
     uint32_t rx_forged;      /* our tag, and an authentication tag that does not check */
     uint32_t rx_replay;      /* genuine, but older than what we have: a repeat or a replay */
     uint32_t rx_clash;       /* our own slot, from another radio: a configuration error */
@@ -110,10 +112,12 @@ void node_on_fix(node_t *n, const gnss_fix_t *fix, int64_t now_us);
 /* A PPS edge, at our clock when it came. The fix that follows names its second. */
 void node_on_pps(node_t *n, int64_t edge_us);
 
-/* A group key, from the app: the riders heard under another key are forgotten. */
+/* A group key, from the app: the riders heard under another key are forgotten, and so are the
+ * answers to our call for help. */
 void node_set_key(node_t *n, const uint8_t key[16]);
 
-/* Our rider's call for help, on or off. Each time it goes on, who has heard it starts afresh. */
+/* Our rider's call for help, on or off. Each time it goes on it is a new call, with a number of its
+ * own, and who has heard it starts afresh. */
 void node_set_help(node_t *n, bool on);
 
 /* True if the packet was ours to take: a genuine, fresh v1 position of our group from another slot. */

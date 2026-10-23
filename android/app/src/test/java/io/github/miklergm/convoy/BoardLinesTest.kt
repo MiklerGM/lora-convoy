@@ -13,7 +13,7 @@ class BoardLinesTest {
     @Test
     fun `a rider line as the firmware prints it`() {
         val line = "RIDER slot=2 lat=47.1415722 lon=9.5280433 fix_age=3 heard=1.5 speed=40 course=172 " +
-            "gps=1 help=0 stopped=0 acks=5 rssi=-90 snr=5.00 rx=12/14"
+            "gps=1 help=0 stopped=0 answered=- rssi=-90 snr=5.00 rx=12/14"
         val r = BoardLines.rider(line, now)!!
         assertEquals("slot2", r.id)
         assertEquals("Rider 3", r.name)
@@ -25,14 +25,16 @@ class BoardLinesTest {
         assertEquals(172, r.courseDeg)
         assertTrue(r.gpsOk)
         assertFalse(r.help || r.stopped)
-        assertEquals("slot5", r.acks)
+        assertEquals(emptyList<String>(), r.answeredBy)
         // named from the invitation, the map's label too
         val group = Invitation(ByteArray(16), 0, 3, 2000, "Bench", listOf("Ann", "Bob", "Christopher"))
         val named = BoardLines.rider(line, now, group)!!
         assertEquals("Christopher", named.name)
         assertEquals("Christop", named.short)
         assertEquals("3", r.short)
-        assertNull(BoardLines.rider(line.replace("acks=5", "acks=-"), now)!!.acks)
+        // calling for help: who has answered this call, named
+        val calling = BoardLines.rider(line.replace("help=0", "help=1").replace("answered=-", "answered=0,1"), now, group)!!
+        assertEquals(listOf("Ann", "Bob"), calling.answeredBy)
     }
 
     @Test
@@ -57,11 +59,11 @@ class BoardLinesTest {
 
     @Test
     fun `the status line, and its version`() {
-        val s = BoardLines.status("STATUS proto=4 board=sim reset=poweron up=0 slot=0 slots=3 keyed=1 group=86 " +
+        val s = BoardLines.status("STATUS proto=5 board=sim reset=poweron up=0 slot=0 slots=3 keyed=1 group=86 " +
             "fix=1 stopped=0 help=1 heard=2 lat=47.1436949 lon=9.5215000 sats=9 hdop=0.9 time=pps err=0.1 " +
             "budget=233.0 lag=112/98/131 tx=0 late=0 unsure=0 skipped=0 duty=0.43% riders=2 bad=0 foreign=0 " +
             "forged=0 replay=0 clash=0 power=3 dbm=16")!!
-        assertEquals(4, s.proto)
+        assertEquals(5, s.proto)
         assertTrue(s.help && !s.stopped)
         assertEquals(2, s.heard)
         assertEquals(0, s.clash)
@@ -78,9 +80,9 @@ class BoardLinesTest {
         assertEquals(16, s.dbm)
         // without a version it is not a status this app can trust
         assertNull(BoardLines.status("STATUS slot=0 keyed=1 group=86"))
-        assertEquals(5, BoardLines.status("STATUS proto=5 slot=0 group=7")!!.proto)
+        assertEquals(6, BoardLines.status("STATUS proto=6 slot=0 group=7")!!.proto)
         // a board without a key, nor a time yet
-        val bare = BoardLines.status("STATUS proto=4 slot=4 keyed=0 group=00 time=none err=?")!!
+        val bare = BoardLines.status("STATUS proto=5 slot=4 keyed=0 group=00 time=none err=?")!!
         assertFalse(bare.keyed)
         assertNull(bare.timeErrMs)
     }

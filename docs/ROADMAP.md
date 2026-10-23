@@ -226,8 +226,8 @@ asking for help. A soak run on the emulator.
 **Test on hardware:** a short ride with two or three boards, measured as in [07](07-experiments.md).
 
 **So far, 2026-10-23:** "need help", answered: the app's Need help button sets the call on the
-board, every board that hears it answers in its next packet, and maps show who has answered
-(protocol v2). The board marks itself stopped after a minute under 5 km/h. In the simulator a call
+board, every board that hears it answers in its next packet, naming the call, and maps show who has
+answered it (protocol v3). The board marks itself stopped after a minute under 5 km/h. In the simulator a call
 among twenty riders is answered first in 1.1 s and by all in 5.4 s, at the median. A column of
 twenty spreading to 9.5 km with radios reaching 1 km: in reach, fixes 2.5 s old at the 95th
 percentile; out of it, the last fix stays on the map and ages; a stopped rider's call is answered

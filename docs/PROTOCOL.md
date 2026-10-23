@@ -1,9 +1,10 @@
 # Protocol
 
-**v2, 2026-10-23.** Positions go encrypted and authenticated under the group's key (M5), each
-rider in a slot of its own, timed by GPS (M6), and each packet answers a call for help it hears
-(M7). Every part of it may change, together with the firmware and app that use it (D3): v0 had
-positions in clear, v1 no answers to calls for help, and boards with either are reflashed. The code is
+**v3, 2026-10-23.** Positions go encrypted and authenticated under the group's key (M5), each
+rider in a slot of its own, timed by GPS (M6), and each packet answers a call for help it hears,
+naming the call (M7). Every part of it may change, together with the firmware and app that use it
+(D3): v0 had positions in clear, v1 no answers to calls for help, v2 answers that did not name the
+call, and boards with any of them are reflashed. The code is
 `firmware/src/phy.c`, `crypto.c`, `codec.c` and `node.c`, and the app's `Invitation.kt`.
 
 ## Radio mode
@@ -84,7 +85,7 @@ k x 2 s   + phase   slot 0            slot 1            slot 2            spare
 
 | Bytes | Field | Encoding |
 |---|---|---|
-| 0 | version, type, flags | bits 7–6 version (2), bits 5–4 type (0, position), bits 3–0 flags (0) |
+| 0 | version, type, flags | bits 7–6 version (3), bits 5–4 type (0, position), bits 3–0 flags (0) |
 | 1 | group tag | from the group key, below |
 | 2 | slot | the rider, 0–31 |
 | 3–6 | session | drawn at random at every start; big-endian |
@@ -94,8 +95,8 @@ k x 2 s   + phase   slot 0            slot 1            slot 2            spare
 | 14–16 | longitude | signed, 2^23 = 180°: steps of 2.15e-5°, 2.4 m at the equator |
 | 17 | speed | km/h, 0–254; 255 unknown |
 | 18 | course | 2° steps from north, 0–179; 255 unknown |
-| 19 | status | bit 0 needs help, bit 1 stopped, bit 2 GPS ok, bit 3 battery low (not yet set) |
-| 20 | help heard | the slot of a rider whose call for help the sender hears; 255 for none |
+| 19 | status | bit 0 needs help, bit 1 stopped, bit 2 GPS ok, bit 3 battery low (not yet set); bits 6–4 the call for help's number, 1–7, 0 without a call |
+| 20 | help heard | a call for help the sender hears: bits 4–0 the caller's slot, bits 7–5 the call's number; 0 for none |
 | 21–24 | tag | CCM's |
 
 Bytes 0–8 go in clear and are authenticated; bytes 9–20 are encrypted. Coordinates round to the
@@ -122,7 +123,7 @@ does not check as forged.
 half the range, 9 h 6 min (RFC 1982). A fix that then lies in the future is shown with a negative
 age, never as fresh. A receiver with no time of its own shows the age as unknown.
 
-**What a receiver keeps.** Only v2 positions of 25 bytes, with its group's tag and a CCM tag that
+**What a receiver keeps.** Only v3 positions of 25 bytes, with its group's tag and a CCM tag that
 checks. A packet from its own slot is another radio misconfigured onto it, and is counted rather
 than taken. Per slot, within a session the counter only grows; a session it has not seen must
 bring a fix no more than 2 s older than the one it holds, or it is an old packet played again.
@@ -131,11 +132,16 @@ After its own restart a receiver holds nothing, so it takes the first packet of 
 clash. Per slot it counts the packets taken against the run of counters seen in the session: their
 ratio is the delivered share of [07](07-experiments.md).
 
-**Help, answered.** A rider's call for help sets the help bit in each of their packets. A board
+**Help, answered.** A rider's call for help sets the help bit in each of their packets, with the
+call's number: each new call takes the next, 1 to 7 and round again, and a board starts from where
+its session puts it, so a call after a restart seldom takes the number of the one before. A board
 that hears a call answers it in its own next packet, in byte 20: the slot of a rider it has heard
-calling within the last minute, each in turn when several call. The calling board counts the
-riders who answer (`heard=` in its status), and every board reports whom each rider answers
-(`acks=` in its RIDER lines), so every map can show who has heard a call. In the simulator, among
+calling within the last minute and the number of the call it heard, each in turn when several call.
+An answer counts only for the call it names, so an answer to a call called off is not one to the
+next, even one sent before the next was heard. The calling board counts the riders who answer
+its call (`heard=` in its status), and every board reports who has answered each rider's call
+(`answered=` in its RIDER lines), so every map can show who has heard it. A new key forgets the
+answers with the riders. In the simulator, among
 twenty riders with 10 % of packets lost, the first answer comes 1.1 s after the call and the
 last of the nineteen 5.4 s after it, at the median; 3.5 s and 10.4 s at worst.
 
@@ -144,11 +150,11 @@ stop, and clears it over 10 km/h, so a GNSS wandering at a standstill does not s
 
 **Test vector.** Under the key `00 01 … 0f` (tag `86`): slot 3, session `0x01020304`, counter 5,
 a fix at 2026-10-22 12:00:05 UTC (64 197), 47.141° N 9.5215° E, 40 km/h, heading 270°, GPS ok,
-hearing slot 7's call for help. From an independent implementation on OpenSSL (pyca/cryptography),
-which also gives v1's vector:
+calling for help in its call 5, and hearing slot 7's call 2. From an independent implementation on
+OpenSSL (pyca/cryptography), which also gives v1's and v2's vectors:
 
 ```
-80 86 03 01 02 03 04 00 05 EE 37 9D 2B 30 A8 88 6B 0E 6D 72 4D 87 79 6E 2E
+C0 86 03 01 02 03 04 00 05 EE 37 9D 2B 30 A8 88 6B 0E 6D 23 0D 03 40 86 0F
 ```
 
 ## The invitation
@@ -189,15 +195,15 @@ on three transports:
 | TCP | a simulated board and the app | `make -C firmware sim ARGS="serve 3"` serves board *i* on 127.0.0.1:4403+*i*, without a key, like a board fresh from flashing; an Android emulator reaches it at 10.0.2.2 |
 | USB console | a board and a person | the same commands, typed; `FORGET` there is a hand on the board, like the button |
 
-**Version.** `proto=` in the status line: 4 since help. An app refuses a board with another (D3).
+**Version.** `proto=` in the status line: 5 since answers name the call. An app refuses a board with another (D3).
 
 | Phone to board | Board to phone |
 |---|---|
-| `STATUS` | `STATUS proto=4 board=… reset=… up=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … power=… dbm=…` |
+| `STATUS` | `STATUS proto=5 board=… reset=… up=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … power=… dbm=…` |
 | `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>` |
 | `LEDGER` | `LEDGER minutes=60 limit_ms=… used_ms=… positions_ms=…`: the duty ledger, transmit time a minute at a time over the last hour, oldest first, by category |
-| `KEY <32 hex digits>` | `OK keyed group=<tag>`; riders heard under another key are forgotten |
-| `HELP <0–1>` | `OK help=<0–1>`: our rider's call for help, off or on; each time on, who answers starts afresh |
+| `KEY <32 hex digits>` | `OK keyed group=<tag>`; riders heard under another key are forgotten, and the answers to our call |
+| `HELP <0–1>` | `OK help=<0–1>`: our rider's call for help, off or on; each time on is a new call, and who answers starts afresh |
 | `SLOT <0–31>`, `SLOTS <1–32>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |
 | `MODE <SF 7–12> <kHz 62, 125, 250, 500>` | `OK mode=<SF>/<kHz>`: another radio mode on the same frequency, for trying range (E2); kept over a restart. Every board of a group needs the same |
 | `FORGET` | `FORGOTTEN` once the board has dropped its bond, or `ERR forget incomplete` |
@@ -216,12 +222,12 @@ a phone is connected. The app sends `STATUS` every 10 s, which keeps the link fr
 as silent. Commands are case-blind.
 
 ```
-RIDER slot=2 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 acks=- rssi=-71 snr=8.25 rx=13/14
+RIDER slot=2 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 answered=- rssi=-71 snr=8.25 rx=13/14
 ```
 
 `fix_age` is in whole seconds and can be negative (the sender's clock is wrong) or `?` (this board
-has no time of its own); `heard` is in tenths of a second; `acks` is the slot whose call for help
-the rider's board answers, `-` for none; `rx` is packets taken against the run of counters. On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count
+has no time of its own); `heard` is in tenths of a second; `answered` is, while the rider calls for
+help, the slots heard answering that call, as `3,5`, and `-` for none; `rx` is packets taken against the run of counters. On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count
 from 0 here; the app shows riders from 1.
 
 ## What comes next

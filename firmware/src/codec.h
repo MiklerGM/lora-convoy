@@ -6,12 +6,12 @@
 #include "crypto.h"
 
 /*
- * The air format, v2: a rider's own position, 25 bytes, under the group's key (docs/PROTOCOL.md).
+ * The air format, v3: a rider's own position, 25 bytes, under the group's key (docs/PROTOCOL.md).
  * The header goes in clear and is authenticated; the position is encrypted; a 4-byte tag ends it
- * (AES-128-CCM). v1 was the same without the help heard (D3).
+ * (AES-128-CCM). v1 was the same without the help heard, v2 without the calls' numbers (D3).
  */
 
-#define PKT_VERSION 2
+#define PKT_VERSION 3
 #define PKT_TYPE_POSITION 0
 #define PKT_HEADER_LEN 9
 #define PKT_BODY_LEN 12
@@ -27,6 +27,8 @@
 #define ST_STOPPED (1u << 1)
 #define ST_GPS_OK (1u << 2)       /* the position is the GNSS's current fix, not a held one */
 #define ST_BATTERY_LOW (1u << 3)
+/* A call for help's number, 1-7, which a new call moves on: an answer names the call it hears. */
+#define HELP_CALLS 7
 
 typedef struct {
     uint8_t group;      /* the group's tag: a byte of the key's own, so others' packets drop early */
@@ -39,7 +41,9 @@ typedef struct {
     uint8_t speed_kmh;  /* 0..254, or SPEED_UNKNOWN */
     uint8_t course2;    /* course / 2 degrees, 0..179, or COURSE_UNKNOWN */
     uint8_t status;
+    uint8_t call;       /* with ST_HELP, our call's number, 1..HELP_CALLS; 0 without */
     uint8_t help_heard; /* the slot of a rider whose call for help we hear, or HELP_HEARD_NONE */
+    uint8_t heard_call; /* and that call's number */
 } position_t;
 
 /* What the 16-byte group key gives: the CCM key, the tag, and the key that draws each frame's
@@ -59,7 +63,7 @@ size_t pkt_seal(uint8_t out[PKT_POSITION_LEN], const position_t *p, const group_
 
 typedef enum {
     PKT_OK,
-    PKT_MALFORMED, /* not a v1 position at all */
+    PKT_MALFORMED, /* not a position of this version at all */
     PKT_FOREIGN,   /* another group's tag */
     PKT_FORGED,    /* our tag, and a CCM tag that does not check */
 } pkt_result_t;
