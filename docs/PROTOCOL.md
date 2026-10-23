@@ -1,9 +1,10 @@
 # Protocol
 
-**v1, 2026-10-22.** Positions go encrypted and authenticated under the group's key. Every part of
-it may change, together with the firmware and app that use it (D3); v0, the same positions in
-clear, is gone. The code is `firmware/src/phy.c`, `crypto.c`, `codec.c` and `node.c`, and the
-app's `Invitation.kt`.
+**v1, 2026-10-23.** Positions go encrypted and authenticated under the group's key (M5), each
+rider in a slot of its own, timed by GPS (M6). Every part of it may change, together with the
+firmware and app that use it (D3): v0, the same positions in clear, is gone, and boards from
+before M6 read v1's packets but send at random, so they are reflashed. The code is
+`firmware/src/phy.c`, `crypto.c`, `codec.c` and `node.c`, and the app's `Invitation.kt`.
 
 ## Radio mode
 
@@ -28,16 +29,51 @@ PHY-notes). Whether other chips leave it alone is still to check on hardware (BA
 
 ## When a board sends
 
+Once a frame, in its own slot, by GPS time ([06](06-own-protocol.md), Timing).
+
+```
+frame k: the interval (2 s), n riders, a spacing of interval / (n + 1); here n = 3, 500 ms
+
+k x 2 s   + phase   slot 0            slot 1            slot 2            spare
+|---------|=====....|-----------------|=====....|-------|=====....|-------|---------|
+          <-- 500 ms --><-- 500 ms --><-- 500 ms --><-- 500 ms -->   frame k+1, its own phase
+```
+
 - **Only with a key.** A board without a group key sends nothing and takes nothing: fresh from
   flashing, it is silent until a phone sets it up.
-- **Random access.** A board sends its position every interval, 2 s by default, drawn anew each
-  time between 0.8 and 1.2 of it, so two boards that start in step drift apart. The first packet
-  goes anywhere within one interval of starting.
+- **Frames by GPS time.** Frames are numbered from 1970 in UTC: frame k starts at k intervals, 2 s
+  by default, from the invitation. A frame holds a slot for each of the group's n riders and one
+  spare, evenly spaced: interval / (n + 1) apart. Rider s sends at the frame's start, plus the
+  frame's phase, plus s spacings. Nobody in a group sends over anybody else in it, however large it
+  is.
+- **A phase for each frame.** The phase is under one spacing, the same for the whole group, and
+  drawn anew for every frame from the group's key: the first four bytes of AES, under a key the
+  group key gives (`FD` "convoy-frame"), of the frame's number, modulo the spacing. Two groups on
+  one channel then meet in some frames, never in all of them; the spare slot keeps the last packet
+  of one frame a spacing clear of the first of the next, whatever their phases.
+- **Time.** A board's clock is set by marks. With a PPS line (the Heltec's kit), the edge is the
+  second that the next NMEA fix names, within 100 µs. Without one (the L1), the fix's arrival less
+  the GNSS's lag, as far off as the board is told: 100 ms until E0 has measured the L76K. A mark is
+  taken to drift 50 ppm as it ages, and a new one replaces it only when better.
+- **A budget for the time.** A board sends only while its time, plus 1 ms for waking and the
+  radio's start, is within half the gap between two packets: the spacing, less the packet and 2 ms
+  for receivers to read it out. Otherwise it passes the slot over, and counts it (`unsure=`); a
+  slot whose moment it missed by over 2 ms is passed over too (`late=`). Every 2 s:
+
+  | Riders | Spacing | Budget | A board with PPS keeps its slot without GNSS for | A board without PPS, its lag unmeasured (±100 ms) |
+  |---|---|---|---|---|
+  | 3 | 500 ms | 233 ms | 77 min | sends; keeps its slot 44 min without GNSS |
+  | 7 | 250 ms | 108 ms | 36 min | sends; 2.5 min |
+  | 10 | 182 ms | 74 ms | 24 min | silent |
+  | 20 | 95 ms | 31 ms | 10 min | silent |
+  | 32 | 61 ms | 14 ms | 4 min | silent |
+
 - **Only what it knows.** Nothing before its GNSS has given a position and a time. After that, if
   the fix is lost, the last good position goes on with its own fix time, and the GPS-ok bit clear,
   so its age keeps growing on every map.
 - **Within the duty cycle.** The board books each packet's time on air against the last hour, a
   minute at a time, and skips a packet that would take it past the sub-band's duty cycle (10 %).
+  At one packet a frame it cannot get there: 30.8 ms in the shortest frame, 500 ms, is 6.2 %.
 
 ## The position packet: 24 bytes
 
@@ -120,8 +156,8 @@ positions and send as any of its riders: it goes to one rider, and a new ride ge
 The key `00 01 … 0f`, slot 2 of 5, every 2 s, "Alps ride":
 `LC1.AQABAgMEBQYHCAkKCwwNDg8CBQfQCUFscHMgcmlkZQ`
 
-The app sends it to the board as `KEY`, `SLOT` and `INTERVAL` once per connection, and again when
-the phone joins another group; a board keeps its riders when the key is the one it has.
+The app sends it to the board as `KEY`, `SLOTS`, `SLOT` and `INTERVAL` once per connection, and
+again when the phone joins another group; a board keeps its riders when the key is the one it has.
 
 ## The phone API
 
@@ -134,21 +170,25 @@ on three transports:
 | TCP | a simulated board and the app | `make -C firmware sim ARGS="serve 3"` serves board *i* on 127.0.0.1:4403+*i*, without a key, like a board fresh from flashing; an Android emulator reaches it at 10.0.2.2 |
 | USB console | a board and a person | the same commands, typed; `FORGET` there is a hand on the board, like the button |
 
-**Version.** `proto=` in the status line: 2 since v1, which brought the key. An app refuses a board
-with another (D3).
+**Version.** `proto=` in the status line: 3 since the slots. An app refuses a board with another
+(D3).
 
 | Phone to board | Board to phone |
 |---|---|
-| `STATUS` | `STATUS proto=2 board=… reset=… up=… slot=… keyed=… group=… fix=… … power=… dbm=…` |
+| `STATUS` | `STATUS proto=3 board=… reset=… up=… slot=… slots=… keyed=… group=… fix=… … power=… dbm=…` |
 | `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>` |
 | `KEY <32 hex digits>` | `OK keyed group=<tag>`; riders heard under another key are forgotten |
-| `SLOT <0–31>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |
+| `SLOT <0–31>`, `SLOTS <1–32>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |
 | `FORGET` | `FORGOTTEN` once the board has dropped its bond, or `ERR forget incomplete` |
 | `REBOOT`, and `BOOTLOADER` on the L1 Pro (its UF2 drive) | — |
 
-The board keeps its key, slot and interval across restarts. No command reads the key back: the
+The board keeps its key, slots and interval across restarts. No command reads the key back: the
 status shows `keyed=` and the group's tag in hex, `00` without a key, and counts the packets
-refused as `foreign=`, `forged=`, `replay=` and `clash=`.
+refused as `foreign=`, `forged=`, `replay=` and `clash=`. Of its time it shows where it comes from
+(`time=none`, `nmea` or `pps`), how far off it may be and the budget, in ms (`err=`, `budget=`),
+and the slots passed over (`late=`, `unsure=`). A board with both PPS and NMEA measures E0's number
+for boards without PPS: `lag=` is the NMEA fix's lag behind its PPS edge, last, least and most, in
+ms.
 
 Unasked, the board sends a `RIDER` line for every packet it takes, and its status every 10 s while
 a phone is connected. The app sends `STATUS` every 10 s, which keeps the link from being dropped
@@ -165,7 +205,9 @@ from 0 here; the app shows riders from 1.
 
 ## What comes next
 
-- Slots by GPS time instead of random access (M6; T-timing, T-join, T-fix-time), and with them
-  perhaps the frame number in the nonce instead of the session (T-nonce).
+- The frame number in the nonce instead of the session (T-nonce), and the fix's age at the slot
+  instead of its second (T-fix-time).
+- Time for boards without a fix, from the packets they hear, and a clock disciplined against PPS
+  for longer holdover (T-timing); the L76K's lag, measured (E0).
 - The mode chosen for the group's size and freshness, carried in the invitation (T-phy).
 - A shorter packet: an implicit header, the CRC left to CCM (T-length).

@@ -86,7 +86,9 @@ carries their airtime too; independent clocks take the real radios.
   transmits and never reuses a session; a roster change takes effect at its activation epoch; the
   organiser's radio is lost mid-ride.
 - **Timing:** loss of PPS, and of the GPS fix; drift held within bounds; a radio stops
-  transmitting once its timing uncertainty exceeds the guard.
+  transmitting once its timing uncertainty exceeds the guard. The simulator does all three (M6),
+  and a board reports what E0 needs in its status: `lag=` on a Heltec, its NMEA against its PPS,
+  and on every board `err=`, `late=` and `unsure=` ([PROTOCOL](PROTOCOL.md), the phone API).
 - **Neighbours:** two groups on the same frequency.
 - **Routes:** route packets lost or reordered, conflicting revisions, and a help message sent
   during a transfer.

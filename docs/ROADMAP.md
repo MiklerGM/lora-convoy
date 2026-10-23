@@ -30,7 +30,7 @@ flowchart TD
 | M3 | Protocol v0: a beacon and a receiver | | ✅ | done, no hardware |
 | M4 | A board and the app | ✅ | ✅ | done, no hardware |
 | M5 | A private group: invitation and encryption | ✅ | ✅ | done, no hardware |
-| M6 | Slots by GPS time | | ✅ | planned |
+| M6 | Slots by GPS time | ✅ | ✅ | done, no hardware |
 | M7 | Ready for a first ride | ✅ | ✅ | planned |
 
 ## M1. Mock riders on the OsmAnd map
@@ -190,6 +190,25 @@ collisions inside the group, measured as [07](07-experiments.md) asks: the deliv
 age of the fix each map shows.
 **Test on hardware:** E0 on each board, then three boards.
 
+**Result, 2026-10-23, without hardware:** each rider sends once a frame in a slot of its own
+([PROTOCOL](PROTOCOL.md)): a frame of the invitation's interval holds a slot per rider and a spare,
+evenly spaced, with a phase drawn for each frame from the group's key. A board's time comes from
+PPS edges paired with NMEA fixes (the Heltec), or from NMEA alone less a lag it is told (the L1); it
+is taken to drift 50 ppm without a fix, and the board passes its slot over once its uncertainty
+leaves half the gap between packets. In the simulator, with crystals 20 ppm off and half the boards
+without PPS, twenty riders every 2 s get all their packets through without a collision, with fixes
+2.5 s old at the 95th percentile (random access: 55 %, 8.5 s). Three of them without GNSS for 15
+minutes keep their slots for 10, then go quiet until the fix returns, and nobody collides. Two
+groups of ten on one channel get 66.9 % through, the worst rider 66.6 %, and never collide within
+a group. An L1 told the wrong NMEA lag, and sure of it, collides with its neighbour in every frame:
+E0 measures the lag first; told it is unsure, as boards are by default, it keeps quiet in groups of
+more than seven. Eight defects planted in the schedule each broke a test. On the boards: the PPS
+edge stamped in its interrupt on the Heltec, the radio woken for its slot, and FreeRTOS at 1000 Hz.
+At M3's 100 Hz the radio task never slept, which would have had the watchdog restart the Heltec;
+nothing had run on it to show that. The app sends `SLOTS` from the invitation, and the main screen
+shows where the board's time comes from. Left open: what a board does about a clash (T-join), time
+without a fix from packets heard (T-timing), the frame number in the nonce (T-nonce).
+
 ## M7. Ready for a first ride
 
 - "Need help", acknowledged (T-help); "stopped" and "no GPS fix" as [01](01-goals.md) separates
@@ -199,8 +218,8 @@ age of the fix each map shows.
 - Surviving a ride: the bridge's foreground service, reconnects and battery checks; a board that
   restarts rejoins (T-survive).
 - The group as riders meet it: an invitation to scan, riders' names on the map, the radio mode for
-  the group's size (T-invite, T-phy); and an outside review of the cipher and the nonce (D13;
-  T-tag, T-nonce).
+  the group's size (T-invite, T-phy), and what a board does about another radio in its slot
+  (T-join); an outside review of the cipher and the nonce (D13; T-tag, T-nonce).
 
 **Test now:** a ride replayed in the simulator from GPX logs: riders spreading out, stopping, one
 asking for help. A soak run on the emulator.

@@ -47,7 +47,8 @@ reserved in flash ([06](06-own-protocol.md), security rules). The frame number n
 schedule, so M5 may start with a session and change. **v1, for now:** a 32-bit session drawn at
 every start and before the counter wraps, with a 16-bit counter. A nonce repeats if two sessions
 of one slot under one key draw the same value: about n²/2^33 for n sessions, one in 8 600 for a
-thousand restarts. M6 decides whether the frame number replaces the session.
+thousand restarts. M6 kept the session; now that every board knows the frame, its number could
+replace it.
 
 ### T-tag: the tag's length
 
@@ -60,21 +61,34 @@ the first ride.
 ### T-fix-time: how a position carries its time
 
 Whole GPS seconds modulo 65 536, or the fix's age at the slot in fractions of a second, which is
-finer and shorter ([06](06-own-protocol.md)). Needed by M6.
+finer and shorter ([06](06-own-protocol.md)). M6 kept whole seconds.
 
 ### T-timing: time without a fix, and boards without PPS
 
 Holdover, the guard's terms, NMEA timing on the L1, frame phase recovered from packets heard. E0
-measures each board. Needed by M6.
+measures each board. **M6, for now:** PPS edges paired with the NMEA fix of their second, or NMEA
+alone less a lag the board is told; 50 ppm of drift in holdover, and silence once the uncertainty
+leaves the budget ([PROTOCOL](PROTOCOL.md)). A Heltec with its kit measures the L76K's NMEA lag
+itself (`lag=`). Still open: the lag on the L1 (E0), the fix stamped by the UART's interrupt rather
+than by the parser, time from packets heard without a fix, and a clock disciplined against PPS for
+longer holdover. A fix that came after the next PPS edge would be paired with it, a second out: the
+lag must stay well under a second (E0), or the interrupt must count edges.
 
 ### T-join: late joiners and roster changes
 
 Spare slots and their single allocator, a roster change at an activation epoch, what happens when
-the organiser's radio is lost ([06](06-own-protocol.md), open questions). Needed by M6.
+the organiser's radio is lost ([06](06-own-protocol.md), open questions). **M6, for now:** each
+rider's slot comes with their invitation, so a late joiner finds it waiting; a board sits out the
+frame running when its time comes, and counts a clash, another radio in its slot, without acting
+on it. Still open: what a clash makes a board do, more riders than the invitations, and a use for
+the spare slot. Needed by M7.
 
 ### T-neighbours: two groups on one channel
 
-A frame offset, a slot order or a frequency derived from the group key. Needed by M6.
+A frame offset, a slot order or a frequency derived from the group key. **M6:** a phase for each
+frame from the group key, under one spacing, with a spare slot keeping frames apart. Two groups of
+ten on one channel lose a third of their packets to each other, spread evenly over riders and
+frames ([PROTOCOL](PROTOCOL.md)). Groups apart by frequency remain T-group-freq.
 
 ### T-cadence: sending less when stopped
 
