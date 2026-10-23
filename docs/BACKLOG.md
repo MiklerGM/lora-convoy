@@ -14,7 +14,9 @@ freshness, set the default radio mode in M5.
 Apache-2.0, as dmd2-lora-bridge, or GPL-3.0, which reusing MeshAnd's or Meshtastic's code would
 require. The owner is open to GPL-3.0 if we take MeshAnd's code as well as the bridge's
 (2026-10-22). Settled the first time code is copied from a GPL project, and before the repository is
-published.
+published. The app already ships one library from a GPL project: OsmAnd's `android-aidl-lib`, built
+from `OsmAnd-api/` in OsmAnd's repository, whose code is GPLv3 with no exception for that module
+[code: `LICENSE` at `a68b83f`]. The rest of the app is ours or the bridge's.
 
 ### T-app-id: the app's name and package
 
@@ -167,9 +169,19 @@ rebuilding them. Needed by M4.
 
 ### T-osmand-upstream: fixes to offer OsmAnd
 
-Two found while building M1 and M2 ([05](05-osmand-integration.md)): `navigateGpx` throws in the
-caller unless `passWholeRoute` is set, a one-line fix in its library; and T-osmand-opengl. Report
-them, or send a pull request, once the owner decides to.
+Two found while building M1 and M2 ([05](05-osmand-integration.md)), both still in OsmAnd's
+`master` at `a68b83f` (2026-10-17):
+
+- `navigateGpx` throws in the caller unless `passWholeRoute` is set: `NavigateGpxParams` keeps it as
+  a `Boolean` that no constructor sets, and `writeToBundle` unboxes it. A one-line fix in
+  `OsmAnd-api`; any app on the API meets it.
+- T-osmand-opengl: on the OpenGL engine, `AidlMapLayer.onPrepareBufferImage` drops the whole layer
+  (`clearAidlTileProvider`) whenever any point has moved, and builds it again; the points are gone
+  until it is rebuilt. Moving the markers that moved, or building the new layer before dropping the
+  old one, would keep them on screen.
+
+OsmAnd takes pull requests under MIT. Report them, or send pull requests, once the owner decides
+to; the second after a measurement on a phone.
 
 ### T-osmand-perm: OsmAnd's permission groups
 
