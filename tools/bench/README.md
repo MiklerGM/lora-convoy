@@ -45,7 +45,12 @@ flowchart LR
 5. Phone 0's OsmAnd shows every other rider: their colours are looked for in ten screenshots,
    and how many frames had them all measures the OpenGL engine's blinking (T-osmand-opengl). The
    last frame is kept, for a look at the names.
-6. Phone 1 forgets its board: the board drops the bond, says FORGOTTEN, and Android drops its own.
+6. Board 0 restarts and keeps its bond, as a board keeps it in flash: phone 0 comes back to it
+   without pairing again.
+7. Board 0 is reset by its button while phone 0 is out of reach, so phone 0's bond is stale: the
+   phone pairs again once the rider agrees (Android 15 does it by itself; on phones that do not,
+   the app drops the stale bond after two refused sessions, BondHealth).
+8. Phone 1 forgets its board: the board drops the bond, says FORGOTTEN, and Android drops its own.
 
 ## Running it
 

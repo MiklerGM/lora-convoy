@@ -253,6 +253,18 @@ def board_says(board: int, text: str, timeout=30) -> None:
         time.sleep(1)
 
 
+def restart_board(board: int, forget=False) -> None:
+    """Its power cycled; with forget, its bonds cleared too, as its button held down while its
+    phone is out of reach does."""
+    os.killpg(int((RUN / f"board-{board}.pid").read_text()), signal.SIGTERM)
+    time.sleep(2)
+    if forget:
+        (CACHE / f"board-{board}.json").unlink(missing_ok=True)
+    start(f"board-{board}", str(VENV / "bin/python"), "-I", str(ROOT / "tools/bench/ble_board.py"), str(board),
+          str(PORT))
+    board_says(board, "advertising", 60)
+
+
 def board_command(board: int, *commands: str) -> list:
     with socket.create_connection(("127.0.0.1", PORT + board), timeout=3) as c:
         c.sendall("".join(f"{x}\n" for x in commands).encode())
@@ -347,6 +359,18 @@ def ride() -> None:
     whole = sum(all(s in f for s in others) for f in seen)
     step(f"phone 0's OsmAnd shows the {len(others)} others, all of them in {whole} of {len(seen)} frames "
          f"({RUN / 'phone-0-map.png'})")
+
+    restart_board(0)
+    wait_status(p0, rf"{names[0]}, rider 1 of {boards}.*{boards - 1} riders heard", 90)
+    board_says(0, "<- ", 60)  # its commands came, and without a new pairing: the bond was kept
+    assert "paired" not in (RUN / "board-0.log").read_text()
+    step("board 0 restarted, kept its bond, and phone 0 came back to it without pairing again")
+
+    restart_board(0, forget=True)
+    accept_pairing(p0, 120)
+    board_says(0, "paired", 60)
+    wait_status(p0, rf"{names[0]}, rider 1 of {boards}.*{boards - 1} riders heard", 90)
+    step("board 0 forgot phone 0 while it was away; phone 0 paired again once the rider agreed")
 
     main_screen(p1)
     wait_tap(p1, "Forget this board")
