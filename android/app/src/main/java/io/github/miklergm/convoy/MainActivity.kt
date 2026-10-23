@@ -4,11 +4,15 @@ import android.Manifest
 import android.app.Activity
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.provider.Settings
 import android.text.InputType
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
@@ -23,12 +27,14 @@ class MainActivity : Activity() {
     private lateinit var target: EditText
     private lateinit var found: LinearLayout
     private lateinit var helpButton: Button
+    private lateinit var batteryButton: Button
     private var scanner: BleBoardLink.Scanner? = null
 
     private val refresh = object : Runnable {
         override fun run() {
             status.text = statusText()
             helpButton.text = if (ConvoyService.board?.help == true) "Call off help" else "Need help"
+            batteryButton.visibility = if (batteryUnrestricted()) View.GONE else View.VISIBLE
             handler.postDelayed(this, 1000)
         }
     }
@@ -51,6 +57,8 @@ class MainActivity : Activity() {
             addView(status)
             helpButton = button("Need help") { help() }
             addView(helpButton)
+            batteryButton = button("Let it run in the background") { askBatteryExemption() }
+            addView(batteryButton)
             addView(button("Group") { startActivity(Intent(this@MainActivity, GroupActivity::class.java)) })
             addView(button("Mock riders") { start(ConvoyService.Source.Mock) })
             addView(target)
@@ -122,6 +130,21 @@ class MainActivity : Activity() {
         startService(Intent(this, ConvoyService::class.java).setAction(ConvoyService.ACTION_HELP)
             .putExtra(ConvoyService.EXTRA_ON, !board.help))
     }
+
+    /**
+     * Battery optimisation ends long background work after a few hours, about the length of a ride.
+     * Asked directly rather than sending the rider through settings (dmd2-lora-bridge).
+     */
+    private fun askBatteryExemption() {
+        val direct = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS, Uri.parse("package:$packageName"))
+        if (runCatching { startActivity(direct) }.isFailure) {
+            runCatching { startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
+        }
+    }
+
+    private fun batteryUnrestricted() =
+        runCatching { getSystemService(PowerManager::class.java).isIgnoringBatteryOptimizations(packageName) }
+            .getOrDefault(false)
 
     /** The board drops this phone, and Android's bond goes once it says FORGOTTEN. */
     private fun forget() {

@@ -12,6 +12,9 @@
         android:name="android.permission.BLUETOOTH_SCAN"
         android:usesPermissionFlags="neverForLocation" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Asking not to be stopped for the battery's sake: it ends long background work after a few
+         hours, about a ride (dmd2-lora-bridge, on Samsung). -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- Package visibility: whichever OsmAnd is installed (OsmAnd, OsmAnd+, OsmAnd~, nightly)
          answers on this action. -->

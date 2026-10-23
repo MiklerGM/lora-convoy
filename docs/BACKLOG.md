@@ -200,6 +200,8 @@ After M7.
 Samsung's sleeping apps, the battery exemption, reconnects, a soak run (E7). Much of it is in
 dmd2-lora-bridge already, including what its Bluetooth link learned on rides and the app's lean
 `BleBoardLink` leaves out: a bond gone stale on one side, and pinning the chosen board by name.
+**So far:** the app asks for the battery exemption as the bridge did; Play allows that request only
+for some kinds of app, which matters once it is published (T-app-id).
 Needed by M7.
 
 ## Firmware and boards
