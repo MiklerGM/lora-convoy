@@ -22,11 +22,13 @@ class MainActivity : Activity() {
     private lateinit var status: TextView
     private lateinit var target: EditText
     private lateinit var found: LinearLayout
+    private lateinit var helpButton: Button
     private var scanner: BleBoardLink.Scanner? = null
 
     private val refresh = object : Runnable {
         override fun run() {
             status.text = statusText()
+            helpButton.text = if (ConvoyService.board?.help == true) "Call off help" else "Need help"
             handler.postDelayed(this, 1000)
         }
     }
@@ -47,6 +49,8 @@ class MainActivity : Activity() {
             setPadding(pad, pad, pad, pad)
             addView(TextView(this@MainActivity).apply { text = "LoRa Convoy $version"; textSize = 20f })
             addView(status)
+            helpButton = button("Need help") { help() }
+            addView(helpButton)
             addView(button("Group") { startActivity(Intent(this@MainActivity, GroupActivity::class.java)) })
             addView(button("Mock riders") { start(ConvoyService.Source.Mock) })
             addView(target)
@@ -108,6 +112,17 @@ class MainActivity : Activity() {
         }
     }
 
+    /** Our rider's call for help, through the board: the others' maps show it, and their boards answer. */
+    private fun help() {
+        val board = ConvoyService.board
+        if (board == null || ConvoyService.state == null) {
+            status.text = "No board connected to call for help through."
+            return
+        }
+        startService(Intent(this, ConvoyService::class.java).setAction(ConvoyService.ACTION_HELP)
+            .putExtra(ConvoyService.EXTRA_ON, !board.help))
+    }
+
     /** The board drops this phone, and Android's bond goes once it says FORGOTTEN. */
     private fun forget() {
         if (ConvoyService.Source.load(this) !is ConvoyService.Source.Board || ConvoyService.state == null) {
@@ -156,6 +171,10 @@ class MainActivity : Activity() {
         }
         val lines = mutableListOf(ConvoyService.sourceText ?: "", osmand)
         ConvoyService.linkState?.let { lines.add("Link: $it") }
+        ConvoyService.board?.takeIf { it.help }?.let {
+            lines.add(if (it.heard == 0) "You are calling for help; no one has answered yet."
+                else "You are calling for help; ${it.heard} riders' boards have answered.")
+        }
         ConvoyService.board?.let {
             val mine = GroupActivity.Group.load(this)
             val tag = "%02x".format(it.group)

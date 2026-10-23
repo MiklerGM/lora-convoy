@@ -7,7 +7,7 @@ package io.github.miklergm.convoy
 object BoardLines {
 
     /** The version of the phone API this app speaks. A board with another is refused (D3). */
-    const val PROTO = 3
+    const val PROTO = 4
 
     /** The board's own state, from its STATUS line. */
     data class Status(
@@ -21,6 +21,10 @@ object BoardLines {
         /** The group's tag, the second byte of its packets; 0 without a key. */
         val group: Int,
         val fix: Boolean,
+        val stopped: Boolean,
+        /** Our rider's call for help is on, and so many others' boards say they hear it. */
+        val help: Boolean,
+        val heard: Int,
         /** Where its clock comes from: none, nmea or pps; and how far off it may be, in ms. */
         val time: String,
         val timeErrMs: Double?,
@@ -48,6 +52,9 @@ object BoardLines {
             keyed = t["keyed"] == "1",
             group = t["group"]?.toIntOrNull(16) ?: return null,
             fix = t["fix"] == "1",
+            stopped = t["stopped"] == "1",
+            help = t["help"] == "1",
+            heard = t["heard"]?.toIntOrNull() ?: 0,
             time = t["time"] ?: "?",
             timeErrMs = t["err"]?.toDoubleOrNull(),
             riders = t["riders"]?.toIntOrNull() ?: 0,
@@ -85,6 +92,7 @@ object BoardLines {
             help = t["help"] == "1",
             stopped = t["stopped"] == "1",
             gpsOk = t["gps"] == "1",
+            acks = t["acks"]?.toIntOrNull()?.let { "slot$it" },
         )
     }
 

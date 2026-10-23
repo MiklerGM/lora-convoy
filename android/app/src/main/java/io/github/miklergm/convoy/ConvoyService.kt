@@ -113,7 +113,10 @@ class ConvoyService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_FORGET) link?.send("FORGET")
+        when (intent?.action) {
+            ACTION_FORGET -> link?.send("FORGET")
+            ACTION_HELP -> link?.send(if (intent.getBooleanExtra(EXTRA_ON, false)) "HELP 1" else "HELP 0")
+        }
         return START_STICKY
     }
 
@@ -130,7 +133,7 @@ class ConvoyService : Service() {
                     link?.send("STATUS")
                     nextPoll = now + 10_000
                 }
-                boardRiders.values.toList()
+                withAnswers(boardRiders.values.toList())
             }
             if (riders != null) osmand.show(riders.map { it.toPoint(now) })
             state = osmand.state
@@ -200,6 +203,9 @@ class ConvoyService : Service() {
         private const val TAG = "ConvoyService"
         /** Asks the board to forget this phone; FORGOTTEN then ends the link on both sides. */
         const val ACTION_FORGET = "io.github.miklergm.convoy.FORGET"
+        /** Our rider's call for help, on or off (EXTRA_ON), through the board. */
+        const val ACTION_HELP = "io.github.miklergm.convoy.HELP"
+        const val EXTRA_ON = "on"
         private const val CHANNEL = "riders"
 
         /** For the screen: null while the service is not running. */

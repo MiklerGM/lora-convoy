@@ -26,7 +26,16 @@ data class Rider(
     val help: Boolean = false,
     val stopped: Boolean = false,
     val gpsOk: Boolean = true,
+    /** The id of a rider whose call for help this one's board answers, if any. */
+    val acks: String? = null,
+    /** For a rider who needs help: the names of those whose boards answer them (withAnswers). */
+    val answeredBy: List<String> = emptyList(),
 )
+
+/** Each rider who needs help, with the names of the riders whose boards say they hear the call. */
+fun withAnswers(riders: List<Rider>): List<Rider> = riders.map { r ->
+    if (r.help) r.copy(answeredBy = riders.filter { it.acks == r.id }.map { it.name }) else r
+}
 
 /** What OsmAnd draws for a rider, as plain data so the rules are tested without Android. */
 data class PointSpec(
@@ -67,7 +76,10 @@ fun Rider.toPoint(nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): PointSpec
     }
     fun at(ms: Long) = CLOCK.format(Instant.ofEpochMilli(ms).atZone(zone))
     val details = buildList {
-        if (help) add("Needs help")
+        if (help) {
+            add("Needs help")
+            add(if (answeredBy.isEmpty()) "No one has answered yet" else "Answered by ${answeredBy.joinToString()}")
+        }
         add("Heard at ${at(heardAtMs)}")
         add(when {
             fixAtMs == null -> "Fix time unknown"

@@ -66,7 +66,10 @@ class RiderTest {
             assertEquals("A SOS", it.shortName)
             assertEquals("Rider A needs help", it.fullName)
             assertEquals(HELP_COLOR, it.color)
-            assertEquals(listOf("Needs help", "Heard at 08:01:39", "Fix from 08:01:37", "Stopped"), it.details)
+            assertEquals(
+                listOf("Needs help", "No one has answered yet", "Heard at 08:01:39", "Fix from 08:01:37", "Stopped"),
+                it.details,
+            )
         }
         fresh.copy(heardAtMs = now - 45_000, gpsOk = false).toPoint(now, utc).let {
             assertEquals("A 45 s", it.shortName)
@@ -76,6 +79,18 @@ class RiderTest {
         }
         // the edge: stale only once past the threshold
         assertFalse(fresh.copy(heardAtMs = now - STALE_AFTER_MS).toPoint(now, utc).stale)
+    }
+
+    @Test
+    fun `a call for help shows who answers it`() {
+        val now = start
+        fun rider(id: String, help: Boolean = false, acks: String? = null) = Rider(id, "Rider $id", id, 0,
+            lat0, lon0, fixAtMs = now, heardAtMs = now, speedKmh = 0, courseDeg = null, help = help, acks = acks)
+        val riders = withAnswers(listOf(rider("2", help = true), rider("3", acks = "2"), rider("4", acks = "2"),
+            rider("5", acks = "7")))
+        assertEquals(listOf("Rider 3", "Rider 4"), riders[0].answeredBy)
+        assertTrue(riders.drop(1).all { it.answeredBy.isEmpty() })
+        assertEquals("Answered by Rider 3, Rider 4", riders[0].toPoint(now).details[1])
     }
 
     @Test
