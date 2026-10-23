@@ -30,8 +30,9 @@ import java.util.UUID
  * it). Callbacks arrive on binder threads, timers on the main looper; the state is guarded by this
  * object's lock.
  *
- * ponytail: no stale-bond detection and no explicit-selection bookkeeping, both of which the bridge
- * learned it needed on rides; add them from BleRadioLink when M7's soak test asks.
+ * A stale bond, the board having forgotten this phone, is dropped after two refused sessions
+ * (BondHealth). ponytail: no explicit-selection bookkeeping, which the bridge learned it needed on
+ * rides; add it from BleRadioLink when two boards of one rider meet.
  */
 @SuppressLint("MissingPermission") // asked for by MainActivity before a board can be chosen
 class BleBoardLink(context: Context, private val address: String) : BoardLink {
@@ -48,6 +49,9 @@ class BleBoardLink(context: Context, private val address: String) : BoardLink {
     private var ready = false
     private var writing = false
     private var failures = 0
+    private val bond = BondHealth()
+    /** This session: the board refused an encrypted write while Android held a bond with it. */
+    private var authenticationRejected = false
     private var closed = false
     private var timeout: Runnable? = null
 
@@ -89,6 +93,12 @@ class BleBoardLink(context: Context, private val address: String) : BoardLink {
     private fun fail(reason: String) {
         Log.w(TAG, "link to $address: $reason")
         onState("$reason; trying again")
+        if (bond.sessionEnded(authenticationRejected)) {
+            // the board has forgotten this phone, and this phone's stack will not let go by itself
+            Log.w(TAG, "link to $address: the pairing looks stale; dropping it to pair again")
+            removeBond()
+            onState("the board no longer knows this phone: pairing again")
+        }
         teardown()
         retryLater()
     }
@@ -97,6 +107,7 @@ class BleBoardLink(context: Context, private val address: String) : BoardLink {
     private fun teardown() {
         timeout?.let { handler.removeCallbacks(it) }
         timeout = null
+        authenticationRejected = false
         ready = false
         writing = false
         failures = 0
@@ -188,11 +199,13 @@ class BleBoardLink(context: Context, private val address: String) : BoardLink {
                     BluetoothGatt.GATT_SUCCESS -> {
                         outbound.poll() // confirmed: the next fragment may go
                         failures = 0
+                        bond.authenticatedWriteSucceeded()
                     }
                     // 5 and 15: the board wants an encrypted link. Android starts pairing and the
                     // same fragment simply goes again once that is done.
                     GATT_INSUFFICIENT_AUTHENTICATION, GATT_INSUFFICIENT_ENCRYPTION -> {
-                        onState("pairing with the board: accept Android's dialog")
+                        if (g.device.bondState == BluetoothDevice.BOND_BONDED) authenticationRejected = true
+                        onState("pairing with the board: accept Android's pairing request")
                         delay = PAIRING_WAIT_MS
                     }
                     else -> if (++failures > MAX_WRITE_FAILURES) {
