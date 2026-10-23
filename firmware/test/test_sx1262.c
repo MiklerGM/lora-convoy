@@ -43,10 +43,12 @@ static void log_nothing(const char *tag, const char *fmt, ...) { (void)tag; (voi
 static int gpio_config(const gpio_config_t *c) { (void)c; return ESP_OK; }
 static int gpio_set_level(gpio_num_t pin, int level) { (void)pin; (void)level; return ESP_OK; }
 static int gpio_get_level(gpio_num_t pin) { (void)pin; return 0; }   /* BUSY is never high */
-static void esp_rom_delay_us(uint32_t us) { (void)us; }
-/* A millisecond per look at the clock, so every deadline in the driver arrives. */
-static int64_t esp_timer_get_time(void) { static int64_t now; return now += 1000; }
-static void vTaskDelay(int ticks) { (void)ticks; }
+/* The test's clock moves only when the driver waits, by as long as it waits (a tick is a
+ * millisecond here, as in the firmware's build), so a wait that runs long shows. */
+static int64_t s_now_us;
+static void esp_rom_delay_us(uint32_t us) { s_now_us += us; }
+static int64_t esp_timer_get_time(void) { return s_now_us; }
+static void vTaskDelay(int ticks) { s_now_us += (int64_t)ticks * 1000; }
 static SemaphoreHandle_t xSemaphoreCreateMutex(void) { return (SemaphoreHandle_t)1; }
 static int xSemaphoreTake(SemaphoreHandle_t s, int ticks) { (void)s; (void)ticks; return pdTRUE; }
 static int xSemaphoreGive(SemaphoreHandle_t s) { (void)s; return pdTRUE; }
@@ -166,6 +168,18 @@ int main(void) {
         assert(chip.mode == MODE_RX && radio_verify());
     }
     printf("sx1262: a receiver that did not come back after sending is not reported healthy\n");
+
+    /* Listening ends in the last millisecond before its deadline, never a sleep after it: the
+     * board's own slot follows. */
+    for (uint32_t wait_ms = 0; wait_ms <= 25; wait_ms++) {
+        uint8_t buf[32];
+        int rssi, snr;
+        const int64_t start = s_now_us;
+        assert(radio_receive(buf, sizeof(buf), wait_ms, &rssi, &snr) == 0);
+        const int64_t took = s_now_us - start;
+        assert(took <= (int64_t)wait_ms * 1000 && took > (int64_t)wait_ms * 1000 - 1000);
+    }
+    printf("sx1262: listening ends by its deadline\n");
 
     /* A chip that reset itself holds its default sync word, not ours. */
     chip.regs[REG_LORA_SYNC_MSB] = 0x14;

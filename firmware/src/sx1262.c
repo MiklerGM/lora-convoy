@@ -490,9 +490,13 @@ size_t radio_receive(uint8_t *out, size_t cap, uint32_t wait_ms, int *rssi_dbm, 
             continue;
         }
         if (!(flags & (IRQ_RX_DONE | IRQ_CRC_ERR | IRQ_HEADER_ERR))) {
-            /* Blocking, not spinning: the modem latches its flags, so a slower poll loses nothing. */
+            /* Blocking, not spinning: the modem latches its flags, so a slower poll loses nothing.
+             * Never past the deadline, though, which the caller's own slot follows; the last
+             * millisecond is the caller's to spin. */
+            const int64_t left_ms = (deadline - port_uptime_us()) / 1000;
+            if (left_ms <= 0) break;
             bus_unlock();
-            port_sleep_ms(5);
+            port_sleep_ms(left_ms < 5 ? (uint32_t)left_ms : 5);
             if (!bus_lock()) return 0;
             continue;
         }
