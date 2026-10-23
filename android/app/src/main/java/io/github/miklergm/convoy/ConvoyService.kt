@@ -34,6 +34,8 @@ class ConvoyService : Service() {
     /** What this link's board has been sent: this phone's group, and the question for its riders. */
     @Volatile private var sentGroup: Invitation? = null
     @Volatile private var askedRiders = false
+    /** The board's clash count at its last status on this link, to see it grow. */
+    @Volatile private var lastClash: Int? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -60,6 +62,7 @@ class ConvoyService : Service() {
                 if (s.startsWith("connected")) {
                     sentGroup = null
                     askedRiders = false
+                    lastClash = null
                     l.send("STATUS")
                 }
             }
@@ -77,6 +80,8 @@ class ConvoyService : Service() {
                 boardRiders.clear()
             } else {
                 board = status
+                lastClash?.let { if (status.clash > it) clashAtMs = System.currentTimeMillis() }
+                lastClash = status.clash
                 setUp(status)
             }
             return
@@ -218,6 +223,9 @@ class ConvoyService : Service() {
         @Volatile var linkState: String? = null
             private set
         @Volatile var board: BoardLines.Status? = null
+            private set
+        /** When the board last heard another radio in its slot; 0 for never. */
+        @Volatile var clashAtMs = 0L
             private set
     }
 }

@@ -58,6 +58,7 @@ class BoardLinesTest {
         assertEquals(4, s.proto)
         assertTrue(s.help && !s.stopped)
         assertEquals(2, s.heard)
+        assertEquals(0, s.clash)
         assertEquals(3, s.slots)
         assertEquals("pps", s.time)
         assertEquals(0.1, s.timeErrMs!!, 0.0)

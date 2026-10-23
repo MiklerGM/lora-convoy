@@ -194,6 +194,10 @@ class MainActivity : Activity() {
         }
         val lines = mutableListOf(ConvoyService.sourceText ?: "", osmand)
         ConvoyService.linkState?.let { lines.add("Link: $it") }
+        if (System.currentTimeMillis() - ConvoyService.clashAtMs < 60_000) {
+            lines.add("Another board is sending in your slot, so the others see neither: has one invitation " +
+                "been used twice? Each rider needs their own.")
+        }
         ConvoyService.board?.takeIf { it.help }?.let {
             lines.add(if (it.heard == 0) "You are calling for help; no one has answered yet."
                 else "You are calling for help; ${it.heard} riders' boards have answered.")

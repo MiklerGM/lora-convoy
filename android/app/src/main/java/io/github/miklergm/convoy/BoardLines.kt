@@ -29,6 +29,8 @@ object BoardLines {
         val time: String,
         val timeErrMs: Double?,
         val riders: Int,
+        /** Packets heard in its own slot from another radio: one invitation used twice, as a rule. */
+        val clash: Int,
         val duty: String,
         val dbm: Int?,
         val reset: String,
@@ -58,6 +60,7 @@ object BoardLines {
             time = t["time"] ?: "?",
             timeErrMs = t["err"]?.toDoubleOrNull(),
             riders = t["riders"]?.toIntOrNull() ?: 0,
+            clash = t["clash"]?.toIntOrNull() ?: 0,
             duty = t["duty"] ?: "?",
             dbm = t["dbm"]?.toIntOrNull(),
             reset = t["reset"] ?: "?",
