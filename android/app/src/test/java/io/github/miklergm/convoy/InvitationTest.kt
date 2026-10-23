@@ -19,7 +19,10 @@ class InvitationTest {
         assertEquals(text, invitation.encode())
         assertEquals(invitation, Invitation.decode(text))
         assertEquals(invitation, Invitation.decode("  $text\n")) // as copied from a messenger
-        assertEquals(listOf("KEY 000102030405060708090a0b0c0d0e0f", "SLOT 2", "INTERVAL 2000"), invitation.commands())
+        assertEquals(
+            listOf("KEY 000102030405060708090a0b0c0d0e0f", "SLOTS 5", "SLOT 2", "INTERVAL 2000"),
+            invitation.commands(),
+        )
     }
 
     @Test

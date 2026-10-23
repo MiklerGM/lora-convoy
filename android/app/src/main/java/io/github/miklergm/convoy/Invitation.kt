@@ -36,8 +36,9 @@ data class Invitation(
         return PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(b.array())
     }
 
-    /** The board's commands for this invitation (firmware/src/api.h). */
-    fun commands(): List<String> = listOf("KEY ${key.toHex()}", "SLOT $slot", "INTERVAL $intervalMs")
+    /** The board's commands for this invitation (firmware/src/api.h): its slot in a frame of as many. */
+    fun commands(): List<String> =
+        listOf("KEY ${key.toHex()}", "SLOTS $riders", "SLOT $slot", "INTERVAL $intervalMs")
 
     /** The tag the board shows as group= once it has this key. */
     fun groupTag(): Int = groupTag(key)

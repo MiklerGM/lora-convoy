@@ -165,8 +165,13 @@ class MainActivity : Activity() {
                 mine != null -> "in group $tag, not ${mine.name} yet"
                 else -> "in group $tag"
             }
-            lines.add("Board: ${it.board}, rider ${it.slot + 1}, $group, " +
-                (if (it.fix) "GNSS fix" else "no GNSS fix") + ", ${it.riders} riders heard, " +
+            val clock = when (it.time) {
+                "pps" -> "time from PPS"
+                "nmea" -> "time from NMEA"
+                else -> "no time yet"
+            } + (it.timeErrMs?.let { e -> " ±$e ms" } ?: "")
+            lines.add("Board: ${it.board}, rider ${it.slot + 1}${it.slots?.let { n -> " of $n" } ?: ""}, $group, " +
+                (if (it.fix) "GNSS fix" else "no GNSS fix") + ", $clock, ${it.riders} riders heard, " +
                 "${it.dbm ?: "?"} dBm, duty ${it.duty}, started after ${it.reset}")
         }
         return lines.joinToString("\n")

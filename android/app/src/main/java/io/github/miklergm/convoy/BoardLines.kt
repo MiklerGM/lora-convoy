@@ -7,18 +7,23 @@ package io.github.miklergm.convoy
 object BoardLines {
 
     /** The version of the phone API this app speaks. A board with another is refused (D3). */
-    const val PROTO = 2
+    const val PROTO = 3
 
     /** The board's own state, from its STATUS line. */
     data class Status(
         val proto: Int,
         val board: String,
         val slot: Int,
+        /** Riders in its group: the frame holds a slot for each. */
+        val slots: Int?,
         /** Without a group key a board sends nothing, and hears nobody. */
         val keyed: Boolean,
         /** The group's tag, the second byte of its packets; 0 without a key. */
         val group: Int,
         val fix: Boolean,
+        /** Where its clock comes from: none, nmea or pps; and how far off it may be, in ms. */
+        val time: String,
+        val timeErrMs: Double?,
         val riders: Int,
         val duty: String,
         val dbm: Int?,
@@ -39,9 +44,12 @@ object BoardLines {
             proto = t["proto"]?.toIntOrNull() ?: return null,
             board = t["board"] ?: "?",
             slot = t["slot"]?.toIntOrNull() ?: return null,
+            slots = t["slots"]?.toIntOrNull(),
             keyed = t["keyed"] == "1",
             group = t["group"]?.toIntOrNull(16) ?: return null,
             fix = t["fix"] == "1",
+            time = t["time"] ?: "?",
+            timeErrMs = t["err"]?.toDoubleOrNull(),
             riders = t["riders"]?.toIntOrNull() ?: 0,
             duty = t["duty"] ?: "?",
             dbm = t["dbm"]?.toIntOrNull(),
