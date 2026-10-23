@@ -237,7 +237,12 @@ the app asks to be let run in the background. A bench guide ([BENCH](BENCH.md)) 
 check once the boards are there. A soak run of an hour on the emulator, OsmAnd in front and the
 app on a simulated board in a group of three: the link never dropped, the app's memory stayed at
 41–44 MB and OsmAnd's at 280–321 MB without growing, and nothing crashed. Setting it up found a
-crash, now fixed: a call for help from the main thread wrote to the TCP link there.
+crash, now fixed: a call for help from the main thread wrote to the TCP link there. The whole
+group now rides on one computer ([tools/bench](../tools/bench/README.md)): emulated phones with
+the app and OsmAnd, each paired over the emulators' virtual Bluetooth with its own simulated board,
+the boards on simulated air. A ride from scratch takes eight minutes and checks pairing, joining by
+invitation, every board hearing the others, help answered, the riders on OsmAnd's map, and FORGET.
+It has passed twice; the boards themselves are left with only what is theirs to test.
 
 ## Later: research first
 

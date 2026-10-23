@@ -46,12 +46,14 @@ Nothing is stable yet: the air format, the phone API and the app may all change 
 
 The app is in `android/`, the firmware in `firmware/`. `make check` runs every test that needs
 no hardware and builds both board images; `android/emulator.sh` sets up an emulator with OsmAnd,
-`make -C firmware sim ARGS="10 2000 600"` simulates ten riders for ten minutes, and
-`make -C firmware sim ARGS="serve 3"` serves three simulated boards to the app.
+and `make -C firmware sim ARGS="10 2000 600"` simulates ten riders for ten minutes.
+`tools/bench/bench.py up`, `ride` and `down` run a whole group on one computer: emulated phones
+with the app and OsmAnd, each paired over virtual Bluetooth with its own simulated board, the
+boards on simulated air ([tools/bench](tools/bench/README.md)).
 
 ## Tools
 
-All standard-library Python:
+All standard-library Python, but for the bench's Bluetooth boards (Bumble, in a venv):
 
 | Tool | What it does | How to run |
 |---|---|---|

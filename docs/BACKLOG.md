@@ -214,7 +214,10 @@ dmd2-lora-bridge already, including what its Bluetooth link learned on rides and
 **So far:** the app asks for the battery exemption as the bridge did; Play allows that request only
 for some kinds of app, which matters once it is published (T-app-id). An hour on the emulator
 against a simulated board kept the link and flat memory (ROADMAP, M7); a phone over Bluetooth,
-asleep in a pocket, is the test that counts.
+asleep in a pocket, is the test that counts. The Bluetooth client now runs on the emulator bench
+against boards in netsim ([tools/bench](../tools/bench/README.md)): pairing with Android's consent,
+encrypted writes, a bond kept across a board's restart, FORGET from either side. A bond gone stale
+on one side can be made there too: stop a board, delete its bond file, start it again.
 Needed by M7.
 
 ## Firmware and boards
