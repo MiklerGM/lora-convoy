@@ -228,7 +228,13 @@ asking for help. A soak run on the emulator.
 **So far, 2026-10-23:** "need help", answered: the app's Need help button sets the call on the
 board, every board that hears it answers in its next packet, and maps show who has answered
 (protocol v2). The board marks itself stopped after a minute under 5 km/h. In the simulator a call
-among twenty riders is answered first in 1.3 s and by all in 5.3 s, at the median.
+among twenty riders is answered first in 1.1 s and by all in 5.4 s, at the median. A column of
+twenty spreading to 9.5 km with radios reaching 1 km: in reach, fixes 2.5 s old at the 95th
+percentile; out of it, the last fix stays on the map and ages; a stopped rider's call is answered
+by twelve at once and four more as they come by. Two riders given one slot now find out within
+half a minute or so, and the app says so. The duty ledger comes over the phone API (`LEDGER`), and
+the app asks to be let run in the background. A bench guide ([BENCH](BENCH.md)) lists what to
+check once the boards are there.
 
 ## Later: research first
 

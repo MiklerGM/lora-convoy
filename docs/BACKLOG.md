@@ -79,9 +79,10 @@ lag must stay well under a second (E0), or the interrupt must count edges.
 Spare slots and their single allocator, a roster change at an activation epoch, what happens when
 the organiser's radio is lost ([06](06-own-protocol.md), open questions). **M6, for now:** each
 rider's slot comes with their invitation, so a late joiner finds it waiting; a board sits out the
-frame running when its time comes, and counts a clash, another radio in its slot, without acting
-on it. Still open: what a clash makes a board do, more riders than the invitations, and a use for
-the spare slot. Needed by M7.
+frame running when its time comes. Two radios in one slot meet in every frame and never hear each
+other, so each board listens in its slot one frame in 32: they hear each other as a clash within
+half a minute on average, and the app tells the rider. Still open: what a clash should make a board
+do by itself, more riders than the invitations, and a use for the spare slot. Needed by M7.
 
 ### T-neighbours: two groups on one channel
 
@@ -99,8 +100,8 @@ A fixed frame with skipped slots, or a variable frame. After M6.
 A flag plus a follow-up, or a spare slot; who acknowledges, and how the sender learns it was heard.
 [01](01-goals.md) asks for an acknowledgement within N seconds. **v2, for now:** the flag in every
 packet of the caller, and a byte in every packet that answers one caller heard, each in turn when
-several call ([PROTOCOL](PROTOCOL.md)): among twenty riders the first answer comes in 1.3 s and the
-last in 5.3 s, at the median. Still open: N itself (question 2 in [01](01-goals.md)); a call from
+several call ([PROTOCOL](PROTOCOL.md)): among twenty riders the first answer comes in 1.1 s and the
+last in 5.4 s, at the median. Still open: N itself (question 2 in [01](01-goals.md)); a call from
 the board's button when the phone is gone; a call that outlives a restart of the board; a call heard
 only through a relay (T-relay).
 

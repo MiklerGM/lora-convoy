@@ -68,6 +68,11 @@ k x 2 s   + phase   slot 0            slot 1            slot 2            spare
   | 20 | 95 ms | 31 ms | 10 min | silent |
   | 32 | 61 ms | 14 ms | 4 min | silent |
 
+- **Listening in its own slot.** Once in 32 frames at random a board listens in its slot instead
+  of sending. Two radios given one slot, as when an invitation is used twice, meet in every frame,
+  so nobody hears either, and neither hears the other while both send; listening, they hear each
+  other within half a minute on average, counted as `clash=`, and the app says so. It costs 3 % of
+  the positions.
 - **Only what it knows.** Nothing before its GNSS has given a position and a time. After that, if
   the fix is lost, the last good position goes on with its own fix time, and the GPS-ok bit clear,
   so its age keeps growing on every map.
@@ -131,8 +136,8 @@ that hears a call answers it in its own next packet, in byte 20: the slot of a r
 calling within the last minute, each in turn when several call. The calling board counts the
 riders who answer (`heard=` in its status), and every board reports whom each rider answers
 (`acks=` in its RIDER lines), so every map can show who has heard a call. In the simulator, among
-twenty riders with 10 % of packets lost, the first answer comes 1.3 s after the call and the
-last of the nineteen 5.3 s after it, at the median; 2.1 s and 7.0 s at worst.
+twenty riders with 10 % of packets lost, the first answer comes 1.1 s after the call and the
+last of the nineteen 5.4 s after it, at the median; 3.5 s and 10.4 s at worst.
 
 **Stopped.** The board sets the stopped bit after a minute under 5 km/h, so a red light is not a
 stop, and clears it over 10 km/h, so a GNSS wandering at a standstill does not start it.
