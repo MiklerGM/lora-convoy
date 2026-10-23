@@ -34,7 +34,8 @@ flowchart LR
   FORGET, and bonds kept across restarts as a board keeps them in flash. It runs on Google's Bumble.
 - **`bench.py`** starts it all and rides it: `up [PHONES]`, `ride`, `down`, one at a time. The phones are
   read-only copies of one AVD, which would share its Bluetooth keys and so look like one phone to
-  a board; `up` has each make keys of its own, as a real phone has. A failed ride leaves each
+  a board; `up` gives each keys of its own, as a real phone has, and listens for every board by name
+before it is done. A failed ride leaves each
   phone's screen at the failure beside the logs.
 
 ## What a ride checks

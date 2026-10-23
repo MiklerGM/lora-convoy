@@ -7,6 +7,8 @@ written only over an encrypted link (Just Works pairing), one owner at a time, a
 the bond. Lines go both ways between the phone and the board's phone API.
 
     ble_board.py I [PORT] [--l1]    board I as LoRaConvoy-C0FFEE0I, bridged to 127.0.0.1:PORT+I (4403)
+    ble_board.py listen SECONDS     the names heard in netsim meanwhile, one a line, as a phone
+                                    scanning finds them
 
 Both boards notify their lines only over an encrypted link. The Heltec's NimBLE lets a phone
 subscribe before it pairs; the L1's Zephyr (--l1) takes the subscription itself only encrypted.
@@ -183,11 +185,25 @@ class Board:
             await connection.disconnect()
 
 
+async def listen(seconds: float) -> None:
+    async with await open_transport("android-netsim:name=lora-convoy-listener") as hci:
+        device = Device.with_hci("listener", Address("F0:C0:FF:EE:00:FF"), hci.source, hci.sink)
+        await device.power_on()
+        names = set()
+        device.on("advertisement", lambda a: names.add(a.data.get(AdvertisingData.COMPLETE_LOCAL_NAME)))
+        await device.start_scanning(active=True)  # the name is in the scan response
+        await asyncio.sleep(seconds)
+        print("\n".join(sorted(str(n) for n in names if n)))
+
+
 if __name__ == "__main__":
     import os
     logging.basicConfig(level=os.environ.get("BENCH_LOG", "WARNING").upper())
     if len(sys.argv) < 2:
         sys.exit(__doc__)
+    if sys.argv[1] == "listen":
+        asyncio.run(listen(float(sys.argv[2])))
+        sys.exit()
     args = [a for a in sys.argv[1:] if a != "--l1"]
     index = int(args[0])
     asyncio.run(Board(index, (int(args[1]) if len(args) > 1 else 4403) + index, "--l1" in sys.argv).run())

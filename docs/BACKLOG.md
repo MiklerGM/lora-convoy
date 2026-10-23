@@ -224,7 +224,12 @@ against boards in netsim ([tools/bench](../tools/bench/README.md)): pairing with
 encrypted writes, a bond kept across a board's restart, FORGET from either side, and a bond gone
 stale on the phone's side, the board reset by its button while the phone was away. Android 15
 pairs again by itself there, once the rider agrees; for phones that keep the stale key, as the
-bridge met on rides, the app drops it after two refused sessions (BondHealth).
+bridge met on rides, the app drops it after two refused sessions (BondHealth). On the bench,
+2026-10-23, Android 15 asked for the first pairing's consent in a notification, not a dialog, and
+the pairing waited some 30 s for it, then failed and came again with the next connection. To do:
+tell the rider to look at the notifications while Android bonds with the board
+(`ACTION_BOND_STATE_CHANGED`), and try whether a board associated through `CompanionDeviceManager`
+brings the dialog forward, on phones.
 Needed by M7.
 
 ## Firmware and boards

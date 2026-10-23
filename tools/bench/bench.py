@@ -27,6 +27,7 @@ import base64
 import fcntl
 import os
 import re
+import secrets
 import signal
 import socket
 import subprocess
@@ -98,8 +99,11 @@ def wait_ports_free(phones: int, timeout=60) -> None:
         time.sleep(1)
 
 
+BT_CONFIG = "/data/misc/bluedroid/bt_config.conf"
+
+
 def bluetooth_irk(serial: str) -> str | None:
-    conf = adb(serial, "shell", "cat", "/data/misc/bluedroid/bt_config.conf", check=False)
+    conf = adb(serial, "shell", "cat", BT_CONFIG, check=False)
     m = re.search(r"LE_LOCAL_KEY_IRK = (\w+)", conf)
     return m.group(1) if m else None
 
@@ -115,29 +119,41 @@ def bluetooth_on(serial: str, on: bool, timeout=30) -> None:
     adb(serial, "shell", "cmd", "bluetooth_manager", f"wait-for-state:STATE_{'ON' if on else 'OFF'}", check=False)
 
 
-def own_bluetooth_keys(serial: str, taken: list) -> str:
-    """Restarts the phone's Bluetooth stack without its saved keys until it has made new ones."""
+def own_bluetooth_keys(serial: str) -> str:
+    """Copies of one AVD share its Bluetooth keys, so a board would take one phone for another; and
+    the emulator's Bluetooth, made to draw new ones, draws them from a sequence that repeats. So
+    each phone gets keys drawn here, written into its config. Turned off, its Bluetooth stays up
+    for scans (BLE only) and later saves the config it holds over ours: its process is killed
+    instead, unable to save, and Android starts it again on our file."""
     adb(serial, "root", check=False)
     deadline = time.time() + 60  # adbd restarts as root, and commands before it would fail
     while adb(serial, "shell", "id", "-u", check=False).strip() != "0":
         if time.time() > deadline:
             sys.exit(f"{serial}: adb would not run as root")
         time.sleep(1)
-    shared = bluetooth_irk(serial)
-    for _ in range(5):
-        bluetooth_on(serial, False)
-        adb(serial, "shell", "rm -f /data/misc/bluedroid/bt_config.conf /data/misc/bluedroid/bt_config.bak; "
-                             "pkill -f com.android.bluetooth", check=False)
-        time.sleep(3)
+    bluetooth_on(serial, True)
+    for _ in range(3):
+        conf = adb(serial, "shell", "cat", BT_CONFIG, check=False)
+        if "[Adapter]\n" not in conf:
+            conf += "\n[Adapter]\n"
+        irk = secrets.token_hex(16)
+        for name, value in (("IRK", irk), ("IR", secrets.token_hex(16)), ("DHK", secrets.token_hex(16)),
+                            ("ER", secrets.token_hex(16))):
+            line = f"LE_LOCAL_KEY_{name} = {value}"
+            conf, found = re.subn(rf"LE_LOCAL_KEY_{name} = \w+", line, conf)
+            if not found:
+                conf = conf.replace("[Adapter]\n", f"[Adapter]\n{line}\n", 1)
+        staged = "/data/local/tmp/bt_config.conf"
+        subprocess.run(["adb", "-s", serial, "shell", f"cat > {staged}"], input=conf, text=True, check=True)
+        # com.google.android.bluetooth on Google's images, com.android.bluetooth on others
+        adb(serial, "shell", f"cp {staged} {BT_CONFIG} && rm -f {BT_CONFIG[:-5]}.bak && chown bluetooth:bluetooth "
+                             f"{BT_CONFIG} && chmod 660 {BT_CONFIG} && restorecon {BT_CONFIG} && "
+                             "pkill -9 -f 'android[.]bluetooth$'", check=False)
+        time.sleep(5)
         bluetooth_on(serial, True)
-        for _ in range(20):  # the stack writes its new keys a little after it is on
-            irk = bluetooth_irk(serial)
-            if irk:
-                break
-            time.sleep(1)
-        if irk and irk != shared and irk not in taken:
+        if bluetooth_irk(serial) == irk:
             return irk
-    sys.exit(f"{serial}: its Bluetooth keys stay those of the AVD it was copied from")
+    sys.exit(f"{serial}: its Bluetooth would not keep the keys it was given")
 
 
 def booted(serial: str) -> bool:
@@ -168,9 +184,7 @@ def up(phones: int) -> None:
         time.sleep(5)
     # Copies of one AVD share its Bluetooth keys, so a board would take one phone for another:
     # each gets keys of its own, as a real phone has.
-    irks = []
-    for i in range(phones):
-        irks.append(own_bluetooth_keys(phone(i), irks))
+    irks = [own_bluetooth_keys(phone(i)) for i in range(phones)]
     print("up: each phone's Bluetooth identity key: " + ", ".join(k[:8] for k in irks))
     # the boards' Bluetooth after the phones': netsim starts with the first emulator
     for b in range(phones + 1):
@@ -184,6 +198,19 @@ def up(phones: int) -> None:
     (RUN / "phones").write_text(str(phones))
     for b in range(phones + 1):
         board_says(b, "advertising", 120)
+    # netsim now and then loses the scan response, and so the name, of boards that come up together,
+    # and no phone finds them: each is listened for by name, and one not heard is started again.
+    for _ in range(3):
+        heard = subprocess.run([str(VENV / "bin/python"), "-I", str(ROOT / "tools/bench/ble_board.py"), "listen", "12"],
+                               capture_output=True, text=True).stdout.split()
+        unheard = [b for b in range(phones + 1) if f"LoRaConvoy-C0FFEE{b:02X}" not in heard]
+        if not unheard:
+            break
+        print(f"up: boards {unheard} advertise without their names; starting them again")
+        for b in unheard:
+            restart_board(b)
+    else:
+        sys.exit(f"up: boards {unheard} cannot be found by name")
     print(f"up: {phones} phones, {phones + 1} boards; logs in {RUN}")
 
 
@@ -266,22 +293,35 @@ def wait_status(serial: str, want: str, timeout=60) -> str:
         time.sleep(5)
 
 
-def accept_pairing(serial: str, timeout=60) -> None:
-    """Android asks the rider to consent to Just Works pairing, in a dialog or a notification."""
+def press(serial: str, items: list, want: str) -> bool:
+    """Taps what reads exactly want, on a screen already read."""
+    hits = [(x, y) for t, x, y in items if t == want]
+    if hits:
+        adb(serial, "shell", "input", "tap", str(hits[0][0]), str(hits[0][1]))
+    return bool(hits)
+
+
+def pair(serial: str, board: int, timeout=120) -> None:
+    """Android asks the rider to consent to Just Works pairing, in a dialog or, as a rule, a
+    notification, and the pairing waits some 30 s for it: each look is one screen read, and a request
+    missed comes again with the app's next connection, as it would to a rider. Done once the board
+    says it paired."""
     deadline = time.time() + timeout
-    while time.time() < deadline:
-        settle(serial)
-        if tap(serial, "Pair", exact=True):  # the dialog's button
-            return
+    while "paired" not in (RUN / f"board-{board}.log").read_text():
+        if time.time() > deadline:
+            raise AssertionError(f"{serial}: board {board} never paired")
+        items = screen(serial)
+        if press(serial, items, "Pair"):  # the dialog's button
+            time.sleep(2)
+            continue
+        if any("responding" in t for t, _, _ in items):  # software graphics: System UI or the launcher late
+            press(serial, items, "Close app")
+            continue
         adb(serial, "shell", "cmd", "statusbar", "expand-notifications", check=False)
         time.sleep(1)
-        if tap(serial, "Pair & connect", exact=True):
-            time.sleep(2)
-            if tap(serial, "Pair", exact=True):
-                return
-        adb(serial, "shell", "cmd", "statusbar", "collapse", check=False)
-        time.sleep(2)
-    raise AssertionError(f"{serial}: no pairing request")
+        if not press(serial, screen(serial), "Pair & connect"):  # the notification's: the dialog next
+            adb(serial, "shell", "cmd", "statusbar", "collapse", check=False)
+        time.sleep(1)
 
 
 def riders_on_map(serial: str, slots: list, frames=10) -> list:
@@ -407,8 +447,7 @@ def ride() -> None:
         main_screen(p)
         wait_tap(p, "Find boards")
         wait_tap(p, f"LoRaConvoy-C0FFEE{i:02X}")
-        accept_pairing(p)
-        board_says(i, "paired")
+        pair(p, i)
         wait_status(p, r"Board: sim")
         step(f"phone {i} paired with board {i} over Bluetooth, encrypted")
 
@@ -486,8 +525,7 @@ def ride() -> None:
          "(its node core ran on)")
 
     restart_board(0, forget=True)
-    accept_pairing(p0, 120)
-    board_says(0, "paired", 60)
+    pair(p0, 0, 180)
     wait_status(p0, rf"{names[0]}, rider 1 of {boards}.*{boards - 1} riders heard", 90)
     step("board 0's Bluetooth restarted without its bonds while phone 0 was away; phone 0 paired again once "
          "the rider agreed")
