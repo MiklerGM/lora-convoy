@@ -35,8 +35,20 @@ static bool hex_key(const char *s, uint8_t key[16]) {
     return true;
 }
 
+/* "SF kHz", into the mode we have with those two changed, if the radio can take it. */
+static bool mode(const char *s, phy_t now, phy_t *out) {
+    long sf, khz;
+    char extra;
+    if (!s || sscanf(s, "%ld %ld%c", &sf, &khz, &extra) != 2 || sf < 7 || sf > 12 || khz < 62 || khz > 500) return false;
+    now.sf = (uint8_t)sf;
+    now.bw_hz = khz == 62 ? 62500 : (uint32_t)khz * 1000;
+    *out = now;
+    return phy_supported(out);
+}
+
 void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, void *ctx) {
     char out[API_LINE];
+    phy_t phy;
     uint8_t key[16];
     char *arg = strchr(line, ' ');
     if (arg) *arg++ = '\0';
@@ -60,6 +72,10 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         memset(key, 0, sizeof(key));
         api->setup_changed = true;
         snprintf(out, sizeof(out), "OK keyed group=%02x", api->node->group.tag);
+    } else if (strcasecmp(line, "mode") == 0 && mode(arg, cfg->phy, &phy)) {
+        cfg->phy = phy;
+        api->radio_changed = api->setup_changed = true;
+        snprintf(out, sizeof(out), "OK mode=%u/%lu", phy.sf, (unsigned long)(phy.bw_hz / 1000));
     } else if (strcasecmp(line, "help") == 0 && number(arg, 0, 1, &v)) {
         node_set_help(api->node, v == 1);
         snprintf(out, sizeof(out), "OK help=%ld", v);
@@ -77,7 +93,7 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         snprintf(out, sizeof(out), "OK interval=%ld", v);
     } else if (strcasecmp(line, "power") == 0 && number(arg, 0, 3, &v)) {
         api->power = (uint8_t)v;
-        api->power_changed = true;
+        api->radio_changed = true;
         snprintf(out, sizeof(out), "OK power=%ld dbm=%d", v, api->tx_dbm((uint8_t)v));
     } else if (strcasecmp(line, "forget") == 0 && !arg) {
         api->forget = true;
@@ -90,7 +106,7 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         return;
     } else {
         snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, LEDGER, KEY <32 hex>, HELP 0-1, SLOT 0-%d, SLOTS 1-%d, "
-                 "INTERVAL 500-60000, POWER 0-3 (0 strongest), FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
+                 "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
                  NODE_SLOTS);
     }
     reply(ctx, out);

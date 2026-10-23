@@ -18,6 +18,7 @@
  *   HELP <0|1>                     OK help=<0|1>: our rider's call for help, off or on
  *   SLOT <0-31>, SLOTS <1-32>,     OK <key>=<value>, or ERR <why>
  *   INTERVAL <ms>, POWER <0-3>
+ *   MODE <SF 7-12> <kHz>           OK mode=<SF>/<kHz>: the radio mode, for trying range (E2)
  *   FORGET                         FORGOTTEN, over Bluetooth only (ble_nus.c)
  *   REBOOT, BOOTLOADER             -
  *                                  RIDER ... unasked, for every packet taken
@@ -38,8 +39,8 @@ typedef struct {
     uint8_t power;                  /* the level the radio is to hold, 0 the strongest */
     int (*tx_dbm)(uint8_t level);   /* what a level puts out on this board */
     /* Set by a command for the caller to carry out, outside the node's lock. */
-    bool power_changed;
-    bool setup_changed;             /* key, slots or interval: the caller keeps them over a restart */
+    bool radio_changed;             /* power or mode: the caller applies the radio again */
+    bool setup_changed;             /* key, slots, interval or mode: the caller keeps them over a restart */
     bool forget;
     bool restart;
     bool bootloader;

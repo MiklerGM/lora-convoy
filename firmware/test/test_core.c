@@ -496,7 +496,7 @@ static void test_node_hears(void) {
     node_format_rider(&blind, 2, 0, line, sizeof(line));
     assert(strstr(line, "fix_age=? "));
     node_format_status(&n, 9 * SEC, line, sizeof(line));
-    assert(strncmp(line, "slot=1 slots=4 keyed=1 group=86 fix=0 ", 38) == 0 && strstr(line, "riders=3 "));
+    assert(strncmp(line, "slot=1 slots=4 keyed=1 group=86 mode=7/250 fix=0 ", 49) == 0 && strstr(line, "riders=3 "));
     assert(strstr(line, " time=nmea err=1.") && strstr(line, " budget=183.5 lag=? "));
     assert(strstr(line, " foreign=1 forged=1 replay=2 clash=1"));
     printf("node: ages honest, the delivered share, and forgeries, replays and strangers kept out\n");
@@ -665,7 +665,23 @@ static void test_api(void) {
     ask(&api, "INTERVAL 499");
     assert(starts(replies[0], "ERR ") && n.cfg.interval_ms == 2000);
     ask(&api, "POWER 0");
-    assert(strcmp(replies[0], "OK power=0 dbm=22") == 0 && api.power == 0 && api.power_changed);
+    assert(strcmp(replies[0], "OK power=0 dbm=22") == 0 && api.power == 0 && api.radio_changed);
+    api.radio_changed = false;
+    ask(&api, "MODE 9 250");
+    assert(strcmp(replies[0], "OK mode=9/250") == 0 && n.cfg.phy.sf == 9 && n.cfg.phy.bw_hz == 250000);
+    assert(api.radio_changed && n.cfg.phy.freq_hz == 869525000);
+    ask(&api, "MODE 10 62");
+    assert(strcmp(replies[0], "OK mode=10/62") == 0 && n.cfg.phy.bw_hz == 62500);
+    ask(&api, "MODE 6 250");
+    assert(starts(replies[0], "ERR ") && n.cfg.phy.sf == 10);
+    ask(&api, "MODE 9 300");
+    assert(starts(replies[0], "ERR "));
+    ask(&api, "MODE 9");
+    assert(starts(replies[0], "ERR "));
+    ask(&api, "MODE 9 250 x");
+    assert(starts(replies[0], "ERR "));
+    ask(&api, "STATUS");
+    assert(strstr(replies[0], " mode=10/62 "));
 
     /* What only the caller can do is left to it, unanswered here. */
     ask(&api, "FORGET");

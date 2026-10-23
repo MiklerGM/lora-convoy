@@ -199,10 +199,11 @@ on three transports:
 | `KEY <32 hex digits>` | `OK keyed group=<tag>`; riders heard under another key are forgotten |
 | `HELP <0–1>` | `OK help=<0–1>`: our rider's call for help, off or on; each time on, who answers starts afresh |
 | `SLOT <0–31>`, `SLOTS <1–32>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |
+| `MODE <SF 7–12> <kHz 62, 125, 250, 500>` | `OK mode=<SF>/<kHz>`: another radio mode on the same frequency, for trying range (E2); kept over a restart. Every board of a group needs the same |
 | `FORGET` | `FORGOTTEN` once the board has dropped its bond, or `ERR forget incomplete` |
 | `REBOOT`, and `BOOTLOADER` on the L1 Pro (its UF2 drive) | — |
 
-The board keeps its key, slots and interval across restarts. No command reads the key back: the
+The board keeps its key, slots, interval and mode across restarts. No command reads the key back: the
 status shows `keyed=` and the group's tag in hex, `00` without a key, and counts the packets
 refused as `foreign=`, `forged=`, `replay=` and `clash=`. Of its time it shows where it comes from
 (`time=none`, `nmea` or `pps`), how far off it may be and the budget, in ms (`err=`, `budget=`),

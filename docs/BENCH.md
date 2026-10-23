@@ -46,6 +46,13 @@ SLOT 0                                     on one, SLOT 1 on the other
   share.
 - A third board with another key: `foreign=` grows on the two, and it never shows as a rider.
 
+## E2: range
+
+With two boards in one group, `MODE 9 250` on both (or another of the modes in
+[06](06-own-protocol.md), Sizing) trades cadence for range without reflashing; `STATUS` shows
+`mode=`, and `budget=` shrinks with the longer packet. Walk or ride one board away and note where
+the RIDER lines stop, and their `rssi=` and `snr=` before that. `MODE 7 250` goes back.
+
 ## 4. The app (M4, M5)
 
 - Find boards, tap one, accept Android's pairing dialog: the main screen shows `Board: …`.

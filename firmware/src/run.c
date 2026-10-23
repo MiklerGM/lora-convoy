@@ -43,8 +43,11 @@ typedef struct {
     uint8_t slots;
     uint8_t key[16];
     uint32_t interval_ms;
+    uint8_t sf;           /* the radio mode, on v0's frequency */
+    uint8_t reserved;
+    uint16_t bw_khz;      /* 62 for 62.5 */
 } setup_t;
-#define SETUP_VERSION 2
+#define SETUP_VERSION 3
 
 static node_t s_node;
 static api_t s_api;
@@ -112,12 +115,13 @@ static bool command(char *line, replies_t *out) {
     port_mutex_lock(s_lock);
     api_command(&s_api, line, port_uptime_us(), gather, out);
     const bool forget = s_api.forget, restart = s_api.restart, bootloader = s_api.bootloader;
-    if (s_api.power_changed) atomic_store(&s_reapply, true);
+    if (s_api.radio_changed) atomic_store(&s_reapply, true);
     setup_t setup = {.version = SETUP_VERSION, .keyed = s_node.cfg.keyed, .slot = s_node.cfg.slot,
-                     .slots = s_node.cfg.slots, .interval_ms = s_node.cfg.interval_ms};
+                     .slots = s_node.cfg.slots, .interval_ms = s_node.cfg.interval_ms, .sf = s_node.cfg.phy.sf,
+                     .bw_khz = (uint16_t)(s_node.cfg.phy.bw_hz / 1000)};
     memcpy(setup.key, s_node.cfg.key, sizeof(setup.key));
     const bool save = s_api.setup_changed;
-    s_api.forget = s_api.restart = s_api.bootloader = s_api.power_changed = s_api.setup_changed = false;
+    s_api.forget = s_api.restart = s_api.bootloader = s_api.radio_changed = s_api.setup_changed = false;
     port_mutex_give(s_lock);
     if (save && !port_setup_save(&setup, sizeof(setup))) gather(out, "ERR the setup could not be kept");
     memset(&setup, 0, sizeof(setup));
@@ -355,6 +359,10 @@ void run_start(const char *board, const char *reset) {
         cfg.slot = setup.slot;
         cfg.slots = setup.slots;
         cfg.interval_ms = setup.interval_ms;
+        phy_t phy = cfg.phy;
+        phy.sf = setup.sf;
+        phy.bw_hz = setup.bw_khz == 62 ? 62500 : (uint32_t)setup.bw_khz * 1000;
+        if (phy_supported(&phy)) cfg.phy = phy;
     }
     memset(&setup, 0, sizeof(setup));
     s_lock = port_mutex_create();

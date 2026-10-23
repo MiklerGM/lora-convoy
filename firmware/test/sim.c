@@ -472,7 +472,7 @@ static void serve(int n, int port) {
                 if (b->in[0]) {
                     api_command(&b->api, b->in, local_us(&w, i, t), send_line, b);
                     if (b->api.forget) send_line(b, "ERR FORGET is for Bluetooth");
-                    b->api.forget = b->api.restart = b->api.bootloader = b->api.power_changed = false;
+                    b->api.forget = b->api.restart = b->api.bootloader = b->api.radio_changed = false;
                 }
                 const size_t used = (size_t)(nl - b->in) + 1;
                 memmove(b->in, nl + 1, b->in_len - used);

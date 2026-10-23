@@ -403,11 +403,12 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     }
     const int64_t budget = node_time_budget_us(n);
     return snprintf(buf, cap,
-                    "slot=%u slots=%u keyed=%d group=%02x fix=%d stopped=%d help=%d heard=%d lat=%s lon=%s sats=%u "
+                    "slot=%u slots=%u keyed=%d group=%02x mode=%u/%lu fix=%d stopped=%d help=%d heard=%d lat=%s lon=%s sats=%u "
                     "hdop=%u.%u time=%s err=%s "
                     "budget=%lld.%lld lag=%s tx=%lu late=%lu unsure=%lu skipped=%lu duty=%lu.%02lu%% riders=%d "
                     "bad=%lu foreign=%lu forged=%lu replay=%lu clash=%lu",
-                    n->cfg.slot, n->cfg.slots, n->cfg.keyed ? 1 : 0, n->cfg.keyed ? n->group.tag : 0,
+                    n->cfg.slot, n->cfg.slots, n->cfg.keyed ? 1 : 0, n->cfg.keyed ? n->group.tag : 0, n->cfg.phy.sf,
+                    (unsigned long)(n->cfg.phy.bw_hz / 1000),
                     current ? 1 : 0, n->stopped ? 1 : 0, n->help ? 1 : 0, __builtin_popcount(n->help_heard_by),
                     deg(lat, sizeof(lat), n->held.lat_e7),
                     deg(lon, sizeof(lon), n->held.lon_e7), n->fix.sats, n->fix.hdop10 / 10,
