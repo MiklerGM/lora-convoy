@@ -41,7 +41,7 @@ class OsmAnd(private val context: Context) {
 
     /** Set on the main thread by the connection, read on the caller's. */
     @Volatile private var api: IOsmAndAidlInterface? = null
-    private var shown = emptySet<String>()
+    private var shown: Set<String>? = null
 
     private val connection = object : ServiceConnection {
         override fun onServiceConnected(name: ComponentName?, service: IBinder?) {
@@ -127,20 +127,9 @@ class OsmAnd(private val context: Context) {
         return info.mapLocation?.let { it.latitude to it.longitude }
     }
 
-    /**
-     * Puts exactly these points on the map, in one update of the whole layer: each update makes
-     * OsmAnd reload its map, so one a tick rather than one per rider. On OsmAnd's OpenGL engine
-     * every update still hides the whole layer while it is rebuilt (docs/05).
-     */
+    /** Puts exactly these points on the map (putLayer). */
     fun show(points: List<PointSpec>) {
-        val ok = call { a ->
-            val layer = UpdateMapLayerParams(AMapLayer(LAYER_ID, LAYER_NAME, Z_ORDER, points.map(::toAMapPoint)))
-            // update answers false while the layer does not exist: first time, or OsmAnd restarted
-            val up = a.updateMapLayer(layer) || a.addMapLayer(AddMapLayerParams(layer.layer))
-            // update only adds and moves points; a point already gone answers false, no refusal
-            if (up) (shown - points.map { it.id }.toSet()).forEach { a.removeMapPoint(RemoveMapPointParams(LAYER_ID, it)) }
-            up
-        } ?: return
+        val ok = call { putLayer(it, points.map(::toAMapPoint), shown) } ?: return
         if (ok) {
             shown = points.map { it.id }.toSet()
             state = State.SHOWING
@@ -151,7 +140,7 @@ class OsmAnd(private val context: Context) {
 
     fun clear() {
         call { it.removeMapLayer(RemoveMapLayerParams(LAYER_ID)) }
-        shown = emptySet()
+        shown = null
     }
 
     private fun <T> call(block: (IOsmAndAidlInterface) -> T): T? {
@@ -176,6 +165,27 @@ class OsmAnd(private val context: Context) {
     )
 
     companion object {
+        /**
+         * Puts exactly [points] on our layer, in one update of the whole layer: each update makes
+         * OsmAnd reload its map, so one a tick rather than one per rider. On OsmAnd's OpenGL engine
+         * every update still hides the whole layer while it is rebuilt (docs/05). [shown] is what
+         * the layer holds, as far as we know; null when we do not, in a new service, and then the
+         * layer is made anew: OsmAnd keeps it while it runs, with the points of a service before
+         * ours, which no update of ours would take away. False if OsmAnd refused.
+         */
+        internal fun putLayer(a: IOsmAndAidlInterface, points: List<AMapPoint>, shown: Set<String>?): Boolean {
+            val layer = AMapLayer(LAYER_ID, LAYER_NAME, Z_ORDER, points)
+            if (shown == null) {
+                a.removeMapLayer(RemoveMapLayerParams(LAYER_ID))
+                return a.addMapLayer(AddMapLayerParams(layer))
+            }
+            // update answers false while the layer does not exist: OsmAnd restarted
+            val up = a.updateMapLayer(UpdateMapLayerParams(layer)) || a.addMapLayer(AddMapLayerParams(layer))
+            // update only adds and moves points; a point already gone answers false, no refusal
+            if (up) (shown - points.map { it.id }.toSet()).forEach { a.removeMapPoint(RemoveMapPointParams(LAYER_ID, it)) }
+            return up
+        }
+
         private const val TAG = "OsmAnd"
         const val ACTION = "net.osmand.aidl.OsmandAidlServiceV2"
         val PACKAGES = listOf("net.osmand.plus", "net.osmand", "net.osmand.dev")
