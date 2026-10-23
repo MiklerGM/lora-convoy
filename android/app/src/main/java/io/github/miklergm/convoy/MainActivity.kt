@@ -16,6 +16,7 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
+import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 
@@ -72,7 +73,11 @@ class MainActivity : Activity() {
             addView(button("Last route") { startActivity(Intent(this@MainActivity, RouteActivity::class.java)) })
         }
         // Android 15 draws apps edge to edge: this keeps the column clear of the system bars.
-        setContentView(FrameLayout(this).apply { fitsSystemWindows = true; addView(column) })
+        // scrolls: a long status and the boards found push the buttons past the screen's end
+        setContentView(FrameLayout(this).apply {
+            fitsSystemWindows = true
+            addView(ScrollView(this@MainActivity).apply { addView(column) })
+        })
     }
 
     override fun onResume() {
