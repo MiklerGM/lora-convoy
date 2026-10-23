@@ -531,6 +531,11 @@ static void test_node_help(void) {
     }
     assert(pkt_open(b, len, &g, &p) == PKT_OK && !(p.status & ST_HELP) && p.help_heard == 1);
     assert(node_on_packet(&a, b, len, -80, 0, t) && a.help_heard_by == 1u << 2);
+    /* An answer to another rider's call is not one to ours. */
+    const position_t other = {.slot = 3, .session = 77, .counter = 0, .fix_time = 64197, .lat_e7 = 1, .lon_e7 = 1,
+                              .status = ST_GPS_OK, .help_heard = 5};
+    pkt_seal(b, &other, &g);
+    assert(node_on_packet(&a, b, PKT_POSITION_LEN, -80, 0, t) && a.help_heard_by == 1u << 2);
     node_format_rider(&a, 2, t, line, sizeof(line));
     assert(strstr(line, " acks=1 "));
     node_format_status(&a, t, line, sizeof(line));
