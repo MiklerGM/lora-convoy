@@ -45,8 +45,7 @@ data class Invitation(
     }
 
     /** The board's commands for this invitation (firmware/src/api.h): its slot in a frame of as many. */
-    fun commands(): List<String> =
-        listOf("KEY ${key.toHex()}", "SLOTS $riders", "SLOT $slot", "INTERVAL $intervalMs")
+    fun setup(): String = "GROUP ${key.toHex()} $slot $riders $intervalMs"
 
     /** The tag the board shows as group= once it has this key. */
     fun groupTag(): Int = groupTag(key)

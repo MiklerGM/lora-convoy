@@ -9,7 +9,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.util.Log
-import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
@@ -29,7 +28,7 @@ class ConvoyService : Service() {
     /** Where the mock riders circle: OsmAnd's map centre when they started. */
     private var centre: Pair<Double, Double>? = null
     @Volatile private var link: BoardLink? = null
-    private val boardRiders = ConcurrentHashMap<String, Rider>()
+    private val boardRiders = BoardRiders()
     private var nextPoll = 0L
     /** What this link's board has been sent: this phone's group, and the question for its riders. */
     @Volatile private var sentGroup: Invitation? = null
@@ -63,6 +62,7 @@ class ConvoyService : Service() {
                 // its version first: a board that speaks another protocol is asked nothing more
                 if (s.startsWith("connected")) {
                     sentGroup = null
+                    confirmed = null
                     askedRiders = false
                     lastClash = null
                     l.send("STATUS")
@@ -84,8 +84,28 @@ class ConvoyService : Service() {
                 board = status
                 lastClash?.let { if (status.clash > it) clashAtMs = System.currentTimeMillis() }
                 lastClash = status.clash
-                setUp(status)
+                setUp()
             }
+            return
+        }
+        BoardLines.setup(line)?.let { taken ->
+            // the board has the group this phone sent, whole: then its riders, for the riders of
+            // the group before to go (BoardRiders)
+            val sent = sentGroup ?: return
+            if (taken.of(sent)) {
+                confirmed = sent
+                askRiders()
+            } else {
+                linkState = "the board took another setup than ${sent.name}'s: $line"
+            }
+            return
+        }
+        if (line.startsWith("ERR group")) {
+            linkState = "the board refused ${sentGroup?.name ?: "the group"}: $line"
+            return
+        }
+        if (line.startsWith("RIDERS ")) {
+            boardRiders.ended()
             return
         }
         if (line == "FORGOTTEN") {
@@ -96,28 +116,34 @@ class ConvoyService : Service() {
             stopSelf()
             return
         }
-        BoardLines.rider(line, System.currentTimeMillis(), group)?.let { boardRiders[it.id] = it }
+        BoardLines.rider(line, System.currentTimeMillis(), group)?.let(boardRiders::take)
     }
 
     /**
-     * This phone's group to the board, once per link and again when the group changes: the board
-     * keeps its riders for the key it has (firmware node_set_key). Then what the board knows,
-     * asked after the key, so no rider of a former group comes back in the answer.
+     * This phone's group to the board, whole, once per link and again when the group changes: the
+     * board keeps its riders for the key it has (firmware node_set_key). Its riders are asked once
+     * it has taken the group. ponytail: a RIDER line the board made just before the new key and
+     * sent just after its table would bring a rider of the group before back, until the next link;
+     * a group's number in the lines would end it.
      */
-    private fun setUp(status: BoardLines.Status) {
+    private fun setUp() {
         val l = link ?: return
         val mine = GroupActivity.Group.load(this)
         group = mine
         if (mine != null && mine != sentGroup) {
-            if (!status.keyed || status.group != mine.groupTag()) boardRiders.clear()
-            mine.commands().forEach(l::send)
+            confirmed = null
             sentGroup = mine
-            askedRiders = false
+            l.send(mine.setup())
+        } else if (mine == null && !askedRiders) {
+            askRiders()
         }
-        if (!askedRiders) {
-            l.send("RIDERS")
-            askedRiders = true
-        }
+    }
+
+    private fun askRiders() {
+        val l = link ?: return
+        askedRiders = true
+        boardRiders.asked()
+        l.send("RIDERS")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -141,7 +167,7 @@ class ConvoyService : Service() {
                     link?.send("STATUS")
                     nextPoll = now + 10_000
                 }
-                boardRiders.values.toList()
+                boardRiders.all
             }
             if (riders != null) osmand.show(riders.map { it.toPoint(now) })
             state = osmand.state
@@ -161,6 +187,7 @@ class ConvoyService : Service() {
         worker.shutdown()
         state = null
         board = null
+        confirmed = null
         linkState = null
         super.onDestroy()
     }
@@ -226,6 +253,9 @@ class ConvoyService : Service() {
         @Volatile var linkState: String? = null
             private set
         @Volatile var board: BoardLines.Status? = null
+            private set
+        /** The group the board has said it took on this link: this phone's, once it has. */
+        @Volatile var confirmed: Invitation? = null
             private set
         /** When the board last heard another radio in its slot; 0 for never. */
         @Volatile var clashAtMs = 0L

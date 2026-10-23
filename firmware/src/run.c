@@ -123,7 +123,13 @@ static bool command(char *line, replies_t *out) {
     const bool save = s_api.setup_changed;
     s_api.forget = s_api.restart = s_api.bootloader = s_api.radio_changed = s_api.setup_changed = false;
     port_mutex_give(s_lock);
-    if (save && !port_setup_save(&setup, sizeof(setup))) gather(out, "ERR the setup could not be kept");
+    if (save) {
+        const bool kept = port_setup_save(&setup, sizeof(setup));
+        port_mutex_lock(s_lock);
+        s_api.save_failed = !kept;
+        port_mutex_give(s_lock);
+        if (!kept) gather(out, "ERR the setup could not be kept");
+    }
     memset(&setup, 0, sizeof(setup));
     if (restart) port_restart(0);
 #ifdef PORT_BOOTLOADER

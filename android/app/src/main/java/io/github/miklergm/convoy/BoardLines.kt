@@ -34,7 +34,25 @@ object BoardLines {
         val duty: String,
         val dbm: Int?,
         val reset: String,
+        /** False when the board could not save its setup: switched off, it would forget it. */
+        val kept: Boolean,
     )
+
+    /** What a board took from a GROUP: the group's tag, and its slot, slots and interval. */
+    data class Setup(val group: Int, val slot: Int, val slots: Int, val intervalMs: Int) {
+        fun of(g: Invitation) = group == g.groupTag() && slot == g.slot && slots == g.riders && intervalMs == g.intervalMs
+    }
+
+    fun setup(line: String): Setup? {
+        if (!line.startsWith("OK group=")) return null
+        val t = tokens(line)
+        return Setup(
+            group = t["group"]?.toIntOrNull(16) ?: return null,
+            slot = t["slot"]?.toIntOrNull() ?: return null,
+            slots = t["slots"]?.toIntOrNull() ?: return null,
+            intervalMs = t["interval"]?.toIntOrNull() ?: return null,
+        )
+    }
 
     /** The words after the first, as a map; a token without '=' is ignored. */
     fun tokens(line: String): Map<String, String> =
@@ -64,6 +82,7 @@ object BoardLines {
             duty = t["duty"] ?: "?",
             dbm = t["dbm"]?.toIntOrNull(),
             reset = t["reset"] ?: "?",
+            kept = t["kept"] != "0",
         )
     }
 

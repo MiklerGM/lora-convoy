@@ -210,9 +210,11 @@ class MainActivity : Activity() {
         ConvoyService.board?.let {
             val mine = GroupActivity.Group.load(this)
             val tag = "%02x".format(it.group)
+            // in this phone's group once the board has said it took it, not by the tag: two keys can share one
+            val inMine = mine != null && it.keyed && ConvoyService.confirmed == mine
             val group = when {
                 !it.keyed -> "no group key, so it sends nothing"
-                mine != null && it.group == mine.groupTag() -> "in ${mine.name}"
+                inMine -> "in ${mine!!.name}"
                 mine != null -> "in group $tag, not ${mine.name} yet"
                 else -> "in group $tag"
             }
@@ -221,10 +223,11 @@ class MainActivity : Activity() {
                 "nmea" -> "time from NMEA"
                 else -> "no time yet"
             } + (it.timeErrMs?.let { e -> " ±$e ms" } ?: "")
-            val who = if (mine != null && it.keyed && it.group == mine.groupTag()) "${mine.riderName(it.slot)}, " else ""
+            val who = if (inMine) "${mine!!.riderName(it.slot)}, " else ""
             lines.add("Board: ${it.board}, ${who}rider ${it.slot + 1}${it.slots?.let { n -> " of $n" } ?: ""}, $group, " +
                 (if (it.fix) "GNSS fix" else "no GNSS fix") + ", $clock, ${it.riders} riders heard, " +
                 "${it.dbm ?: "?"} dBm, duty ${it.duty}, started after ${it.reset}")
+            if (!it.kept) lines.add("The board could not save its setup: switched off, it will forget it.")
         }
         return lines.joinToString("\n")
     }

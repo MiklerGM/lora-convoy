@@ -666,6 +666,12 @@ static void ask(api_t *api, const char *command) {
     api_command(api, line, 10 * SEC, collect, NULL);
 }
 
+static const char *api_status_of(const api_t *api) {
+    static char line[API_LINE];
+    api_status(api, 10 * SEC, line, sizeof(line));
+    return line;
+}
+
 static void test_api(void) {
     node_t n;
     uint8_t b[PKT_POSITION_LEN];
@@ -718,8 +724,6 @@ static void test_api(void) {
     assert(starts(replies[0], "ERR ") && n.cfg.slots == 5);
     ask(&api, "SLOTS 33");
     assert(starts(replies[0], "ERR ") && n.cfg.slots == 5);
-    ask(&api, "GROUP 9"); /* gone: the group follows from the key */
-    assert(starts(replies[0], "ERR "));
     ask(&api, "INTERVAL 499");
     assert(starts(replies[0], "ERR ") && n.cfg.interval_ms == 2000);
     ask(&api, "POWER 0");
@@ -740,6 +744,27 @@ static void test_api(void) {
     assert(starts(replies[0], "ERR "));
     ask(&api, "STATUS");
     assert(strstr(replies[0], " mode=10/62 "));
+
+    /* A group's whole setup in one command, taken whole or not at all: with a slot outside the
+     * group, a short key, an interval too short, a part missing or one too many, nothing changes. */
+    static const char *const partial[] = {
+        "GROUP 000102030405060708090a0b0c0d0e0f 6 6 3000", "GROUP 000102030405060708090a0b0c0d0e 2 6 3000",
+        "GROUP 000102030405060708090a0b0c0d0e0f 2 6 499", "GROUP 000102030405060708090a0b0c0d0e0f 2 6",
+        "GROUP 000102030405060708090a0b0c0d0e0f 2 6 3000 1", "GROUP"};
+    for (size_t i = 0; i < sizeof(partial) / sizeof(partial[0]); i++) {
+        api.setup_changed = false;
+        ask(&api, partial[i]);
+        assert(n_replies == 1 && starts(replies[0], "ERR group") && !api.setup_changed);
+        assert(n.cfg.slot == 5 && n.cfg.slots == 5 && n.cfg.interval_ms == 2000 && n.cfg.key[15] == 0x0e);
+    }
+    ask(&api, "GROUP 000102030405060708090a0b0c0d0e0f 2 6 3000");
+    assert(n_replies == 1 && strcmp(replies[0], "OK group=86 slot=2 slots=6 interval=3000") == 0);
+    assert(n.cfg.slot == 2 && n.cfg.slots == 6 && n.cfg.interval_ms == 3000 && n.cfg.key[15] == 0x0f);
+    assert(api.setup_changed);
+    /* A setup the board could not keep over a restart, its status says so. */
+    assert(strstr(api_status_of(&api), " kept=1"));
+    api.save_failed = true;
+    assert(strstr(api_status_of(&api), " kept=0"));
 
     /* What only the caller can do is left to it, unanswered here. */
     ask(&api, "FORGET");

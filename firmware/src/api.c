@@ -8,9 +8,9 @@
 int api_status(const api_t *api, int64_t now_us, char *buf, size_t cap) {
     char node[400];
     node_format_status(api->node, now_us, node, sizeof(node));
-    return snprintf(buf, cap, "STATUS proto=%d board=%s reset=%s up=%lld %s power=%u dbm=%d", API_PROTO,
+    return snprintf(buf, cap, "STATUS proto=%d board=%s reset=%s up=%lld %s power=%u dbm=%d kept=%d", API_PROTO,
                     api->board, api->reset, (long long)(now_us / 1000000), node, api->power,
-                    api->tx_dbm(api->power));
+                    api->tx_dbm(api->power), !api->save_failed);
 }
 
 static bool number(const char *s, long lo, long hi, long *out) {
@@ -33,6 +33,25 @@ static bool hex_key(const char *s, uint8_t key[16]) {
         key[i / 2] = (uint8_t)(i % 2 ? key[i / 2] | v : v << 4);
     }
     return true;
+}
+
+/* The next word of *s, ended where it stands; NULL after the last. */
+static char *word(char **s) {
+    while (**s == ' ') (*s)++;
+    if (!**s) return NULL;
+    char *w = *s;
+    while (**s && **s != ' ') (*s)++;
+    if (**s) *(*s)++ = '\0';
+    return w;
+}
+
+/* "<key> <slot> <slots> <interval>": a group's whole setup, checked whole before any of it is
+ * taken, so a board is never left with one group's key and another's slot. */
+static bool group_setup(char *s, uint8_t key[16], long *slot, long *slots, long *interval) {
+    if (!s) return false;
+    char *k = word(&s), *a = word(&s), *b = word(&s), *c = word(&s);
+    return hex_key(k, key) && number(b, 1, NODE_SLOTS, slots) && number(a, 0, *slots - 1, slot) &&
+           number(c, 500, 60000, interval) && !word(&s);
 }
 
 /* "SF kHz", into the mode we have with those two changed, if the radio can take it. */
@@ -72,6 +91,21 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         memset(key, 0, sizeof(key));
         api->setup_changed = true;
         snprintf(out, sizeof(out), "OK keyed group=%02x", api->node->group.tag);
+    } else if (strcasecmp(line, "group") == 0) {
+        long slot, slots, interval;
+        if (group_setup(arg, key, &slot, &slots, &interval)) {
+            node_set_key(api->node, key);
+            cfg->slot = (uint8_t)slot;
+            cfg->slots = (uint8_t)slots;
+            cfg->interval_ms = (uint32_t)interval;
+            api->setup_changed = true;
+            snprintf(out, sizeof(out), "OK group=%02x slot=%ld slots=%ld interval=%ld", api->node->group.tag, slot,
+                     slots, interval);
+        } else {
+            snprintf(out, sizeof(out), "ERR group: <32 hex digits> <slot below slots> <slots 1-%d> <interval 500-60000>",
+                     NODE_SLOTS);
+        }
+        memset(key, 0, sizeof(key));
     } else if (strcasecmp(line, "mode") == 0 && mode(arg, cfg->phy, &phy)) {
         cfg->phy = phy;
         api->radio_changed = api->setup_changed = true;
@@ -105,7 +139,7 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         api->bootloader = true;
         return;
     } else {
-        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, LEDGER, KEY <32 hex>, HELP 0-1, SLOT 0-%d, SLOTS 1-%d, "
+        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, LEDGER, GROUP <32 hex> <slot> <slots> <ms>, KEY <32 hex>, HELP 0-1, SLOT 0-%d, SLOTS 1-%d, "
                  "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
                  NODE_SLOTS);
     }

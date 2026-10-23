@@ -78,6 +78,8 @@ class BoardLinesTest {
         assertEquals(2, s.riders)
         assertEquals("0.43%", s.duty)
         assertEquals(16, s.dbm)
+        assertTrue(s.kept)
+        assertFalse(BoardLines.status("STATUS proto=5 slot=0 group=86 kept=0")!!.kept)
         // without a version it is not a status this app can trust
         assertNull(BoardLines.status("STATUS slot=0 keyed=1 group=86"))
         assertEquals(6, BoardLines.status("STATUS proto=6 slot=0 group=7")!!.proto)
@@ -85,6 +87,17 @@ class BoardLinesTest {
         val bare = BoardLines.status("STATUS proto=5 slot=4 keyed=0 group=00 time=none err=?")!!
         assertFalse(bare.keyed)
         assertNull(bare.timeErrMs)
+    }
+
+    @Test
+    fun `what a board took from a GROUP, against what was sent`() {
+        val sent = Invitation(ByteArray(16) { it.toByte() }, 2, 5, 2000, "Alps ride", listOf("Ann", "Bob", "Cid", "Dee", "Eve"))
+        val taken = BoardLines.setup("OK group=86 slot=2 slots=5 interval=2000")!!
+        assertTrue(taken.of(sent))
+        assertFalse(taken.of(sent.copy(slot = 3)))
+        assertFalse(taken.of(sent.copy(key = ByteArray(16))))
+        assertNull(BoardLines.setup("OK keyed group=86"))
+        assertNull(BoardLines.setup("OK group=86 slot=2"))
     }
 
     @Test

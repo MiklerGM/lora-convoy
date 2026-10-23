@@ -432,8 +432,7 @@ def ride() -> None:
         wait_tap(p, "Join")
         step(f"phone {i} joined as {names[i]}")
     beacon = boards - 1
-    assert all(r.startswith("OK") for r in board_command(beacon, f"KEY {key}", f"SLOTS {boards}",
-                                                           f"SLOT {beacon}", "INTERVAL 2000"))
+    assert all(r.startswith("OK group=") for r in board_command(beacon, f"GROUP {key} {beacon} {boards} 2000"))
     step(f"board {beacon} rides alone as {names[beacon]}, keyed by hand")
 
     for i in range(phones):

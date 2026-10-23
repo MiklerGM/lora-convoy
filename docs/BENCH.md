@@ -36,9 +36,8 @@ Both boards answer the phone API's commands typed on the console ([PROTOCOL](PRO
 On the consoles, or later from the app:
 
 ```
-KEY 000102030405060708090a0b0c0d0e0f      on both: the test vector's key; group=86
-SLOTS 2                                    on both
-SLOT 0                                     on one, SLOT 1 on the other
+GROUP 000102030405060708090a0b0c0d0e0f 0 2 2000     on one: the test vector's key; group=86
+GROUP 000102030405060708090a0b0c0d0e0f 1 2 2000     on the other
 ```
 
 - `TX counter=… ok` once every 2 s on each, and a `RIDER slot=…` line on the other for each one.
