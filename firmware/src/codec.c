@@ -16,7 +16,8 @@
  *  17    speed, km/h
  *  18    course, 2-degree steps
  *  19    status
- *  20-23 tag
+ *  20    help heard: a slot whose call for help the sender hears, 255 for none
+ *  21-24 tag
  *
  * Nonce, 13 bytes: slot, session, counter, then zeros. A sender's slot and session make it unique
  * even when two radios are misconfigured onto one slot; the counter within the session.
@@ -87,6 +88,7 @@ size_t pkt_seal(uint8_t out[PKT_POSITION_LEN], const position_t *p, const group_
     body[8] = p->speed_kmh;
     body[9] = p->course2;
     body[10] = p->status;
+    body[11] = p->help_heard;
     uint8_t nonce[CCM_NONCE_LEN];
     nonce_of(out, nonce);
     ccm_seal(&g->ccm, nonce, out, PKT_HEADER_LEN, body, PKT_BODY_LEN, &out[PKT_HEADER_LEN],
@@ -113,5 +115,6 @@ pkt_result_t pkt_open(const uint8_t *buf, size_t len, const group_key_t *g, posi
     p->speed_kmh = body[8];
     p->course2 = body[9];
     p->status = body[10];
+    p->help_heard = body[11];
     return PKT_OK;
 }

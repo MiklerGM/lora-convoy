@@ -58,6 +58,9 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         memset(key, 0, sizeof(key));
         api->setup_changed = true;
         snprintf(out, sizeof(out), "OK keyed group=%02x", api->node->group.tag);
+    } else if (strcasecmp(line, "help") == 0 && number(arg, 0, 1, &v)) {
+        node_set_help(api->node, v == 1);
+        snprintf(out, sizeof(out), "OK help=%ld", v);
     } else if (strcasecmp(line, "slot") == 0 && number(arg, 0, NODE_SLOTS - 1, &v)) {
         cfg->slot = (uint8_t)v;
         api->setup_changed = true;
@@ -84,7 +87,7 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         api->bootloader = true;
         return;
     } else {
-        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, KEY <32 hex>, SLOT 0-%d, SLOTS 1-%d, "
+        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, KEY <32 hex>, HELP 0-1, SLOT 0-%d, SLOTS 1-%d, "
                  "INTERVAL 500-60000, POWER 0-3 (0 strongest), FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
                  NODE_SLOTS);
     }

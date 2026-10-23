@@ -95,23 +95,24 @@ static const uint8_t KEY[16] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
 
 static void test_codec(void) {
     /* The vector in docs/PROTOCOL.md, from an independent implementation on OpenSSL: slot 3,
-     * session 0x01020304, counter 5, a fix at 2026-10-22 12:00:05 UTC, under the key 00 01 .. 0f. */
-    static const uint8_t want[PKT_POSITION_LEN] = {0x40, 0x86, 0x03, 0x01, 0x02, 0x03, 0x04, 0x00,
-                                                   0x05, 0xEE, 0x37, 0x9D, 0x2B, 0x30, 0xA8, 0x88,
-                                                   0x6B, 0x0E, 0x6D, 0x72, 0x6C, 0x62, 0x59, 0xB0};
+     * session 0x01020304, counter 5, a fix at 2026-10-22 12:00:05 UTC, hearing slot 7's call for
+     * help, under the key 00 01 .. 0f. */
+    static const uint8_t want[PKT_POSITION_LEN] = {0x80, 0x86, 0x03, 0x01, 0x02, 0x03, 0x04, 0x00, 0x05,
+                                                   0xEE, 0x37, 0x9D, 0x2B, 0x30, 0xA8, 0x88, 0x6B, 0x0E,
+                                                   0x6D, 0x72, 0x4D, 0x87, 0x79, 0x6E, 0x2E};
     group_key_t g;
     group_key_init(&g, KEY);
     assert(g.tag == 0x86);
     const position_t p = {.slot = 3, .session = 0x01020304, .counter = 5, .fix_time = 64197,
                           .lat_e7 = 471410000, .lon_e7 = 95215000, .speed_kmh = 40,
-                          .course2 = 135, .status = ST_GPS_OK};
+                          .course2 = 135, .status = ST_GPS_OK, .help_heard = 7};
     uint8_t b[PKT_POSITION_LEN];
     assert(pkt_seal(b, &p, &g) == PKT_POSITION_LEN && memcmp(b, want, sizeof(want)) == 0);
 
     position_t q;
     assert(pkt_open(b, sizeof(b), &g, &q) == PKT_OK);
     assert(q.group == 0x86 && q.slot == 3 && q.session == 0x01020304 && q.counter == 5 && q.fix_time == 64197);
-    assert(q.speed_kmh == 40 && q.course2 == 135 && q.status == ST_GPS_OK);
+    assert(q.speed_kmh == 40 && q.course2 == 135 && q.status == ST_GPS_OK && q.help_heard == 7);
     /* half a step at most: 1.07e-5 degrees of latitude, 2.15e-5 of longitude */
     assert(labs((long)q.lat_e7 - 471410000) <= 54 && labs((long)q.lon_e7 - 95215000) <= 108);
 
@@ -410,7 +411,7 @@ static size_t packet(uint8_t *b, const group_key_t *g, uint8_t slot, uint32_t se
                      uint16_t fix_time) {
     const position_t p = {.slot = slot, .session = session, .counter = counter, .fix_time = fix_time,
                           .lat_e7 = 471500000, .lon_e7 = 95100000, .speed_kmh = 33, .course2 = 10,
-                          .status = ST_GPS_OK};
+                          .status = ST_GPS_OK, .help_heard = HELP_HEARD_NONE};
     return pkt_seal(b, &p, g);
 }
 
@@ -477,6 +478,90 @@ static void test_node_hears(void) {
     printf("node: ages honest, the delivered share, and forgeries, replays and strangers kept out\n");
 }
 
+static void test_node_help(void) {
+    uint8_t b[PKT_POSITION_LEN];
+    char line[400];
+    position_t p;
+    group_key_t g;
+    group_key_init(&g, KEY);
+    node_t a, c;
+    node_config_t ca = CFG, cc = CFG;
+    ca.slot = 1;
+    cc.slot = 2;
+    node_init(&a, &ca, 1);
+    node_init(&c, &cc, 2);
+    /* A asks for help. C hears it, and answers in its next packet; A hears the answer. */
+    node_set_help(&a, true);
+    int64_t t = T0;
+    size_t len = 0;
+    for (; !len; t += 1000) {
+        tick(&a, t);
+        tick(&c, t);
+        len = node_poll_tx(&a, t, b, sizeof(b));
+    }
+    assert(pkt_open(b, len, &g, &p) == PKT_OK && (p.status & ST_HELP) && p.help_heard == HELP_HEARD_NONE);
+    assert(node_on_packet(&c, b, len, -80, 0, t));
+    for (len = 0; !len; t += 1000) {
+        tick(&c, t);
+        len = node_poll_tx(&c, t, b, sizeof(b));
+    }
+    assert(pkt_open(b, len, &g, &p) == PKT_OK && !(p.status & ST_HELP) && p.help_heard == 1);
+    assert(node_on_packet(&a, b, len, -80, 0, t) && a.help_heard_by == 1u << 2);
+    node_format_rider(&a, 2, t, line, sizeof(line));
+    assert(strstr(line, " acks=1 "));
+    node_format_status(&a, t, line, sizeof(line));
+    assert(strstr(line, " help=1 heard=1 "));
+    /* Called off and on again, it starts afresh. */
+    node_set_help(&a, false);
+    node_set_help(&a, true);
+    assert(a.help_heard_by == 0);
+
+    /* Two calling at once are answered in turn; a call not heard for a minute is not answered. */
+    node_t q;
+    node_init(&q, &cc, 3);
+    tick(&q, T0);
+    const position_t call1 = {.slot = 1, .session = 9, .counter = 0, .fix_time = 64197, .lat_e7 = 1, .lon_e7 = 1,
+                              .status = ST_HELP | ST_GPS_OK, .help_heard = HELP_HEARD_NONE};
+    position_t call5 = call1;
+    call5.slot = 5;
+    pkt_seal(b, &call1, &g);
+    assert(node_on_packet(&q, b, PKT_POSITION_LEN, -80, 0, T0));
+    pkt_seal(b, &call5, &g);
+    assert(node_on_packet(&q, b, PKT_POSITION_LEN, -80, 0, T0));
+    int answered[2] = {0, 0}, n_sent = 0;
+    for (t = T0; n_sent < 4; t += 1000) {
+        tick(&q, t);
+        if (!(len = node_poll_tx(&q, t, b, sizeof(b)))) continue;
+        assert(pkt_open(b, len, &g, &p) == PKT_OK && (p.help_heard == 1 || p.help_heard == 5));
+        answered[p.help_heard == 5]++;
+        n_sent++;
+    }
+    assert(answered[0] == 2 && answered[1] == 2);
+    for (; t < T0 + 62 * SEC; t += 1000) tick(&q, t), node_poll_tx(&q, t, b, sizeof(b));
+    for (len = 0; !len; t += 1000) {
+        tick(&q, t);
+        len = node_poll_tx(&q, t, b, sizeof(b));
+    }
+    assert(pkt_open(b, len, &g, &p) == PKT_OK && p.help_heard == HELP_HEARD_NONE);
+
+    /* Stopped: under 5 km/h for a minute; not at 7 km/h after that; moving again over 10 km/h. */
+    node_t s;
+    node_init(&s, &CFG, 4);
+    gnss_fix_t f = fix_at(UTC0_MS, true);
+    f.speed_kmh10 = 20;
+    for (t = T0; t < T0 + 59 * SEC; t += SEC) node_on_fix(&s, &f, t);
+    assert(!s.stopped);
+    node_on_fix(&s, &f, T0 + 60 * SEC);
+    assert(s.stopped);
+    f.speed_kmh10 = 70;
+    node_on_fix(&s, &f, T0 + 61 * SEC);
+    assert(s.stopped);
+    f.speed_kmh10 = 110;
+    node_on_fix(&s, &f, T0 + 62 * SEC);
+    assert(!s.stopped);
+    printf("node: a call for help answered by those who hear it, each in turn; stopped after a minute\n");
+}
+
 /* ---- the phone API ------------------------------------------------------------------ */
 
 static char replies[8][400];
@@ -511,7 +596,8 @@ static void test_api(void) {
     api_t api = {.node = &n, .board = "test", .reset = "poweron", .power = 3, .tx_dbm = dbm};
 
     ask(&api, "STATUS");
-    assert(n_replies == 1 && starts(replies[0], "STATUS proto=3 board=test reset=poweron up=10 slot=1 slots=4 keyed=1 group=86 "));
+    assert(n_replies == 1 && starts(replies[0], "STATUS proto=4 board=test reset=poweron up=10 slot=1 slots=4 keyed=1 group=86 "));
+    assert(strstr(replies[0], " stopped=0 help=0 heard=0 "));
     assert(strstr(replies[0], " power=3 dbm=16"));
     ask(&api, "riders"); /* the console types it in lower case */
     assert(n_replies == 2 && starts(replies[0], "RIDER slot=2 ") && strcmp(replies[1], "RIDERS 1") == 0);
@@ -536,6 +622,12 @@ static void test_api(void) {
     assert(strcmp(replies[0], "OK slot=5") == 0 && n.cfg.slot == 5);
     ask(&api, "SLOT 32");
     assert(starts(replies[0], "ERR ") && n.cfg.slot == 5);
+    ask(&api, "HELP 1");
+    assert(strcmp(replies[0], "OK help=1") == 0 && n.help);
+    ask(&api, "HELP 2");
+    assert(starts(replies[0], "ERR ") && n.help);
+    ask(&api, "help 0");
+    assert(strcmp(replies[0], "OK help=0") == 0 && !n.help);
     ask(&api, "SLOTS 5");
     assert(strcmp(replies[0], "OK slots=5") == 0 && n.cfg.slots == 5);
     ask(&api, "SLOTS 0");
@@ -566,6 +658,7 @@ static void test_api(void) {
     n.held.lat_e7 = -900000000;
     n.held.lon_e7 = -1800000000;
     n.lag_us = n.lag_min_us = n.lag_max_us = 999999;
+    n.help_heard_by = 0xFFFFFFFFu;
     n.mark_err_us = 999999999;
     char line[API_LINE + 64];
     const int len = api_status(&api, 99999999 * SEC, line, sizeof(line));
@@ -582,6 +675,7 @@ int main(void) {
     test_node_time();
     test_node_duty();
     test_node_hears();
+    test_node_help();
     test_api();
     return 0;
 }

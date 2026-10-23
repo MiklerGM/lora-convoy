@@ -522,6 +522,38 @@ int main(int argc, char **argv) {
            o.silent, o.within);
     assert(wrong_within > 500 && o.silent == 1 && o.within == 0);
 
+    /* "Need help", answered (01, help delivery): each of twenty riders calls in turn, with 10 % of
+     * packets lost; how long until one of the others answers, and until all of them have. */
+    {
+        static world_t h;
+        const scenario_t helpers = {20, 2000, 0, 0.10, 9, 1, GOOD};
+        world_init(&h, &helpers, 1792670400000ll);
+        double first[20], all[20];
+        int64_t t = 0;
+        for (; t < 20 * SEC; t += STEP_US) world_step(&h, t);
+        for (int k = 0; k < 20; k++) {
+            node_set_help(&h.node[k], true);
+            const int64_t asked = t;
+            int64_t answered = 0;
+            for (; __builtin_popcount(h.node[k].help_heard_by) < 19; t += STEP_US) {
+                world_step(&h, t);
+                if (h.node[k].help_heard_by && !answered) answered = t;
+                assert(t - asked < 60 * SEC);
+            }
+            first[k] = (double)(answered - asked) / SEC;
+            all[k] = (double)(t - asked) / SEC;
+            node_set_help(&h.node[k], false);
+            /* the next call at any moment of a frame */
+            for (const int64_t end = t + 4 * SEC + rnd(&h.rng) % 2000 * 1000; t < end; t += STEP_US) world_step(&h, t);
+        }
+        qsort(first, 20, sizeof(double), by_value);
+        qsort(all, 20, sizeof(double), by_value);
+        printf("sim: a call for help among 20 riders, 10 %% of packets lost: first answered within %.1f s, by "
+               "everyone within %.1f s (the median; at worst %.1f and %.1f s)\n", first[10], all[10], first[19],
+               all[19]);
+        assert(first[19] < 5 && all[19] < 20);
+    }
+
     /* Two groups of three on one channel: each sees only its own riders, and drops the other's
      * packets by their tag. */
     static world_t w;

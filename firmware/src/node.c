@@ -18,6 +18,15 @@
 #define TX_LATE_US 2000    /* a slot later than this is passed over, never sent late */
 #define RX_GAP_US 2000     /* between two packets, for a receiver to read the first one out */
 
+/* Stopped: under 5 km/h for a minute, so a red light is not a stop; moving again over 10 km/h, so
+ * a GNSS's wander at a standstill does not start it up. */
+#define STOP_BELOW_KMH10 50
+#define MOVING_OVER_KMH10 100
+#define STOP_AFTER_US (60 * 1000000ll)
+/* A call for help heard this recently is answered: one heard longer ago may have been called off
+ * out of our range. */
+#define HELP_FRESH_US (60 * 1000000ll)
+
 static uint32_t next_random(node_t *n) {
     /* xorshift32: sessions only need to differ, the key keeps them secret */
     uint32_t x = n->rng;
@@ -45,6 +54,11 @@ void node_set_key(node_t *n, const uint8_t key[16]) {
     group_key_init(&n->group, key);
     n->phase_frame = -1;
     memset(n->riders, 0, sizeof(n->riders));
+}
+
+void node_set_help(node_t *n, bool on) {
+    if (on && !n->help) n->help_heard_by = 0;
+    n->help = on;
 }
 
 /* ---- time ------------------------------------------------------------------------ */
@@ -100,6 +114,15 @@ void node_on_fix(node_t *n, const gnss_fix_t *fix, int64_t now_us) {
     if (fix->valid) {
         n->held = *fix;
         n->have_held = true;
+        if (fix->speed_kmh10 >= MOVING_OVER_KMH10) {
+            n->stopped = false;
+            n->slow_since_us = 0;
+        } else if (fix->speed_kmh10 >= 0 && fix->speed_kmh10 < STOP_BELOW_KMH10) {
+            if (!n->slow_since_us) n->slow_since_us = now_us;
+            if (now_us - n->slow_since_us >= STOP_AFTER_US) n->stopped = true;
+        } else if (!n->stopped) {
+            n->slow_since_us = 0; /* between the two: rolling, neither stopping nor stopped */
+        }
     }
 }
 
@@ -167,6 +190,19 @@ static int64_t our_slot(node_t *n, int64_t k) {
 
 /* ---- sending ------------------------------------------------------------------- */
 
+/* A rider calling for help whom we hear, to answer in our packet: each in turn, when several are. */
+static uint8_t help_to_answer(node_t *n, int64_t now_us) {
+    for (int i = 0; i < NODE_SLOTS; i++) {
+        const int s = (n->help_next + i) % NODE_SLOTS;
+        const rider_t *r = &n->riders[s];
+        if (r->known && (r->last.status & ST_HELP) && now_us - r->heard_us <= HELP_FRESH_US) {
+            n->help_next = (uint8_t)((s + 1) % NODE_SLOTS);
+            return (uint8_t)s;
+        }
+    }
+    return HELP_HEARD_NONE;
+}
+
 size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
     int64_t utc, err;
     /* Nothing without a time to find our slot by. */
@@ -215,7 +251,8 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
         .speed_kmh = h->speed_kmh10 < 0 ? SPEED_UNKNOWN
                      : h->speed_kmh10 >= 2540 ? 254 : (uint8_t)((h->speed_kmh10 + 5) / 10),
         .course2 = h->course_deg10 < 0 ? COURSE_UNKNOWN : (uint8_t)(((h->course_deg10 + 10) / 20) % 180),
-        .status = current ? ST_GPS_OK : 0,
+        .status = (uint8_t)((current ? ST_GPS_OK : 0) | (n->help ? ST_HELP : 0) | (n->stopped ? ST_STOPPED : 0)),
+        .help_heard = help_to_answer(n, now_us),
     };
     /* The nonce must never repeat: before the counter wraps, a new session. */
     if (++n->counter == 0) n->session = next_random(n);
@@ -289,6 +326,8 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
     r->rssi_dbm = (int16_t)rssi_dbm;
     r->snr_db4 = (int16_t)snr_db4;
     r->fix_utc_ms = fix_utc_ms;
+    /* It hears our call for help. */
+    if (n->help && p.help_heard == n->cfg.slot) n->help_heard_by |= 1u << p.slot;
     return true;
 }
 
@@ -312,18 +351,19 @@ int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf,
     } else {
         snprintf(age, sizeof(age), "?");
     }
-    char speed[8] = "?", course[8] = "?";
+    char speed[8] = "?", course[8] = "?", acks[8] = "-";
+    if (r->last.help_heard < NODE_SLOTS) snprintf(acks, sizeof(acks), "%u", r->last.help_heard);
     if (r->last.speed_kmh != SPEED_UNKNOWN) snprintf(speed, sizeof(speed), "%u", r->last.speed_kmh);
     if (r->last.course2 != COURSE_UNKNOWN) snprintf(course, sizeof(course), "%u", r->last.course2 * 2u);
     const long long heard10 = (now_us - r->heard_us) / 100000;
     const int snr = r->snr_db4 < 0 ? -r->snr_db4 : r->snr_db4;
     return snprintf(buf, cap,
                     "RIDER slot=%u lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
-                    "help=%d stopped=%d rssi=%d snr=%s%d.%02d rx=%lu/%lu",
+                    "help=%d stopped=%d acks=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu",
                     slot, deg(lat, sizeof(lat), r->last.lat_e7), deg(lon, sizeof(lon), r->last.lon_e7),
                     age, heard10 / 10, heard10 % 10, speed, course,
                     (r->last.status & ST_GPS_OK) ? 1 : 0, (r->last.status & ST_HELP) ? 1 : 0,
-                    (r->last.status & ST_STOPPED) ? 1 : 0, r->rssi_dbm, r->snr_db4 < 0 ? "-" : "",
+                    (r->last.status & ST_STOPPED) ? 1 : 0, acks, r->rssi_dbm, r->snr_db4 < 0 ? "-" : "",
                     snr / 4, snr % 4 * 25, (unsigned long)r->received,
                     (unsigned long)((uint16_t)(r->last.counter - r->first_counter) + 1u));
 }
@@ -346,11 +386,13 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     }
     const int64_t budget = node_time_budget_us(n);
     return snprintf(buf, cap,
-                    "slot=%u slots=%u keyed=%d group=%02x fix=%d lat=%s lon=%s sats=%u hdop=%u.%u time=%s err=%s "
+                    "slot=%u slots=%u keyed=%d group=%02x fix=%d stopped=%d help=%d heard=%d lat=%s lon=%s sats=%u "
+                    "hdop=%u.%u time=%s err=%s "
                     "budget=%lld.%lld lag=%s tx=%lu late=%lu unsure=%lu skipped=%lu duty=%lu.%02lu%% riders=%d "
                     "bad=%lu foreign=%lu forged=%lu replay=%lu clash=%lu",
                     n->cfg.slot, n->cfg.slots, n->cfg.keyed ? 1 : 0, n->cfg.keyed ? n->group.tag : 0,
-                    current ? 1 : 0, deg(lat, sizeof(lat), n->held.lat_e7),
+                    current ? 1 : 0, n->stopped ? 1 : 0, n->help ? 1 : 0, __builtin_popcount(n->help_heard_by),
+                    deg(lat, sizeof(lat), n->held.lat_e7),
                     deg(lon, sizeof(lon), n->held.lon_e7), n->fix.sats, n->fix.hdop10 / 10,
                     n->fix.hdop10 % 10, SOURCE[n->time], err_ms, (long long)(budget / 1000),
                     (long long)(budget % 1000 / 100), lag, (unsigned long)n->sent, (unsigned long)n->tx_late,

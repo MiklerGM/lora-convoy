@@ -6,20 +6,21 @@
 #include "crypto.h"
 
 /*
- * The air format, v1: a rider's own position, 24 bytes, under the group's key (docs/PROTOCOL.md).
+ * The air format, v2: a rider's own position, 25 bytes, under the group's key (docs/PROTOCOL.md).
  * The header goes in clear and is authenticated; the position is encrypted; a 4-byte tag ends it
- * (AES-128-CCM). v0, the same fields in clear, is gone (D3).
+ * (AES-128-CCM). v1 was the same without the help heard (D3).
  */
 
-#define PKT_VERSION 1
+#define PKT_VERSION 2
 #define PKT_TYPE_POSITION 0
 #define PKT_HEADER_LEN 9
-#define PKT_BODY_LEN 11
+#define PKT_BODY_LEN 12
 #define PKT_TAG_LEN 4
 #define PKT_POSITION_LEN (PKT_HEADER_LEN + PKT_BODY_LEN + PKT_TAG_LEN)
 
 #define SPEED_UNKNOWN 255
 #define COURSE_UNKNOWN 255
+#define HELP_HEARD_NONE 255
 
 /* Status bits. */
 #define ST_HELP (1u << 0)
@@ -38,6 +39,7 @@ typedef struct {
     uint8_t speed_kmh;  /* 0..254, or SPEED_UNKNOWN */
     uint8_t course2;    /* course / 2 degrees, 0..179, or COURSE_UNKNOWN */
     uint8_t status;
+    uint8_t help_heard; /* the slot of a rider whose call for help we hear, or HELP_HEARD_NONE */
 } position_t;
 
 /* What the 16-byte group key gives: the CCM key, the tag, and the key that draws each frame's

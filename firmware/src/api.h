@@ -11,9 +11,10 @@
  * app that does not know it refuses the board (D3).
  *
  *   phone -> board                 board -> phone
- *   STATUS                         STATUS proto=3 board=... (also sent unasked)
+ *   STATUS                         STATUS proto=4 board=... (also sent unasked)
  *   RIDERS                         RIDER ... for each rider known, then RIDERS <n>
  *   KEY <32 hex digits>            OK keyed group=<tag>: the group's key, from the invitation
+ *   HELP <0|1>                     OK help=<0|1>: our rider's call for help, off or on
  *   SLOT <0-31>, SLOTS <1-32>,     OK <key>=<value>, or ERR <why>
  *   INTERVAL <ms>, POWER <0-3>
  *   FORGET                         FORGOTTEN, over Bluetooth only (ble_nus.c)
@@ -22,7 +23,7 @@
  *
  * Commands are case-blind, so the console takes them as typed.
  */
-#define API_PROTO 3
+#define API_PROTO 4
 
 /* The longest line either way, newline aside; the app takes up to 512 characters. */
 #define API_LINE 480

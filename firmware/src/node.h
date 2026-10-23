@@ -69,6 +69,11 @@ typedef struct {
     int64_t pps_us;          /* the last PPS edge; 0 before one */
     /* From a PPS edge to the NMEA fix of its second, where a board has both: E0's number. */
     int64_t lag_us, lag_min_us, lag_max_us;
+    bool help;               /* our rider asks for help (the app's HELP) ... */
+    uint32_t help_heard_by;  /* ... and these slots say they hear it, a bit each */
+    uint8_t help_next;       /* where the search for a call for help to answer starts */
+    bool stopped;            /* slower than walking for a minute */
+    int64_t slow_since_us;   /* when it last went under 5 km/h; 0 while faster */
     int64_t last_frame;      /* the frame we last sent in, or passed over */
     int64_t phase_frame;     /* the frame whose phase is in phase_us, for phase_spacing; -1 none */
     int64_t phase_us;
@@ -96,6 +101,9 @@ void node_on_pps(node_t *n, int64_t edge_us);
 
 /* A group key, from the app: the riders heard under another key are forgotten. */
 void node_set_key(node_t *n, const uint8_t key[16]);
+
+/* Our rider's call for help, on or off. Each time it goes on, who has heard it starts afresh. */
+void node_set_help(node_t *n, bool on);
 
 /* True if the packet was ours to take: a genuine, fresh v1 position of our group from another slot. */
 bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int snr_db4, int64_t now_us);
