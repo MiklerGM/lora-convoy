@@ -172,7 +172,8 @@ Two found while building M1 and M2 ([05](05-osmand-integration.md)), both still 
 
 - `navigateGpx` throws in the caller unless `passWholeRoute` is set: `NavigateGpxParams` keeps it as
   a `Boolean` that no constructor sets, and `writeToBundle` unboxes it. A one-line fix in
-  `OsmAnd-api`; any app on the API meets it.
+  `OsmAnd-api`; any app on the API meets it. **Sent, 2026-10-23:** osmandapp/OsmAnd#26774, which
+  also keeps an unset value `null` through the bundle.
 - T-osmand-opengl: on the OpenGL engine, `AidlMapLayer.onPrepareBufferImage` drops the whole layer
   (`clearAidlTileProvider`) whenever any point has moved, and builds it again; the points are gone
   until it is rebuilt. Moving the markers that moved, or building the new layer before dropping the
