@@ -50,10 +50,13 @@ data class PointSpec(
 )
 
 /**
- * Not heard for this long and the point turns grey, labelled with how long.
- * ponytail: one fixed threshold; derive it from the group's cadence once M5 sets one.
+ * Not heard for this long, or a position this old, and the point turns grey, labelled with how
+ * old. ponytail: one fixed threshold; derive it from the group's interval.
  */
 const val STALE_AFTER_MS = 30_000L
+
+/** A fix stamped further ahead than this is a clock gone wrong, not a fresh fix. */
+private const val FUTURE_SLACK_MS = 5_000L
 
 const val HELP_COLOR = 0xFFD32F2F.toInt()
 const val STALE_COLOR = 0xFF9E9E9E.toInt()
@@ -68,10 +71,14 @@ private val CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss")
  */
 fun Rider.toPoint(nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): PointSpec {
     val heardAgo = nowMs - heardAtMs
-    val stale = heardAgo > STALE_AFTER_MS
+    // The position is what the map shows: old when its fix is, when the rider's GPS is lost, and
+    // when its time cannot be told, however lately the radio was heard (01, no GPS fix).
+    val fixAgo = fixAtMs?.let { nowMs - it }
+    val positionOld = !gpsOk || fixAgo == null || fixAgo > STALE_AFTER_MS || fixAgo < -FUTURE_SLACK_MS
+    val stale = heardAgo > STALE_AFTER_MS || positionOld
     val label = when {
         help -> "$short SOS"
-        stale -> "$short ${age(heardAgo)}"
+        stale -> "$short ${age(maxOf(heardAgo, fixAgo ?: heardAgo))}"
         else -> short
     }
     fun at(ms: Long) = CLOCK.format(Instant.ofEpochMilli(ms).atZone(zone))

@@ -79,6 +79,19 @@ class RiderTest {
         }
         // the edge: stale only once past the threshold
         assertFalse(fresh.copy(heardAtMs = now - STALE_AFTER_MS).toPoint(now, utc).stale)
+        // heard a second ago, but its position ten minutes old, its GPS lost: old on the map too
+        fresh.copy(heardAtMs = now - 1_000, fixAtMs = now - 600_000, gpsOk = false).toPoint(now, utc).let {
+            assertEquals("A 10 min", it.shortName)
+            assertEquals(STALE_COLOR, it.color)
+            assertTrue(it.stale)
+        }
+        // heard now, a fix from a minute ago with GPS still on: as old
+        assertTrue(fresh.copy(heardAtMs = now, fixAtMs = now - 60_000).toPoint(now, utc).stale)
+        // a fix whose time this phone cannot tell, or one from the future: not fresh-looking either
+        assertTrue(fresh.copy(fixAtMs = null).toPoint(now, utc).stale)
+        assertTrue(fresh.copy(fixAtMs = now + 60_000).toPoint(now, utc).stale)
+        // and help still shows above it all
+        assertEquals(HELP_COLOR, fresh.copy(fixAtMs = now - 600_000, gpsOk = false, help = true).toPoint(now, utc).color)
     }
 
     @Test
