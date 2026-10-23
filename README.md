@@ -7,8 +7,8 @@ a moving group could do better.
 **Status:** research notes and calculation tools, and the start of building it: architecture,
 roadmap and backlog below; an app that shows riders and routes in OsmAnd and sets up a private
 group, and firmware for the Heltec V4.3 and the Wio Tracker L1 Pro that sends positions encrypted
-for the group, each rider in a slot by GPS time, and talks to the app over Bluetooth, all tested
-without hardware (M1–M6). Nothing has run on a board yet, and nothing here has been ridden.
+for the group, each rider in a slot by GPS time, answers calls for help, and talks to the app over
+Bluetooth, all tested without hardware (M1–M6, and M7 in progress). Nothing has run on a board yet, and nothing here has been ridden.
 
 ## Why this exists
 

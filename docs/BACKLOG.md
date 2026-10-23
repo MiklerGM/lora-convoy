@@ -97,7 +97,12 @@ A fixed frame with skipped slots, or a variable frame. After M6.
 ### T-help: "need help" and its acknowledgement
 
 A flag plus a follow-up, or a spare slot; who acknowledges, and how the sender learns it was heard.
-[01](01-goals.md) asks for an acknowledgement within N seconds. Needed by M7.
+[01](01-goals.md) asks for an acknowledgement within N seconds. **v2, for now:** the flag in every
+packet of the caller, and a byte in every packet that answers one caller heard, each in turn when
+several call ([PROTOCOL](PROTOCOL.md)): among twenty riders the first answer comes in 1.3 s and the
+last in 5.3 s, at the median. Still open: N itself (question 2 in [01](01-goals.md)); a call from
+the board's button when the phone is gone; a call that outlives a restart of the board; a call heard
+only through a relay (T-relay).
 
 ### T-relay: work out relaying
 

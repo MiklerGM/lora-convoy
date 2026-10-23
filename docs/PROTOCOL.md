@@ -1,9 +1,9 @@
 # Protocol
 
-**v1, 2026-10-23.** Positions go encrypted and authenticated under the group's key (M5), each
-rider in a slot of its own, timed by GPS (M6). Every part of it may change, together with the
-firmware and app that use it (D3): v0, the same positions in clear, is gone, and boards from
-before M6 read v1's packets but send at random, so they are reflashed. The code is
+**v2, 2026-10-23.** Positions go encrypted and authenticated under the group's key (M5), each
+rider in a slot of its own, timed by GPS (M6), and each packet answers a call for help it hears
+(M7). Every part of it may change, together with the firmware and app that use it (D3): v0 had
+positions in clear, v1 no answers to calls for help, and boards with either are reflashed. The code is
 `firmware/src/phy.c`, `crypto.c`, `codec.c` and `node.c`, and the app's `Invitation.kt`.
 
 ## Radio mode
@@ -20,8 +20,8 @@ before M6 read v1's packets but send at random, so they are reflashed. The code 
 | Sync word | SX1262 registers 0x0740 and 0x0741 = `0x64 0x74`, sync symbols 48 and 56 |
 | Power | 14 dBm (25 mW) by default; 28 dBm at most on the Heltec V4.3, 22 dBm on the L1 Pro |
 
-A 24-byte packet is on the air for 30.848 ms, by the same formula as `tools/airtime.py`; 25 and 26
-bytes would cost no more.
+A 25-byte packet is on the air for 30.848 ms, by the same formula as `tools/airtime.py`: the same
+as 24 bytes, and 26 would cost no more.
 
 The sync word keeps clear of its neighbours. Public LoRaWAN sends sync symbols 24 and 32, the
 private default 8 and 16, Meshtastic 16 and 88, EBYTE's modules 40 and 36 (dmd2-lora-bridge,
@@ -75,11 +75,11 @@ k x 2 s   + phase   slot 0            slot 1            slot 2            spare
   minute at a time, and skips a packet that would take it past the sub-band's duty cycle (10 %).
   At one packet a frame it cannot get there: 30.8 ms in the shortest frame, 500 ms, is 6.2 %.
 
-## The position packet: 24 bytes
+## The position packet: 25 bytes
 
 | Bytes | Field | Encoding |
 |---|---|---|
-| 0 | version, type, flags | bits 7–6 version (1), bits 5–4 type (0, position), bits 3–0 flags (0) |
+| 0 | version, type, flags | bits 7–6 version (2), bits 5–4 type (0, position), bits 3–0 flags (0) |
 | 1 | group tag | from the group key, below |
 | 2 | slot | the rider, 0–31 |
 | 3–6 | session | drawn at random at every start; big-endian |
@@ -89,10 +89,11 @@ k x 2 s   + phase   slot 0            slot 1            slot 2            spare
 | 14–16 | longitude | signed, 2^23 = 180°: steps of 2.15e-5°, 2.4 m at the equator |
 | 17 | speed | km/h, 0–254; 255 unknown |
 | 18 | course | 2° steps from north, 0–179; 255 unknown |
-| 19 | status | bit 0 needs help, bit 1 stopped, bit 2 GPS ok, bit 3 battery low |
-| 20–23 | tag | CCM's |
+| 19 | status | bit 0 needs help, bit 1 stopped, bit 2 GPS ok, bit 3 battery low (not yet set) |
+| 20 | help heard | the slot of a rider whose call for help the sender hears; 255 for none |
+| 21–24 | tag | CCM's |
 
-Bytes 0–8 go in clear and are authenticated; bytes 9–19 are encrypted. Coordinates round to the
+Bytes 0–8 go in clear and are authenticated; bytes 9–20 are encrypted. Coordinates round to the
 nearest step, half away from zero, and +90° and +180° clamp to the largest code.
 
 **The cipher.** AES-128-CCM (RFC 3610, NIST SP 800-38C), with a 13-byte nonce, a 4-byte tag, and
@@ -102,10 +103,11 @@ repeats only if two sessions of one slot draw the same 32 bits (BACKLOG T-nonce)
 lets a forgery through once in 2^32 tries: a transmitter sending nothing else, at 30.8 ms a try,
 needs four years on average, and what it lands is a position of random bytes (T-tag).
 
-**From the group key.** The 16-byte key K encrypts two blocks and nothing else:
+**From the group key.** The 16-byte key K encrypts three blocks and nothing else:
 
 - the CCM key, AES_K(`FE` "convoy-ccm" `00`…);
-- the group tag, the first byte of AES_K(`FF` "convoy-tag" `00`…).
+- the group tag, the first byte of AES_K(`FF` "convoy-tag" `00`…);
+- the key that draws each frame's phase, AES_K(`FD` "convoy-frame" `00`…) (When a board sends).
 
 A receiver drops a packet with another tag before any cryptography, as another group's; two groups
 share a tag once in 256, and then the CCM tag tells them apart. It drops a packet whose CCM tag
@@ -115,7 +117,7 @@ does not check as forged.
 half the range, 9 h 6 min (RFC 1982). A fix that then lies in the future is shown with a negative
 age, never as fresh. A receiver with no time of its own shows the age as unknown.
 
-**What a receiver keeps.** Only v1 positions of 24 bytes, with its group's tag and a CCM tag that
+**What a receiver keeps.** Only v2 positions of 25 bytes, with its group's tag and a CCM tag that
 checks. A packet from its own slot is another radio misconfigured onto it, and is counted rather
 than taken. Per slot, within a session the counter only grows; a session it has not seen must
 bring a fix no more than 2 s older than the one it holds, or it is an old packet played again.
@@ -124,12 +126,24 @@ After its own restart a receiver holds nothing, so it takes the first packet of 
 clash. Per slot it counts the packets taken against the run of counters seen in the session: their
 ratio is the delivered share of [07](07-experiments.md).
 
+**Help, answered.** A rider's call for help sets the help bit in each of their packets. A board
+that hears a call answers it in its own next packet, in byte 20: the slot of a rider it has heard
+calling within the last minute, each in turn when several call. The calling board counts the
+riders who answer (`heard=` in its status), and every board reports whom each rider answers
+(`acks=` in its RIDER lines), so every map can show who has heard a call. In the simulator, among
+twenty riders with 10 % of packets lost, the first answer comes 1.3 s after the call and the
+last of the nineteen 5.3 s after it, at the median; 2.1 s and 7.0 s at worst.
+
+**Stopped.** The board sets the stopped bit after a minute under 5 km/h, so a red light is not a
+stop, and clears it over 10 km/h, so a GNSS wandering at a standstill does not start it.
+
 **Test vector.** Under the key `00 01 … 0f` (tag `86`): slot 3, session `0x01020304`, counter 5,
-a fix at 2026-10-22 12:00:05 UTC (64 197), 47.141° N 9.5215° E, 40 km/h, heading 270°, GPS ok.
-From an independent implementation on OpenSSL:
+a fix at 2026-10-22 12:00:05 UTC (64 197), 47.141° N 9.5215° E, 40 km/h, heading 270°, GPS ok,
+hearing slot 7's call for help. From an independent implementation on OpenSSL (pyca/cryptography),
+which also gives v1's vector:
 
 ```
-40 86 03 01 02 03 04 00 05 EE 37 9D 2B 30 A8 88 6B 0E 6D 72 6C 62 59 B0
+80 86 03 01 02 03 04 00 05 EE 37 9D 2B 30 A8 88 6B 0E 6D 72 4D 87 79 6E 2E
 ```
 
 ## The invitation
@@ -170,14 +184,14 @@ on three transports:
 | TCP | a simulated board and the app | `make -C firmware sim ARGS="serve 3"` serves board *i* on 127.0.0.1:4403+*i*, without a key, like a board fresh from flashing; an Android emulator reaches it at 10.0.2.2 |
 | USB console | a board and a person | the same commands, typed; `FORGET` there is a hand on the board, like the button |
 
-**Version.** `proto=` in the status line: 3 since the slots. An app refuses a board with another
-(D3).
+**Version.** `proto=` in the status line: 4 since help. An app refuses a board with another (D3).
 
 | Phone to board | Board to phone |
 |---|---|
-| `STATUS` | `STATUS proto=3 board=… reset=… up=… slot=… slots=… keyed=… group=… fix=… … power=… dbm=…` |
+| `STATUS` | `STATUS proto=4 board=… reset=… up=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … power=… dbm=…` |
 | `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>` |
 | `KEY <32 hex digits>` | `OK keyed group=<tag>`; riders heard under another key are forgotten |
+| `HELP <0–1>` | `OK help=<0–1>`: our rider's call for help, off or on; each time on, who answers starts afresh |
 | `SLOT <0–31>`, `SLOTS <1–32>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |
 | `FORGET` | `FORGOTTEN` once the board has dropped its bond, or `ERR forget incomplete` |
 | `REBOOT`, and `BOOTLOADER` on the L1 Pro (its UF2 drive) | — |
@@ -195,12 +209,12 @@ a phone is connected. The app sends `STATUS` every 10 s, which keeps the link fr
 as silent. Commands are case-blind.
 
 ```
-RIDER slot=2 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 rssi=-71 snr=8.25 rx=13/14
+RIDER slot=2 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 acks=- rssi=-71 snr=8.25 rx=13/14
 ```
 
 `fix_age` is in whole seconds and can be negative (the sender's clock is wrong) or `?` (this board
-has no time of its own); `heard` is in tenths of a second; `rx` is packets taken against the run of
-counters. On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count
+has no time of its own); `heard` is in tenths of a second; `acks` is the slot whose call for help
+the rider's board answers, `-` for none; `rx` is packets taken against the run of counters. On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count
 from 0 here; the app shows riders from 1.
 
 ## What comes next

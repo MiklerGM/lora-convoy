@@ -31,7 +31,7 @@ flowchart TD
 | M4 | A board and the app | ✅ | ✅ | done, no hardware |
 | M5 | A private group: invitation and encryption | ✅ | ✅ | done, no hardware |
 | M6 | Slots by GPS time | ✅ | ✅ | done, no hardware |
-| M7 | Ready for a first ride | ✅ | ✅ | planned |
+| M7 | Ready for a first ride | ✅ | ✅ | in progress |
 
 ## M1. Mock riders on the OsmAnd map
 
@@ -224,6 +224,11 @@ without a fix from packets heard (T-timing), the frame number in the nonce (T-no
 **Test now:** a ride replayed in the simulator from GPX logs: riders spreading out, stopping, one
 asking for help. A soak run on the emulator.
 **Test on hardware:** a short ride with two or three boards, measured as in [07](07-experiments.md).
+
+**So far, 2026-10-23:** "need help", answered: the app's Need help button sets the call on the
+board, every board that hears it answers in its next packet, and maps show who has answered
+(protocol v2). The board marks itself stopped after a minute under 5 km/h. In the simulator a call
+among twenty riders is answered first in 1.3 s and by all in 5.3 s, at the median.
 
 ## Later: research first
 
