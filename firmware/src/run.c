@@ -21,6 +21,14 @@
 #ifndef NODE_POWER_LEVEL
 #define NODE_POWER_LEVEL 3
 #endif
+/* The L76K's NMEA lag behind its second, for boards without PPS: unmeasured, so taken as nothing,
+ * give or take 100 ms. A Heltec with its kit measures it (lag= in the status); E0 sets both. */
+#ifndef NODE_NMEA_LAG_US
+#define NODE_NMEA_LAG_US 0
+#endif
+#ifndef NODE_NMEA_ERR_US
+#define NODE_NMEA_ERR_US 100000
+#endif
 
 #define VERIFY_US (30 * 1000000ll)
 #define GNSS_LOG_US (60 * 1000000ll)
@@ -32,11 +40,11 @@ typedef struct {
     uint8_t version;      /* SETUP_VERSION; anything else is ignored */
     uint8_t keyed;
     uint8_t slot;
-    uint8_t reserved;
+    uint8_t slots;
     uint8_t key[16];
     uint32_t interval_ms;
 } setup_t;
-#define SETUP_VERSION 1
+#define SETUP_VERSION 2
 
 static node_t s_node;
 static api_t s_api;
@@ -88,7 +96,7 @@ void run_erase_when_asked(const char *why, int watch, void (*erase)(void)) {
  * their own. */
 #define REPLY_LINES (NODE_SLOTS + 2)
 typedef struct {
-    char line[REPLY_LINES][400];
+    char line[REPLY_LINES][API_LINE];
     int n;
 } replies_t;
 
@@ -106,7 +114,7 @@ static bool command(char *line, replies_t *out) {
     const bool forget = s_api.forget, restart = s_api.restart, bootloader = s_api.bootloader;
     if (s_api.power_changed) atomic_store(&s_reapply, true);
     setup_t setup = {.version = SETUP_VERSION, .keyed = s_node.cfg.keyed, .slot = s_node.cfg.slot,
-                     .interval_ms = s_node.cfg.interval_ms};
+                     .slots = s_node.cfg.slots, .interval_ms = s_node.cfg.interval_ms};
     memcpy(setup.key, s_node.cfg.key, sizeof(setup.key));
     const bool save = s_api.setup_changed;
     s_api.forget = s_api.restart = s_api.bootloader = s_api.power_changed = s_api.setup_changed = false;
@@ -179,15 +187,20 @@ static void gnss_task(void *arg) {
     nmea_t nmea;
     nmea_init(&nmea);
     port_gnss_open();
-    int64_t logged = -GNSS_LOG_US;
+    int64_t logged = -GNSS_LOG_US, pps = 0;
     bool was_valid = false;
     for (;;) {
         port_wdt_feed(watch);
         const int c = port_gnss_getc(200);
         gnss_fix_t fix;
         if (c < 0 || !nmea_feed(&nmea, (char)c, &fix)) continue;
+        /* ponytail: the fix's time is when its last sentence was parsed, after the UART's buffering;
+         * a timestamp from the receive interrupt is finer, if E0 finds NMEA time too rough */
         const int64_t now = port_uptime_us();
+        const int64_t edge = port_pps_us();
         port_mutex_lock(s_lock);
+        /* the edge before the fix that names its second */
+        if (edge != pps) node_on_pps(&s_node, pps = edge);
         node_on_fix(&s_node, &fix, now);
         port_mutex_give(s_lock);
         if (fix.valid != was_valid || now - logged >= GNSS_LOG_US) {
@@ -218,7 +231,13 @@ static void radio_task(void *arg) {
         port_wdt_feed(watch);
         uint8_t buf[256];
         int rssi = 0, snr = 0;
-        const size_t n = radio_receive(buf, sizeof(buf), 20, &rssi, &snr);
+        /* Listening until shortly before our slot, at most 20 ms at a time. */
+        port_mutex_lock(s_lock);
+        int64_t due = node_next_tx_us(&s_node, port_uptime_us());
+        port_mutex_give(s_lock);
+        int64_t wait_ms = (due - port_uptime_us()) / 1000 - 1;
+        const size_t n = radio_receive(buf, sizeof(buf), wait_ms < 0 ? 0 : wait_ms > 20 ? 20 : (uint32_t)wait_ms,
+                                       &rssi, &snr);
         int64_t now = port_uptime_us();
         if (n) {
             port_mutex_lock(s_lock);
@@ -232,6 +251,13 @@ static void radio_task(void *arg) {
             }
             console_line(text);
         }
+        /* The last stretch to our slot spun out, so the packet starts within a tick of its moment. */
+        port_mutex_lock(s_lock);
+        due = node_next_tx_us(&s_node, port_uptime_us());
+        port_mutex_give(s_lock);
+        while (due - port_uptime_us() > 0 && due - port_uptime_us() < 2000) {
+        }
+        now = port_uptime_us();
         port_mutex_lock(s_lock);
         const size_t len = node_poll_tx(&s_node, now, buf, sizeof(buf));
         const uint32_t counter = s_node.counter - 1;
@@ -259,7 +285,7 @@ static void service_task(void *arg) {
     const int watch = port_wdt_watch();
     int held_ms = 0, tick_ms = 0, status_ms = 0;
     bool fired = false;
-    char text[400];
+    char text[API_LINE];
     for (;;) {
         port_wdt_feed(watch);
         if ((tick_ms += 100) >= 1000) {
@@ -316,24 +342,27 @@ void run_start(const char *board, const char *reset) {
 #else
     const uint8_t slot = (uint8_t)(h % NODE_SLOTS);
 #endif
-    node_config_t cfg = {.slot = slot, .interval_ms = NODE_INTERVAL_MS, .duty_permille = 100, .phy = PHY_V0};
+    node_config_t cfg = {.slot = slot, .slots = NODE_SLOTS, .interval_ms = NODE_INTERVAL_MS, .duty_permille = 100,
+                         .phy = PHY_V0, .nmea_lag_us = NODE_NMEA_LAG_US, .nmea_err_us = NODE_NMEA_ERR_US};
     setup_t setup;
     const bool kept = port_setup_load(&setup, sizeof(setup)) && setup.version == SETUP_VERSION &&
-                      setup.slot < NODE_SLOTS && setup.interval_ms >= 500 && setup.interval_ms <= 60000;
+                      setup.slot < NODE_SLOTS && setup.slots >= 1 && setup.slots <= NODE_SLOTS &&
+                      setup.interval_ms >= 500 && setup.interval_ms <= 60000;
     if (kept) {
         cfg.keyed = setup.keyed;
         memcpy(cfg.key, setup.key, sizeof(cfg.key));
         cfg.slot = setup.slot;
+        cfg.slots = setup.slots;
         cfg.interval_ms = setup.interval_ms;
     }
     memset(&setup, 0, sizeof(setup));
     s_lock = port_mutex_create();
-    node_init(&s_node, &cfg, port_random() ^ h, port_uptime_us());
+    node_init(&s_node, &cfg, port_random() ^ h);
     s_api = (api_t){.node = &s_node, .board = board, .reset = s_reset, .power = NODE_POWER_LEVEL,
                     .tx_dbm = radio_tx_dbm};
-    LOGI(TAG, "LoRa Convoy, protocol v%d, phone API %d, on %s after %s: %s, slot %u%s, %u ms, %d dBm",
+    LOGI(TAG, "LoRa Convoy, protocol v%d, phone API %d, on %s after %s: %s, slot %u of %u%s, every %u ms, %d dBm",
          PKT_VERSION, API_PROTO, board, s_reset,
-         cfg.keyed ? "keyed" : "no key yet: silent until the app or KEY gives one", cfg.slot,
+         cfg.keyed ? "keyed" : "no key yet: silent until the app or KEY gives one", cfg.slot, cfg.slots,
          kept ? " (kept)" : " (from the chip's ID; SLOT N changes it)", (unsigned)cfg.interval_ms,
          radio_tx_dbm(s_api.power));
     ble_nus_init(on_ble_line, on_ble_revoke, on_ble_bonds_cleared);

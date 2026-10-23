@@ -6,8 +6,20 @@
 /* How old our own fix may be and still count as the GNSS's current one. */
 #define FIX_FRESH_US (3 * 1000000ll)
 
+/* The schedule's terms (docs/PROTOCOL.md, When a board sends). Bounds, not measurements: E0 measures
+ * each board. */
+#define DRIFT_PPM 50       /* our crystal against true time, temperature included */
+#define PPS_ERR_US 100     /* a PPS edge's timestamp: the GNSS's own error and the interrupt's latency */
+/* An NMEA fix this soon after a PPS edge is that edge's second. ponytail: a fix that came after the
+ * next edge would be paired a second out; the L76K's RMC comes some 100 ms after its edge, and lag=
+ * shows on the bench if it ever nears a second. An edge count from the interrupt settles it. */
+#define PPS_PAIR_US 900000
+#define TX_ERR_US 1000     /* from the moment to the air: the platform's wake-up and the radio's start */
+#define TX_LATE_US 2000    /* a slot later than this is passed over, never sent late */
+#define RX_GAP_US 2000     /* between two packets, for a receiver to read the first one out */
+
 static uint32_t next_random(node_t *n) {
-    /* xorshift32: enough to keep two senders from falling into step */
+    /* xorshift32: sessions only need to differ, the key keeps them secret */
     uint32_t x = n->rng;
     x ^= x << 13;
     x ^= x >> 17;
@@ -15,22 +27,14 @@ static uint32_t next_random(node_t *n) {
     return n->rng = x;
 }
 
-/* The interval, drawn anew each time between 0.8 and 1.2 of it: two senders that start in step
- * do not stay there (dmd2-lora-bridge's 2026-10-01 ride). */
-static int64_t jittered_us(node_t *n) {
-    const uint32_t ms = n->cfg.interval_ms;
-    return (int64_t)(ms * 4 / 5 + next_random(n) % (ms * 2 / 5 + 1)) * 1000;
-}
-
-void node_init(node_t *n, const node_config_t *cfg, uint32_t seed, int64_t now_us) {
+void node_init(node_t *n, const node_config_t *cfg, uint32_t seed) {
     memset(n, 0, sizeof(*n));
     n->cfg = *cfg;
     n->rng = seed ? seed : 0x9E3779B9u;
     /* The platform's seed is from the chip's own generator, so every start draws a new session. */
     n->session = next_random(n);
     if (cfg->keyed) group_key_init(&n->group, cfg->key);
-    /* The first packet anywhere in one interval, so boards switched on together spread out. */
-    n->next_tx_us = now_us + (int64_t)(next_random(n) % (cfg->interval_ms + 1)) * 1000;
+    n->last_frame = n->phase_frame = -1;
 }
 
 void node_set_key(node_t *n, const uint8_t key[16]) {
@@ -39,27 +43,64 @@ void node_set_key(node_t *n, const uint8_t key[16]) {
     memcpy(n->cfg.key, key, 16);
     n->cfg.keyed = true;
     group_key_init(&n->group, key);
+    n->phase_frame = -1;
     memset(n->riders, 0, sizeof(n->riders));
 }
+
+/* ---- time ------------------------------------------------------------------------ */
+
+bool node_utc_us(const node_t *n, int64_t now_us, int64_t *utc_us, int64_t *err_us) {
+    if (n->time == TIME_NONE) return false;
+    const int64_t since = now_us - n->mark_us;
+    *utc_us = n->mark_utc_us + since;
+    *err_us = n->mark_err_us + (since < 0 ? -since : since) * DRIFT_PPM / 1000000;
+    return true;
+}
+
+bool node_utc_ms(const node_t *n, int64_t now_us, int64_t *utc_ms) {
+    int64_t utc, err;
+    if (!node_utc_us(n, now_us, &utc, &err)) return false;
+    *utc_ms = utc / 1000;
+    return true;
+}
+
+/* A new mark for our clock, taken unless the one we have, carried to now, is still better. */
+static void set_time(node_t *n, time_source_t source, int64_t at_us, int64_t utc_us, int64_t err_us,
+                     int64_t now_us) {
+    int64_t utc, err;
+    const int64_t carried = err_us + (now_us - at_us) * DRIFT_PPM / 1000000;
+    if (node_utc_us(n, now_us, &utc, &err) && err < carried) return;
+    /* The frame running when the time first comes is not ours: its slot may have gone already. */
+    if (n->time == TIME_NONE) n->last_frame = utc_us / ((int64_t)n->cfg.interval_ms * 1000);
+    n->time = source;
+    n->mark_us = at_us;
+    n->mark_utc_us = utc_us;
+    n->mark_err_us = err_us;
+}
+
+void node_on_pps(node_t *n, int64_t edge_us) { n->pps_us = edge_us; }
 
 void node_on_fix(node_t *n, const gnss_fix_t *fix, int64_t now_us) {
     n->fix = *fix;
     n->fix_us = now_us;
     if (fix->time_valid) {
-        n->have_time = true;
-        n->time_utc_ms = fix->utc_ms;
-        n->time_us = now_us;
+        const int64_t utc_us = fix->utc_ms * 1000;
+        const int64_t lag = now_us - n->pps_us;
+        if (n->pps_us && lag > 0 && lag < PPS_PAIR_US && fix->utc_ms % 1000 == 0) {
+            /* The edge was this fix's second. How far the NMEA lags behind it is E0's number for
+             * boards without PPS, measured here for free. */
+            if (!n->lag_us || lag < n->lag_min_us) n->lag_min_us = lag;
+            if (!n->lag_us || lag > n->lag_max_us) n->lag_max_us = lag;
+            n->lag_us = lag;
+            set_time(n, TIME_PPS, n->pps_us, utc_us, PPS_ERR_US, now_us);
+        } else {
+            set_time(n, TIME_NMEA, now_us - n->cfg.nmea_lag_us, utc_us, n->cfg.nmea_err_us, now_us);
+        }
     }
     if (fix->valid) {
         n->held = *fix;
         n->have_held = true;
     }
-}
-
-bool node_utc_ms(const node_t *n, int64_t now_us, int64_t *utc_ms) {
-    if (!n->have_time) return false;
-    *utc_ms = n->time_utc_ms + (now_us - n->time_us) / 1000;
-    return true;
 }
 
 /* ---- the duty cycle ---------------------------------------------------------- */
@@ -84,17 +125,79 @@ uint32_t node_duty_used_ms(const node_t *n, int64_t now_us) {
     return sum;
 }
 
+/* ---- the schedule ---------------------------------------------------------------- */
+
+/* Frames are numbered from 1970 in UTC: frame k starts at k intervals. A frame holds a slot per
+ * rider and a spare one, evenly spaced; our slot s comes at the frame's start, plus its phase,
+ * plus s spacings. */
+static int64_t frame_us(const node_t *n) { return (int64_t)n->cfg.interval_ms * 1000; }
+
+static int64_t spacing_us(const node_t *n) { return frame_us(n) / (n->cfg.slots + 1); }
+
+int64_t node_time_budget_us(const node_t *n) {
+    const int64_t gap = spacing_us(n) - phy_airtime_us(&n->cfg.phy, PKT_POSITION_LEN) - RX_GAP_US;
+    return gap > 0 ? gap / 2 : 0;
+}
+
+/* The frame's phase, under one spacing: the same for the whole group, drawn anew for each frame
+ * from the key. Two groups on one channel then meet in a frame now and then, never in every one
+ * (T-neighbours); the spare slot keeps the last packet of a frame a spacing clear of the first of
+ * the next, whatever their phases. */
+static int64_t phase_us(const node_t *n, int64_t k) {
+    uint8_t in[16] = {0}, out[16];
+    for (int i = 0; i < 8; i++) in[15 - i] = (uint8_t)((uint64_t)k >> (8 * i));
+    aes128_encrypt(&n->group.frame, in, out);
+    const uint32_t r = (uint32_t)out[0] << 24 | (uint32_t)out[1] << 16 | (uint32_t)out[2] << 8 | out[3];
+    return (int64_t)(r % (uint64_t)spacing_us(n));
+}
+
+static int64_t slot_utc_us(const node_t *n, int64_t k, int64_t phase) {
+    return k * frame_us(n) + phase + (int64_t)n->cfg.slot * spacing_us(n);
+}
+
+/* The same, with the phase kept for the frame: one AES per frame, not per poll. */
+static int64_t our_slot(node_t *n, int64_t k) {
+    if (k != n->phase_frame || n->phase_spacing != spacing_us(n)) {
+        n->phase_us = phase_us(n, k);
+        n->phase_frame = k;
+        n->phase_spacing = spacing_us(n);
+    }
+    return slot_utc_us(n, k, n->phase_us);
+}
+
 /* ---- sending ------------------------------------------------------------------- */
 
 size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
-    if (now_us < n->next_tx_us) return 0;
-    n->next_tx_us = now_us + jittered_us(n);
-    /* Nothing true to say before the first fix: no position, no time to stamp it with. Nothing at all
-     * without a key: v1 has no clear text. */
+    int64_t utc, err;
+    /* Nothing without a time to find our slot by. */
+    if (!node_utc_us(n, now_us, &utc, &err)) return 0;
+    const int64_t k = utc / frame_us(n);
+    /* Nothing at all without a key (v1 has no clear text), nor from a slot outside the group; the
+     * frames go by meanwhile, so the one running when the key comes is not counted as missed. */
+    if (!n->cfg.keyed || n->cfg.slot >= n->cfg.slots) {
+        n->last_frame = k;
+        return 0;
+    }
+    /* Frames only go forward: a time set back a little must not send twice. Set back further, it
+     * was the time before that was wrong. */
+    if (k < n->last_frame - 1) n->last_frame = -1;
+    if (k <= n->last_frame) return 0;
+    const int64_t at = our_slot(n, k);
+    if (utc < at) return 0;
+    n->last_frame = k;
+    if (utc - at > TX_LATE_US) {
+        n->tx_late++;
+        return 0;
+    }
+    /* Too unsure of the time, the packet could land on a neighbour's slot. */
+    if (err + TX_ERR_US > node_time_budget_us(n)) {
+        n->tx_unsure++;
+        return 0;
+    }
+    /* Nothing true to say before the first fix. */
     const uint32_t air_ms = (phy_airtime_us(&n->cfg.phy, PKT_POSITION_LEN) + 999) / 1000;
     const uint32_t limit_ms = 3600u * n->cfg.duty_permille;
-    if (!n->cfg.keyed || !n->have_held || !n->have_time || cap < PKT_POSITION_LEN ||
-        node_duty_used_ms(n, now_us) + air_ms > limit_ms) {
+    if (!n->have_held || cap < PKT_POSITION_LEN || node_duty_used_ms(n, now_us) + air_ms > limit_ms) {
         n->tx_skipped++;
         return 0;
     }
@@ -119,6 +222,15 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
     n->sent++;
     duty_book(&n->duty, now_us, air_ms);
     return pkt_seal(out, &p, &n->group);
+}
+
+int64_t node_next_tx_us(const node_t *n, int64_t now_us) {
+    int64_t utc, err;
+    if (!n->cfg.keyed || n->cfg.slot >= n->cfg.slots || !node_utc_us(n, now_us, &utc, &err)) return INT64_MAX;
+    const int64_t k = utc / frame_us(n);
+    int64_t at = slot_utc_us(n, k, phase_us(n, k));
+    if (k <= n->last_frame || utc - at > TX_LATE_US) at = slot_utc_us(n, k + 1, phase_us(n, k + 1));
+    return now_us + (at - utc);
 }
 
 /* ---- receiving ------------------------------------------------------------------- */
@@ -220,16 +332,29 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     const uint32_t used = node_duty_used_ms(n, now_us);
     int known = 0;
     for (int i = 0; i < NODE_SLOTS; i++) known += n->riders[i].known;
-    char lat[16], lon[16];
+    char lat[16], lon[16], err_ms[48] = "?", lag[48] = "?";
     const bool current = n->fix.valid && now_us - n->fix_us <= FIX_FRESH_US;
+    static const char *const SOURCE[] = {"none", "nmea", "pps"};
+    int64_t utc, err;
+    if (node_utc_us(n, now_us, &utc, &err)) {
+        snprintf(err_ms, sizeof(err_ms), "%lld.%lld", (long long)(err / 1000), (long long)(err % 1000 / 100));
+    }
+    if (n->lag_us) {
+        /* under PPS_PAIR_US, all three */
+        snprintf(lag, sizeof(lag), "%d/%d/%d", (int)(n->lag_us / 1000), (int)(n->lag_min_us / 1000),
+                 (int)(n->lag_max_us / 1000));
+    }
+    const int64_t budget = node_time_budget_us(n);
     return snprintf(buf, cap,
-                    "slot=%u keyed=%d group=%02x fix=%d lat=%s lon=%s sats=%u hdop=%u.%u time=%d tx=%lu "
-                    "skipped=%lu duty=%lu.%02lu%% riders=%d bad=%lu foreign=%lu forged=%lu replay=%lu clash=%lu",
-                    n->cfg.slot, n->cfg.keyed ? 1 : 0, n->cfg.keyed ? n->group.tag : 0, current ? 1 : 0,
-                    deg(lat, sizeof(lat), n->held.lat_e7),
+                    "slot=%u slots=%u keyed=%d group=%02x fix=%d lat=%s lon=%s sats=%u hdop=%u.%u time=%s err=%s "
+                    "budget=%lld.%lld lag=%s tx=%lu late=%lu unsure=%lu skipped=%lu duty=%lu.%02lu%% riders=%d "
+                    "bad=%lu foreign=%lu forged=%lu replay=%lu clash=%lu",
+                    n->cfg.slot, n->cfg.slots, n->cfg.keyed ? 1 : 0, n->cfg.keyed ? n->group.tag : 0,
+                    current ? 1 : 0, deg(lat, sizeof(lat), n->held.lat_e7),
                     deg(lon, sizeof(lon), n->held.lon_e7), n->fix.sats, n->fix.hdop10 / 10,
-                    n->fix.hdop10 % 10, n->have_time ? 1 : 0, (unsigned long)n->sent,
-                    (unsigned long)n->tx_skipped, (unsigned long)(used / 36000),
+                    n->fix.hdop10 % 10, SOURCE[n->time], err_ms, (long long)(budget / 1000),
+                    (long long)(budget % 1000 / 100), lag, (unsigned long)n->sent, (unsigned long)n->tx_late,
+                    (unsigned long)n->tx_unsure, (unsigned long)n->tx_skipped, (unsigned long)(used / 36000),
                     (unsigned long)(used % 36000 / 360), known, (unsigned long)n->rx_bad,
                     (unsigned long)n->rx_foreign, (unsigned long)n->rx_forged, (unsigned long)n->rx_replay,
                     (unsigned long)n->rx_clash);

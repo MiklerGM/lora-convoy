@@ -36,6 +36,8 @@
  *
  *   void    port_gnss_open(void)                the GNSS's UART, 9600 8N1, on the board's pins
  *   int     port_gnss_getc(uint32_t timeout_ms) the next byte from the GNSS, or -1
+ *   int64_t port_pps_us(void)                   port_uptime_us at the GNSS's last PPS edge; 0 before
+ *                                               one, and always on a board without the line
  *
  *   uint32_t port_random(void)                  from the chip's own generator
  *   size_t  port_device_id(uint8_t *out, size_t cap)   bytes that tell this chip from another

@@ -19,8 +19,11 @@
 
 static inline int64_t port_uptime_us(void) { return esp_timer_get_time(); }
 static inline void port_delay_us(uint32_t us) { esp_rom_delay_us(us); }
-/* Whole ticks, as pdMS_TO_TICKS always gave: at this build's 100 Hz, anything under 10 ms is a
- * yield rather than a wait. */
+/* Whole ticks: a millisecond each in this build (sdkconfig.defaults). At 100 Hz anything under
+ * 10 ms would be a yield, and the radio task would spin. */
+#if defined(CONFIG_FREERTOS_HZ) && CONFIG_FREERTOS_HZ < 1000
+#error "CONFIG_FREERTOS_HZ must be 1000: delete sdkconfig.heltec_v4 to rebuild it from sdkconfig.defaults"
+#endif
 static inline void port_sleep_ms(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms)); }
 
 typedef SemaphoreHandle_t port_mutex_t;
@@ -55,6 +58,7 @@ int port_console_getc(uint32_t timeout_ms);
 
 void port_gnss_open(void);
 int port_gnss_getc(uint32_t timeout_ms);
+int64_t port_pps_us(void);
 
 uint32_t port_random(void);
 size_t port_device_id(uint8_t *out, size_t cap);

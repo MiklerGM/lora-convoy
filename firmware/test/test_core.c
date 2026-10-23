@@ -208,15 +208,29 @@ static void test_nmea(void) {
 
 /* ---- node ------------------------------------------------------------------------- */
 
+/* Slot 1 of 4 riders every 2 s: five spacings of 400 ms, the last one spare. An NMEA-only board
+ * whose fixes arrive on the second, give or take 1 ms. */
 static const node_config_t CFG = {.keyed = true,
                                   .key = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
                                           0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f},
-                                  .slot = 1, .interval_ms = 2000, .duty_permille = 100,
-                                  .phy = {869525000, 250000, 7, 5, 8, {0x64, 0x74}}};
+                                  .slot = 1, .slots = 4, .interval_ms = 2000, .duty_permille = 100,
+                                  .phy = {869525000, 250000, 7, 5, 8, {0x64, 0x74}},
+                                  .nmea_lag_us = 0, .nmea_err_us = 1000};
 
 static gnss_fix_t fix_at(int64_t utc_ms, bool valid) {
     return (gnss_fix_t){.time_valid = true, .valid = valid, .utc_ms = utc_ms, .lat_e7 = 471410000,
                         .lon_e7 = 95215000, .speed_kmh10 = 400, .course_deg10 = 2700, .sats = 9};
+}
+
+/* 12:00:05 UTC on 2026-10-22, at 10 s on the board's clock: its fixes come each second from then. */
+#define UTC0_MS 1792670405000ll
+#define T0 (10 * SEC)
+
+static void tick(node_t *n, int64_t t) {
+    if (t >= T0 && t % SEC == 0) {
+        gnss_fix_t f = fix_at(UTC0_MS + (t - T0) / 1000, true);
+        node_on_fix(n, &f, t);
+    }
 }
 
 static void test_node_sends(void) {
@@ -224,65 +238,139 @@ static void test_node_sends(void) {
     uint8_t b[32];
     group_key_t g;
     group_key_init(&g, KEY);
-    node_init(&n, &CFG, 12345, 0);
-    /* Silent before the first fix, whatever the time. */
-    for (int64_t t = 0; t < 10 * SEC; t += 100000) assert(node_poll_tx(&n, t, b, sizeof(b)) == 0);
-    assert(n.tx_skipped >= 4);
+    node_init(&n, &CFG, 12345);
+    /* Silent before its GNSS gives a time: no slot can be told, nothing is counted. */
+    for (int64_t t = 0; t < T0; t += 1000) assert(node_poll_tx(&n, t, b, sizeof(b)) == 0);
+    assert(node_next_tx_us(&n, 0) == INT64_MAX && n.tx_skipped == 0);
 
-    /* Then a packet every 1.6 to 2.4 s, each with the next counter of one session. */
-    const int64_t utc0 = 1792670405000ll;
-    int64_t last = -1, t = 10 * SEC, shortest = 10 * SEC, longest = 0;
-    int sent = 0;
+    /* Then once a frame, from the frame after the time came, inside slot 1: a spacing on from the
+     * frame's start plus its phase, which is under a spacing and differs from frame to frame. */
     position_t p;
-    for (; t < 70 * SEC; t += 10000) {
-        if (t % SEC == 0) {
-            gnss_fix_t f = fix_at(utc0 + (t - 10 * SEC) / 1000, true);
-            node_on_fix(&n, &f, t);
-        }
+    int sent = 0;
+    int64_t t = T0, last_k = -1, phase_min = SEC, phase_max = 0;
+    for (; t < 70 * SEC; t += 1000) {
+        tick(&n, t);
         const size_t len = node_poll_tx(&n, t, b, sizeof(b));
         if (!len) continue;
         assert(len == PKT_POSITION_LEN && pkt_open(b, len, &g, &p) == PKT_OK);
         assert(p.counter == (uint16_t)sent && p.session == n.session && p.slot == 1 && (p.status & ST_GPS_OK));
-        if (last >= 0) {
-            assert(t - last >= 1600000 - 10000 && t - last <= 2400000 + 10000);
-            if (t - last < shortest) shortest = t - last;
-            if (t - last > longest) longest = t - last;
-        }
-        last = t;
+        const int64_t utc = UTC0_MS * 1000 + (t - T0), k = utc / 2000000, phase = utc % 2000000 - 400000;
+        assert(last_k < 0 ? k == (UTC0_MS * 1000) / 2000000 + 1 : k == last_k + 1);
+        assert(phase >= 0 && phase < 400000 + 1000);
+        if (phase < phase_min) phase_min = phase;
+        if (phase > phase_max) phase_max = phase;
+        last_k = k;
         sent++;
     }
-    assert(sent >= 25 && sent <= 37);
-    /* drawn anew each time, so two senders in step drift apart */
-    assert(shortest < 1850000 && longest > 2150000);
+    assert(sent == 30 && phase_max - phase_min > 100000);
+    assert(n.tx_late == 0 && n.tx_unsure == 0 && n.tx_skipped == 0);
+
+    /* The platform is told when to be ready: not a moment early, and too late is passed over. */
+    tick(&n, t);
+    int64_t due = node_next_tx_us(&n, t);
+    assert(due > t && due - t <= 2 * SEC);
+    assert(node_poll_tx(&n, due - 1, b, sizeof(b)) == 0);
+    assert(node_poll_tx(&n, due + 3000, b, sizeof(b)) == 0 && n.tx_late == 1);
+    /* on whole milliseconds again, so the fixes keep coming on the second */
+    for (t = (due / 1000 + 4) * 1000; (due = node_next_tx_us(&n, t)) > t + 1000; t += 1000) tick(&n, t);
+    assert(node_poll_tx(&n, due, b, sizeof(b)) == PKT_POSITION_LEN);
+    t = due;
 
     /* The fix is lost: the held position goes on, with its old time and without GPS_OK. */
-    gnss_fix_t lost = fix_at(utc0 + 60500, false);
+    t = (t / SEC + 1) * SEC;
+    gnss_fix_t lost = fix_at(UTC0_MS + (t - T0) / 1000, false);
     node_on_fix(&n, &lost, t);
-    for (; t < 80 * SEC; t += 10000) {
+    const int64_t last_valid = UTC0_MS + (t - T0) / 1000 - 1000;
+    for (const int64_t end = t + 10 * SEC; t < end; t += 1000) {
         if (node_poll_tx(&n, t, b, sizeof(b))) {
             assert(pkt_open(b, PKT_POSITION_LEN, &g, &p) == PKT_OK && !(p.status & ST_GPS_OK));
-            assert(p.fix_time == (uint16_t)((utc0 + 59000) / 1000)); /* the last valid one, at 69 s */
+            assert(p.fix_time == (uint16_t)(last_valid / 1000));
         }
     }
 
     /* The counter never wraps within a session: its last value, then a new session. */
     n.counter = 0xFFFF;
     const uint32_t before = n.session;
-    while (!node_poll_tx(&n, t, b, sizeof(b))) t += 10000;
+    while (!node_poll_tx(&n, t, b, sizeof(b))) t += 1000;
     assert(pkt_open(b, PKT_POSITION_LEN, &g, &p) == PKT_OK && p.counter == 0xFFFF && p.session == before);
-    while (!node_poll_tx(&n, t, b, sizeof(b))) t += 10000;
+    while (!node_poll_tx(&n, t, b, sizeof(b))) t += 1000;
     assert(pkt_open(b, PKT_POSITION_LEN, &g, &p) == PKT_OK && p.counter == 0 && p.session != before);
 
     /* Without a key, nothing goes out at all: v1 has no clear text. */
     node_config_t bare = CFG;
     bare.keyed = false;
     node_t quiet;
-    node_init(&quiet, &bare, 1, 0);
-    for (int64_t s = 0; s < 20 * SEC; s += 100000) {
-        node_on_fix(&quiet, &(gnss_fix_t){.time_valid = true, .valid = true, .utc_ms = utc0}, s);
+    node_init(&quiet, &bare, 1);
+    for (int64_t s = T0; s < 20 * SEC; s += 1000) {
+        tick(&quiet, s);
         assert(node_poll_tx(&quiet, s, b, sizeof(b)) == 0);
     }
-    printf("node: silent before a fix or a key, then on its interval; sessions and counters\n");
+    /* Nor from a slot outside the group. */
+    node_config_t outside = CFG;
+    outside.slot = 4;
+    node_init(&quiet, &outside, 1);
+    for (int64_t s = T0; s < 20 * SEC; s += 1000) {
+        tick(&quiet, s);
+        assert(node_poll_tx(&quiet, s, b, sizeof(b)) == 0);
+    }
+    /* Nor while its time is less sure than the slots allow: 200 ms against a budget of 183.6. */
+    node_config_t rough = CFG;
+    rough.nmea_err_us = 200000;
+    node_init(&quiet, &rough, 1);
+    for (int64_t s = T0; s < 30 * SEC; s += 1000) {
+        tick(&quiet, s);
+        assert(node_poll_tx(&quiet, s, b, sizeof(b)) == 0);
+    }
+    assert(quiet.tx_unsure >= 9 && quiet.tx_unsure <= 10);
+    printf("node: once a frame in its slot, from a phase drawn per frame; silent without a key, a time "
+           "good enough, or a slot in the group\n");
+}
+
+static void test_node_time(void) {
+    node_config_t cfg = CFG;
+    cfg.nmea_lag_us = 100000;
+    cfg.nmea_err_us = 20000;
+    node_t n;
+    node_init(&n, &cfg, 1);
+    int64_t utc, err;
+    assert(!node_utc_us(&n, 0, &utc, &err));
+
+    /* NMEA alone: the fix's second was its arrival less the lag configured. */
+    gnss_fix_t f = fix_at(UTC0_MS, true);
+    node_on_fix(&n, &f, 5150000);
+    assert(n.time == TIME_NMEA && node_utc_us(&n, 5150000, &utc, &err));
+    assert(utc == UTC0_MS * 1000 + 100000 && err == 20000 + 5);
+
+    /* A PPS edge, then the fix that names its second: the edge is the second, and how far the NMEA
+     * lagged behind it is measured. */
+    node_on_pps(&n, 6000000);
+    f = fix_at(UTC0_MS + 1000, true);
+    node_on_fix(&n, &f, 6130000);
+    assert(n.time == TIME_PPS && node_utc_us(&n, 6130000, &utc, &err));
+    assert(utc == (UTC0_MS + 1000) * 1000 + 130000 && err == 100 + 6 && n.lag_us == 130000);
+
+    /* An edge missed: a fix 1.13 s after the last edge is not its second, and NMEA's time is worse
+     * than the edge's carried a second. */
+    f = fix_at(UTC0_MS + 2000, true);
+    node_on_fix(&n, &f, 7130000);
+    assert(n.time == TIME_PPS && n.mark_us == 6000000);
+
+    /* Holding over without PPS: the edge's time grows 50 ppm less sure, and once that is worse than
+     * NMEA's 20 ms, some 400 s on, NMEA's is taken. */
+    f = fix_at(UTC0_MS + 300000, true);
+    node_on_fix(&n, &f, 305130000);
+    assert(n.time == TIME_PPS);
+    f = fix_at(UTC0_MS + 500000, true);
+    node_on_fix(&n, &f, 505130000);
+    assert(n.time == TIME_NMEA && n.mark_us == 505030000);
+
+    /* The budget: 400 ms between slots, less the packet's 30.8 ms and 2 ms for the receivers,
+     * halved between the two senders either side. */
+    assert(node_time_budget_us(&n) == (400000 - 30848 - 2000) / 2);
+    n.cfg.slots = 32;
+    n.cfg.interval_ms = 500; /* 15 ms between slots: no room for a packet */
+    assert(node_time_budget_us(&n) == 0);
+    printf("node: time from PPS edges or NMEA, the better one kept, its uncertainty growing in holdover\n");
 }
 
 static void test_node_duty(void) {
@@ -292,26 +380,26 @@ static void test_node_duty(void) {
     cfg.interval_ms = 1000;
     node_t n;
     uint8_t b[32];
-    node_init(&n, &cfg, 1, 0);
-    gnss_fix_t f = fix_at(1792670405000ll, true);
+    node_init(&n, &cfg, 1);
     int sent = 0;
-    for (int64_t t = 0; t < 30 * 60 * SEC; t += 100000) {
-        node_on_fix(&n, &f, t);
+    for (int64_t t = T0; t < 30 * 60 * SEC; t += 1000) {
+        tick(&n, t);
         sent += node_poll_tx(&n, t, b, sizeof(b)) > 0;
     }
     assert(sent == 116 && node_duty_used_ms(&n, 30 * 60 * SEC) == 116 * 31);
+    assert(n.tx_skipped > 1000);
     /* The hour, to the minute: what was booked in minute 0 counts through minute 59, not 60. */
     node_t one;
-    node_init(&one, &cfg, 1, 0);
-    node_on_fix(&one, &f, 0);
-    while (!node_poll_tx(&one, one.next_tx_us, b, sizeof(b))) {
-    }
+    node_init(&one, &cfg, 1);
+    int64_t t = T0;
+    for (; !node_poll_tx(&one, t, b, sizeof(b)); t += 1000) tick(&one, t);
+    assert(t < 60 * SEC);
     assert(node_duty_used_ms(&one, 59 * 60 * SEC + 59 * SEC) == 31);
     assert(node_duty_used_ms(&one, 60 * 60 * SEC) == 0);
     /* An hour after the first packets the budget comes back. */
     int later = 0;
-    for (int64_t t = 70 * 60 * SEC; t < 75 * 60 * SEC; t += 100000) {
-        node_on_fix(&n, &f, t);
+    for (t = 70 * 60 * SEC; t < 75 * 60 * SEC; t += 1000) {
+        tick(&n, t);
         later += node_poll_tx(&n, t, b, sizeof(b)) > 0;
     }
     assert(later > 100);
@@ -334,7 +422,7 @@ static void test_node_hears(void) {
     group_key_init(&g, KEY);
     uint8_t other_key[16] = {0};
     group_key_init(&other, other_key);
-    node_init(&n, &CFG, 7, 0);
+    node_init(&n, &CFG, 7);
     const int64_t utc0 = 1792670405000ll; /* 12:00:05, 64197 modulo 65536 */
     gnss_fix_t f = fix_at(utc0, true);
     node_on_fix(&n, &f, 0);
@@ -378,12 +466,13 @@ static void test_node_hears(void) {
 
     /* Without a time of our own, an age cannot be told: it says so. */
     node_t blind;
-    node_init(&blind, &CFG, 7, 0);
+    node_init(&blind, &CFG, 7);
     node_on_packet(&blind, b, packet(b, &g, 2, 1, 0, 64192), -71, 33, 0);
     node_format_rider(&blind, 2, 0, line, sizeof(line));
     assert(strstr(line, "fix_age=? "));
     node_format_status(&n, 9 * SEC, line, sizeof(line));
-    assert(strncmp(line, "slot=1 keyed=1 group=86 fix=0 ", 30) == 0 && strstr(line, "riders=3 "));
+    assert(strncmp(line, "slot=1 slots=4 keyed=1 group=86 fix=0 ", 38) == 0 && strstr(line, "riders=3 "));
+    assert(strstr(line, " time=nmea err=1.") && strstr(line, " budget=183.5 lag=? "));
     assert(strstr(line, " foreign=1 forged=1 replay=2 clash=1"));
     printf("node: ages honest, the delivered share, and forgeries, replays and strangers kept out\n");
 }
@@ -415,14 +504,14 @@ static void test_api(void) {
     uint8_t b[PKT_POSITION_LEN];
     group_key_t g;
     group_key_init(&g, KEY);
-    node_init(&n, &CFG, 7, 0);
+    node_init(&n, &CFG, 7);
     gnss_fix_t f = fix_at(1792670405000ll, true);
     node_on_fix(&n, &f, 0);
     node_on_packet(&n, b, packet(b, &g, 2, 1, 10, 64192), -71, 33, 3 * SEC);
     api_t api = {.node = &n, .board = "test", .reset = "poweron", .power = 3, .tx_dbm = dbm};
 
     ask(&api, "STATUS");
-    assert(n_replies == 1 && starts(replies[0], "STATUS proto=2 board=test reset=poweron up=10 slot=1 keyed=1 group=86 "));
+    assert(n_replies == 1 && starts(replies[0], "STATUS proto=3 board=test reset=poweron up=10 slot=1 slots=4 keyed=1 group=86 "));
     assert(strstr(replies[0], " power=3 dbm=16"));
     ask(&api, "riders"); /* the console types it in lower case */
     assert(n_replies == 2 && starts(replies[0], "RIDER slot=2 ") && strcmp(replies[1], "RIDERS 1") == 0);
@@ -447,6 +536,12 @@ static void test_api(void) {
     assert(strcmp(replies[0], "OK slot=5") == 0 && n.cfg.slot == 5);
     ask(&api, "SLOT 32");
     assert(starts(replies[0], "ERR ") && n.cfg.slot == 5);
+    ask(&api, "SLOTS 5");
+    assert(strcmp(replies[0], "OK slots=5") == 0 && n.cfg.slots == 5);
+    ask(&api, "SLOTS 0");
+    assert(starts(replies[0], "ERR ") && n.cfg.slots == 5);
+    ask(&api, "SLOTS 33");
+    assert(starts(replies[0], "ERR ") && n.cfg.slots == 5);
     ask(&api, "GROUP 9"); /* gone: the group follows from the key */
     assert(starts(replies[0], "ERR "));
     ask(&api, "INTERVAL 499");
@@ -463,6 +558,18 @@ static void test_api(void) {
     assert(n_replies == 1 && starts(replies[0], "ERR "));
     ask(&api, "");
     assert(n_replies == 1 && starts(replies[0], "ERR "));
+
+    /* The longest status there can be still fits a line. */
+    n.sent = n.tx_late = n.tx_unsure = n.tx_skipped = n.rx_bad = n.rx_foreign = n.rx_forged = 4294967295u;
+    n.rx_replay = n.rx_clash = 4294967295u;
+    n.cfg.slot = 31;
+    n.held.lat_e7 = -900000000;
+    n.held.lon_e7 = -1800000000;
+    n.lag_us = n.lag_min_us = n.lag_max_us = 999999;
+    n.mark_err_us = 999999999;
+    char line[API_LINE + 64];
+    const int len = api_status(&api, 99999999 * SEC, line, sizeof(line));
+    assert(len > 300 && len < API_LINE);
     printf("api: status, riders, the key, settings, and what it leaves to the caller\n");
 }
 
@@ -472,6 +579,7 @@ int main(void) {
     test_codec();
     test_nmea();
     test_node_sends();
+    test_node_time();
     test_node_duty();
     test_node_hears();
     test_api();

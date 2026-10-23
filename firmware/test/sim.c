@@ -3,10 +3,11 @@
  *
  * The air, for now: everyone hears everyone; a packet is lost to a receiver that transmits during
  * any of it, to everyone when two transmissions overlap (no capture effect), and at random with a
- * set probability. Each rider rides a circle around Vaduz and gets a fix every second, all on one
- * perfect clock. Clock models come with slots by GPS time (M6).
+ * set probability. Each rider rides a circle around Vaduz. Each board has its own clock, off by its
+ * crystal's drift, and a GNSS that gives a PPS edge on the second, where the board has the line,
+ * and its fix some 100 ms later; for some, nothing for a while, as in a tunnel.
  *
- *   sim                       the checks: three riders hear each other; twenty show plain ALOHA
+ *   sim                       the checks: slots keep a group clear of itself, whatever the clocks
  *   sim N INTERVAL_MS S       N riders, every INTERVAL_MS, for S seconds of virtual time
  *   sim serve N [PORT]        N boards in real time, each with the phone API on 127.0.0.1:PORT+i
  *                             (default 4403); an Android emulator reaches them at 10.0.2.2. Like
@@ -47,6 +48,22 @@ typedef struct {
     size_t len;
 } transmission_t;
 
+/* Each board's clock and GNSS. */
+typedef struct {
+    double drift_ppm;      /* each board's crystal, drawn within +- this of true time */
+    int nmea_only;         /* this many boards, the first ones, have no PPS line, as the L1 */
+    int64_t lag_us;        /* each GNSS's NMEA fix comes this long after its second ... */
+    int64_t jitter_us;     /* ... give or take this, drawn for every fix */
+    int64_t told_lag_us;   /* what the boards are told of that lag (cfg.nmea_lag_us) ... */
+    int64_t told_err_us;   /* ... and how far it may be off (cfg.nmea_err_us) */
+    int dark;              /* this many boards, the last ones, lose their GNSS ... */
+    int64_t dark_from_us;  /* ... from here ... */
+    int64_t dark_us;       /* ... for this long: a tunnel */
+} clocks_t;
+
+/* PPS on every board, perfect crystals, the fix 100 ms after its second. */
+static const clocks_t GOOD = {.lag_us = 100000, .told_err_us = 100000};
+
 typedef struct {
     int nodes;
     uint32_t interval_ms;
@@ -54,14 +71,20 @@ typedef struct {
     double loss;           /* random loss per packet and receiver */
     uint32_t seed;
     int groups;            /* riders split into this many groups, each with its own key; 0: no key */
+    clocks_t clocks;
 } scenario_t;
 
 typedef struct {
-    double delivered;        /* of all packets sent, the share each other node took */
-    double age_p50, age_p95; /* seconds: the age of the fix each node shows for each other, sampled
-                                every second (07's headline numbers); never seen counts as forever */
-    int collisions;
+    double delivered;        /* of all packets sent, the share the others of its group took */
+    double worst;            /* the same for the rider worst off, of those who sent */
+    double age_p50, age_p95; /* seconds: the age of the fix each node shows for each other of its
+                                group, sampled every second (07's headline numbers); never seen
+                                counts as forever */
+    int collisions;          /* packets that overlapped another ... */
+    int within;              /* ... from their own group */
     int sent;
+    int silent;              /* riders who sent nothing */
+    unsigned long unsure;    /* slots passed over for an uncertain time, all riders together */
 } outcome_t;
 
 /* The simulated world: the nodes, the air between them, and what happened. */
@@ -72,8 +95,16 @@ typedef struct {
     int in_air;
     uint32_t rng;
     int64_t utc0_ms;
-    int sent, collisions;
-    long taken;
+    struct {
+        double drift;        /* the crystal's error, a fraction */
+        int64_t offset_us;   /* its clock at true zero: boards start apart */
+        bool fix_pending;    /* a fix on its way over the UART ... */
+        int64_t fix_due;     /* ... arriving then, true time ... */
+        int64_t fix_second;  /* ... and naming this second */
+    } clock[MAX_NODES];
+    int group_of[MAX_NODES], slot_of[MAX_NODES], size_of[MAX_NODES]; /* size: of i's group */
+    int sent, collisions, within, sent_by[MAX_NODES];
+    long taken, expected, taken_from[MAX_NODES];
     /* told of every packet a node takes, for a phone connected to it */
     void (*on_taken)(void *ctx, int node, unsigned slot, int64_t t);
     void *ctx;
@@ -114,30 +145,58 @@ static gnss_fix_t ride(int i, int64_t t_us, int64_t utc0_ms) {
                         .sats = 9, .hdop10 = 9};
 }
 
+/* Board i's clock at true time t. */
+static int64_t local_us(const world_t *w, int i, int64_t t) {
+    return w->clock[i].offset_us + t + (int64_t)((double)t * w->clock[i].drift);
+}
+
 static void world_init(world_t *w, const scenario_t *sc, int64_t utc0_ms) {
     memset(w, 0, sizeof(*w));
     w->sc = *sc;
     w->rng = sc->seed ? sc->seed : 1;
     w->utc0_ms = utc0_ms;
+    /* Riders split into groups by halves, thirds ...; group g has the key g+1, g+1 ..., and its
+     * riders the slots from 0. */
     for (int i = 0; i < sc->nodes; i++) {
-        /* group g has the key g, g, g ...; riders split into groups by halves, thirds ... */
-        const int g = sc->groups ? i * sc->groups / sc->nodes : 0;
-        node_config_t cfg = {.keyed = sc->groups > 0, .slot = (uint8_t)i, .interval_ms = sc->interval_ms,
-                             .duty_permille = 100, .phy = PHY_V0};
-        memset(cfg.key, g + 1, sizeof(cfg.key));
-        node_init(&w->node[i], &cfg, splitmix(sc->seed * 1000u + (uint32_t)i), 0);
+        w->group_of[i] = sc->groups ? i * sc->groups / sc->nodes : 0;
+        w->slot_of[i] = i && w->group_of[i - 1] == w->group_of[i] ? w->slot_of[i - 1] + 1 : 0;
+    }
+    for (int i = 0; i < sc->nodes; i++) {
+        for (int j = 0; j < sc->nodes; j++) w->size_of[i] += w->group_of[j] == w->group_of[i];
+    }
+    for (int i = 0; i < sc->nodes; i++) {
+        const clocks_t *c = &sc->clocks;
+        node_config_t cfg = {.keyed = sc->groups > 0, .slot = (uint8_t)w->slot_of[i],
+                             .slots = (uint8_t)w->size_of[i], .interval_ms = sc->interval_ms,
+                             .duty_permille = 100, .phy = PHY_V0, .nmea_lag_us = (int32_t)c->told_lag_us,
+                             .nmea_err_us = (int32_t)c->told_err_us};
+        memset(cfg.key, w->group_of[i] + 1, sizeof(cfg.key));
+        node_init(&w->node[i], &cfg, splitmix(sc->seed * 1000u + (uint32_t)i));
+        w->clock[i].drift = c->drift_ppm * 1e-6 * ((double)(rnd(&w->rng) % 2001) / 1000 - 1);
+        w->clock[i].offset_us = rnd(&w->rng) % (10 * SEC);
     }
 }
 
 static void world_step(world_t *w, int64_t t) {
+    const clocks_t *c = &w->sc.clocks;
     for (int i = 0; i < w->sc.nodes; i++) {
-        /* the GNSS: a fix every second, each rider's on its own phase within it */
-        if ((t + i * 37000) % SEC == 0) {
-            gnss_fix_t f = ride(i, t, w->utc0_ms);
-            node_on_fix(&w->node[i], &f, t);
+        /* the GNSS: on the second a PPS edge, where the board has the line, and later the fix */
+        const bool dark = i >= w->sc.nodes - c->dark && t >= c->dark_from_us && t < c->dark_from_us + c->dark_us;
+        if (t % SEC == 0 && !dark) {
+            if (i >= c->nmea_only) node_on_pps(&w->node[i], local_us(w, i, t));
+            const int64_t jitter =
+                c->jitter_us ? (int64_t)(rnd(&w->rng) % (uint32_t)(2 * c->jitter_us + 1)) - c->jitter_us : 0;
+            w->clock[i].fix_pending = true;
+            w->clock[i].fix_due = t + c->lag_us + jitter;
+            w->clock[i].fix_second = t;
+        }
+        if (w->clock[i].fix_pending && t >= w->clock[i].fix_due) {
+            gnss_fix_t f = ride(i, w->clock[i].fix_second, w->utc0_ms);
+            node_on_fix(&w->node[i], &f, local_us(w, i, w->clock[i].fix_due));
+            w->clock[i].fix_pending = false;
         }
         uint8_t b[32];
-        const size_t len = node_poll_tx(&w->node[i], t, b, sizeof(b));
+        const size_t len = node_poll_tx(&w->node[i], local_us(w, i, t), b, sizeof(b));
         if (len) {
             assert(w->in_air < MAX_AIR);
             transmission_t *x = &w->air[w->in_air++];
@@ -148,6 +207,8 @@ static void world_step(world_t *w, int64_t t) {
             memcpy(x->bytes, b, len);
             x->len = len;
             w->sent++;
+            w->sent_by[i]++;
+            w->expected += w->size_of[i] - 1;
         }
     }
     /* deliver what ended now */
@@ -155,11 +216,15 @@ static void world_step(world_t *w, int64_t t) {
         transmission_t *x = &w->air[k];
         if (x->done || x->end > t) continue;
         x->done = true;
-        bool collided = false;
+        bool collided = false, within = false;
         for (int j = 0; j < w->in_air; j++) {
-            if (j != k && w->air[j].start < x->end && w->air[j].end > x->start) collided = true;
+            if (j != k && w->air[j].start < x->end && w->air[j].end > x->start) {
+                collided = true;
+                within |= w->group_of[w->air[j].from] == w->group_of[x->from];
+            }
         }
         w->collisions += collided;
+        w->within += within;
         for (int i = 0; i < w->sc.nodes && !collided; i++) {
             if (i == x->from) continue;
             /* half duplex: a receiver sending during any of it hears none of it */
@@ -168,9 +233,10 @@ static void world_step(world_t *w, int64_t t) {
                 if (w->air[j].from == i && w->air[j].start < x->end && w->air[j].end > x->start) busy = true;
             }
             if (busy || (double)(rnd(&w->rng) % 1000000) / 1e6 < w->sc.loss) continue;
-            if (node_on_packet(&w->node[i], x->bytes, x->len, -90, 20, t)) {
+            if (node_on_packet(&w->node[i], x->bytes, x->len, -90, 20, local_us(w, i, t))) {
                 w->taken++;
-                if (w->on_taken) w->on_taken(w->ctx, i, x->bytes[2], t);
+                w->taken_from[x->from]++;
+                if (w->on_taken) w->on_taken(w->ctx, i, x->bytes[2], local_us(w, i, t));
             }
         }
     }
@@ -183,24 +249,26 @@ static void world_step(world_t *w, int64_t t) {
     }
 }
 
+/* The last run's world, for a check to look into. */
+static world_t s_run;
+
 static outcome_t run(const scenario_t *sc, bool print) {
-    static world_t w;
-    world_init(&w, sc, 1792670400000ll);
+    world_init(&s_run, sc, 1792670400000ll);
     outcome_t out = {0};
     const size_t max_ages = (size_t)(sc->duration_us / SEC + 1) * (size_t)(sc->nodes * sc->nodes);
     double *ages = malloc(max_ages * sizeof(double));
     size_t n_ages = 0;
     assert(ages);
     for (int64_t t = 0; t < sc->duration_us; t += STEP_US) {
-        world_step(&w, t);
-        /* what each map shows, once a second, after a warm-up of ten intervals */
+        world_step(&s_run, t);
+        /* what each map shows of its group, once a second, after a warm-up of ten intervals */
         if (t % SEC == SEC / 2 && t > 10 * (int64_t)sc->interval_ms * 1000) {
             for (int i = 0; i < sc->nodes; i++) {
                 int64_t utc;
-                if (!node_utc_ms(&w.node[i], t, &utc)) continue;
+                if (!node_utc_ms(&s_run.node[i], local_us(&s_run, i, t), &utc)) continue;
                 for (int j = 0; j < sc->nodes; j++) {
-                    if (j == i || n_ages >= max_ages) continue;
-                    const rider_t *r = &w.node[i].riders[j];
+                    if (j == i || s_run.group_of[j] != s_run.group_of[i] || n_ages >= max_ages) continue;
+                    const rider_t *r = &s_run.node[i].riders[s_run.slot_of[j]];
                     ages[n_ages++] = r->known ? (double)(utc - r->fix_utc_ms) / 1000 : 1e9;
                 }
             }
@@ -209,16 +277,28 @@ static outcome_t run(const scenario_t *sc, bool print) {
     /* The end of the run: what one node shows for the next. */
     char line[256];
     for (int i = 0; print && i < sc->nodes; i++) {
-        node_format_rider(&w.node[i], (unsigned)((i + 1) % sc->nodes), sc->duration_us, line, sizeof(line));
+        node_format_rider(&s_run.node[i], (unsigned)((s_run.slot_of[i] + 1) % s_run.size_of[i]),
+                          local_us(&s_run, i, sc->duration_us), line, sizeof(line));
         printf("node %2d sees %s\n", i, line);
     }
     qsort(ages, n_ages, sizeof(double), by_value);
     out.age_p50 = n_ages ? ages[n_ages / 2] : 1e9;
     out.age_p95 = n_ages ? ages[n_ages * 95 / 100] : 1e9;
     free(ages);
-    out.sent = w.sent;
-    out.collisions = w.collisions;
-    out.delivered = w.sent ? (double)w.taken / ((double)w.sent * (sc->nodes - 1)) : 0;
+    out.sent = s_run.sent;
+    out.collisions = s_run.collisions;
+    out.within = s_run.within;
+    out.delivered = s_run.expected ? (double)s_run.taken / (double)s_run.expected : 0;
+    out.worst = 1;
+    for (int i = 0; i < sc->nodes; i++) {
+        out.unsure += s_run.node[i].tx_unsure;
+        if (!s_run.sent_by[i]) {
+            out.silent++;
+            continue;
+        }
+        const double share = (double)s_run.taken_from[i] / ((double)s_run.sent_by[i] * (s_run.size_of[i] - 1));
+        if (share < out.worst) out.worst = share;
+    }
     return out;
 }
 
@@ -255,7 +335,7 @@ static void drop(board_t *b, int i) {
 static void send_line(void *ctx, const char *line) {
     board_t *b = ctx;
     if (b->client < 0) return;
-    char out[450];
+    char out[API_LINE + 2];
     const int n = snprintf(out, sizeof(out), "%s\n", line);
     if (send(b->client, out, (size_t)n, MSG_NOSIGNAL) != n) drop(b, (int)(b - s_boards));
 }
@@ -286,8 +366,9 @@ static void serve(int n, int port) {
     static world_t w;
     struct timespec now;
     clock_gettime(CLOCK_REALTIME, &now);
-    const scenario_t sc = {n, 2000, 0, 0, (uint32_t)now.tv_sec, 0};
-    world_init(&w, &sc, (int64_t)now.tv_sec * 1000 + now.tv_nsec / 1000000);
+    const scenario_t sc = {n, 2000, 0, 0, (uint32_t)now.tv_sec, 0, GOOD};
+    /* on a whole second, as GNSS time is, so the PPS edges and the fixes pair up */
+    world_init(&w, &sc, (int64_t)now.tv_sec * 1000);
     w.on_taken = on_taken;
     w.ctx = &w;
     s_n_boards = n;
@@ -334,7 +415,7 @@ static void serve(int n, int port) {
                 *nl = '\0';
                 if (nl > b->in && nl[-1] == '\r') nl[-1] = '\0';
                 if (b->in[0]) {
-                    api_command(&b->api, b->in, t, send_line, b);
+                    api_command(&b->api, b->in, local_us(&w, i, t), send_line, b);
                     if (b->api.forget) send_line(b, "ERR FORGET is for Bluetooth");
                     b->api.forget = b->api.restart = b->api.bootloader = b->api.power_changed = false;
                 }
@@ -349,8 +430,8 @@ static void serve(int n, int port) {
         for (int i = 0; i < n; i++) {
             board_t *b = &s_boards[i];
             if (b->client < 0 || t < b->next_status) continue;
-            char line[400];
-            api_status(&b->api, t, line, sizeof(line));
+            char line[API_LINE];
+            api_status(&b->api, local_us(&w, i, t), line, sizeof(line));
             send_line(b, line);
             b->next_status = t + 10 * SEC;
         }
@@ -369,53 +450,101 @@ int main(int argc, char **argv) {
         return 0;
     }
     if (argc == 4) {
-        const scenario_t sc = {atoi(argv[1]), (uint32_t)atoi(argv[2]), atoll(argv[3]) * SEC, 0, 42, 1};
+        const scenario_t sc = {atoi(argv[1]), (uint32_t)atoi(argv[2]), atoll(argv[3]) * SEC, 0, 42, 1, GOOD};
         const outcome_t o = run(&sc, true);
-        printf("%d riders every %u ms for %s s: %d sent, %d collided, %.1f %% delivered, "
-               "fix age shown p50 %.1f s, p95 %.1f s\n", sc.nodes, sc.interval_ms, argv[3], o.sent,
-               o.collisions, 100 * o.delivered, o.age_p50, o.age_p95);
+        printf("%d riders every %u ms for %s s: %d sent, %d collided (%d within the group), %.1f %% delivered, "
+               "fix age shown p50 %.1f s, p95 %.1f s, %lu slots passed over unsure of the time\n", sc.nodes,
+               sc.interval_ms, argv[3], o.sent, o.collisions, o.within, 100 * o.delivered, o.age_p50, o.age_p95,
+               o.unsure);
         return 0;
     }
 
-    /* Three riders, a packet every 2 s: each hears the others, with fixes a few seconds old. */
-    const scenario_t three = {3, 2000, 600 * SEC, 0, 1, 1};
+    /* Three riders, a slot each every 2 s: each hears the others every frame. */
+    const scenario_t three = {3, 2000, 600 * SEC, 0, 1, 1, GOOD};
     outcome_t o = run(&three, false);
     printf("sim: 3 riders every 2 s: %.1f %% delivered, %d collisions, fix age p50 %.1f s, p95 %.1f s\n",
            100 * o.delivered, o.collisions, o.age_p50, o.age_p95);
-    assert(o.delivered > 0.90 && o.age_p95 <= 5);
+    assert(o.delivered > 0.99 && o.collisions == 0 && o.age_p95 <= 3.5);
 
     /* With 10 % random loss on top, still everyone, a little older. */
-    const scenario_t lossy = {3, 2000, 600 * SEC, 0.10, 2, 1};
+    const scenario_t lossy = {3, 2000, 600 * SEC, 0.10, 2, 1, GOOD};
     o = run(&lossy, false);
     printf("sim: 3 riders, 10 %% random loss: %.1f %% delivered, fix age p50 %.1f s, p95 %.1f s\n",
            100 * o.delivered, o.age_p50, o.age_p95);
-    assert(o.delivered > 0.80 && o.delivered < 0.90 && o.age_p95 <= 7);
+    assert(o.delivered > 0.85 && o.delivered < 0.95 && o.age_p95 <= 5.5);
 
-    /* Twenty riders every 2 s on random access: the channel carries G = 20 x 30.8 ms / 2 s = 0.31 of
-     * its time, and pure ALOHA delivers about exp(-2G) = 54 %, less what the receivers' own sending
-     * costs them. The reason slots by GPS time come next (M6). */
-    const scenario_t twenty = {20, 2000, 600 * SEC, 0, 3, 1};
+    /* Twenty riders every 2 s: random access lost 45 % of them to collisions (M5); slots lose none. */
+    const scenario_t twenty = {20, 2000, 600 * SEC, 0, 3, 1, GOOD};
     o = run(&twenty, false);
-    printf("sim: 20 riders every 2 s on random access: %.1f %% delivered (pure ALOHA predicts about 54 %%), "
-           "fix age p50 %.1f s, p95 %.1f s\n", 100 * o.delivered, o.age_p50, o.age_p95);
-    assert(o.delivered > 0.45 && o.delivered < 0.62);
+    printf("sim: 20 riders every 2 s in slots: %.1f %% delivered, %d collisions, fix age p50 %.1f s, p95 %.1f s "
+           "(random access: 55 %%, p95 8.5 s)\n", 100 * o.delivered, o.collisions, o.age_p50, o.age_p95);
+    assert(o.delivered > 0.99 && o.collisions == 0 && o.age_p95 <= 3.5);
+
+    /* Real clocks: crystals 20 ppm off, boards started seconds apart, half of them L1s without PPS
+     * whose NMEA comes 120 ms after the second, give or take 5 ms, and are told so. */
+    const clocks_t mixed = {.drift_ppm = 20, .nmea_only = 10, .lag_us = 120000, .jitter_us = 5000,
+                            .told_lag_us = 120000, .told_err_us = 10000};
+    const scenario_t real = {20, 2000, 600 * SEC, 0, 5, 1, mixed};
+    o = run(&real, false);
+    printf("sim: 20 riders, half without PPS, crystals 20 ppm off: %.1f %% delivered, %d collisions\n",
+           100 * o.delivered, o.collisions);
+    assert(o.delivered > 0.99 && o.collisions == 0 && o.unsure == 0);
+
+    /* A tunnel: three riders lose their GNSS for 15 minutes. Each holds its slot while its time is
+     * sure enough, about 10 minutes at 50 ppm against 31 ms, then goes quiet, and comes back with
+     * the fix. Nobody collides. */
+    const clocks_t tunnel = {.drift_ppm = 20, .lag_us = 100000, .told_err_us = 100000, .dark = 3,
+                             .dark_from_us = 60 * SEC, .dark_us = 900 * SEC};
+    const scenario_t dark = {20, 2000, 1200 * SEC, 0, 6, 1, tunnel};
+    o = run(&dark, false);
+    unsigned long quiet = 0, after = 0;
+    for (int i = 17; i < 20; i++) {
+        quiet += s_run.node[i].tx_unsure;
+        after += s_run.sent_by[i];
+    }
+    printf("sim: 3 of 20 riders 15 min without GNSS: they held their slots about %lu s, then passed over "
+           "%lu slots until the fix came back; %d collisions\n",
+           (unsigned long)((900 - quiet / 3 * 2)), quiet, o.collisions);
+    assert(o.collisions == 0 && quiet > 3 * 100 && quiet < 3 * 200 && after > 3 * 400);
+
+    /* An L1 told nothing of its NMEA's lag, and sure of it, sends 100 ms late, into the next
+     * rider's slot, every frame: why E0 measures the lag before a ride. Told it is unsure, as boards
+     * are by default (100 ms), it keeps quiet in a group this size instead. */
+    const clocks_t careless = {.nmea_only = 1, .lag_us = 100000, .jitter_us = 5000, .told_err_us = 10000};
+    const scenario_t wrong = {20, 2000, 600 * SEC, 0, 7, 1, careless};
+    o = run(&wrong, false);
+    const int wrong_within = o.within;
+    const clocks_t honest = {.nmea_only = 1, .lag_us = 100000, .jitter_us = 5000, .told_err_us = 100000};
+    const scenario_t unsure = {20, 2000, 600 * SEC, 0, 7, 1, honest};
+    o = run(&unsure, false);
+    printf("sim: an L1 told nothing of its NMEA's lag, and sure of it, collides with the next rider in every "
+           "frame (%d packets); told it is unsure, it keeps quiet (%d silent, %d collisions)\n", wrong_within,
+           o.silent, o.within);
+    assert(wrong_within > 500 && o.silent == 1 && o.within == 0);
 
     /* Two groups of three on one channel: each sees only its own riders, and drops the other's
-     * packets by their tag; the air they share still costs both their collisions. */
+     * packets by their tag. */
     static world_t w;
-    const scenario_t two = {6, 2000, 300 * SEC, 0, 4, 2};
+    const scenario_t two = {6, 2000, 300 * SEC, 0, 4, 2, GOOD};
     world_init(&w, &two, 1792670400000ll);
     for (int64_t t = 0; t < two.duration_us; t += STEP_US) world_step(&w, t);
     unsigned long foreign = 0;
     for (int i = 0; i < 6; i++) {
         foreign += w.node[i].rx_foreign;
         assert(w.node[i].rx_forged == 0 && w.node[i].rx_bad == 0);
-        for (int j = 0; j < 6; j++) {
-            if (j != i) assert(w.node[i].riders[j].known == (i / 3 == j / 3));
-        }
+        for (int s = 0; s < NODE_SLOTS; s++) assert(w.node[i].riders[s].known == (s < 3 && s != w.slot_of[i]));
     }
     printf("sim: two groups of 3 on one channel: each knows only its own riders; %lu packets of the other "
            "group dropped by their tag\n", foreign);
     assert(foreign > 0);
+
+    /* Two groups of ten, the same frame, on one channel: never within a group; between them, in the
+     * frames whose phases fall within a packet of each other, about a third, and no rider worse off
+     * than the rest. */
+    const scenario_t neighbours = {20, 2000, 600 * SEC, 0, 8, 2, GOOD};
+    o = run(&neighbours, false);
+    printf("sim: two groups of 10 on one channel: %.1f %% delivered, the worst rider %.1f %%, %d collisions, "
+           "%d of them within a group\n", 100 * o.delivered, 100 * o.worst, o.collisions, o.within);
+    assert(o.within == 0 && o.delivered > 0.55 && o.delivered < 0.78 && o.worst > 0.5);
     return 0;
 }

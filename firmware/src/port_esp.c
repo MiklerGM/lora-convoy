@@ -104,7 +104,33 @@ int port_console_getc(uint32_t timeout_ms) {
 #endif
 #define GNSS_UART UART_NUM_1
 
-/* TX is the board's line towards the GNSS, RX the one from it. */
+#ifdef PIN_GNSS_PPS
+/* The PPS edge, stamped in its interrupt: the clock read is all it does. */
+static portMUX_TYPE s_pps_lock = portMUX_INITIALIZER_UNLOCKED;
+static int64_t s_pps_us;
+
+static void IRAM_ATTR on_pps(void *arg) {
+    (void)arg;
+    const int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL_ISR(&s_pps_lock);
+    s_pps_us = now;
+    portEXIT_CRITICAL_ISR(&s_pps_lock);
+}
+#endif
+
+int64_t port_pps_us(void) {
+#ifdef PIN_GNSS_PPS
+    portENTER_CRITICAL(&s_pps_lock);
+    const int64_t t = s_pps_us;
+    portEXIT_CRITICAL(&s_pps_lock);
+    return t;
+#else
+    return 0;
+#endif
+}
+
+/* TX is the board's line towards the GNSS, RX the one from it. PPS, where wired, rises on the
+ * second. */
 void port_gnss_open(void) {
     const uart_config_t cfg = {
         .baud_rate = 9600,
@@ -117,6 +143,14 @@ void port_gnss_open(void) {
     ESP_ERROR_CHECK(uart_driver_install(GNSS_UART, 1024, 0, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(GNSS_UART, &cfg));
     ESP_ERROR_CHECK(uart_set_pin(GNSS_UART, PIN_GNSS_TX, PIN_GNSS_RX, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+#ifdef PIN_GNSS_PPS
+    const gpio_config_t pps = {.pin_bit_mask = 1ULL << PIN_GNSS_PPS, .mode = GPIO_MODE_INPUT,
+                               .intr_type = GPIO_INTR_POSEDGE};
+    ESP_ERROR_CHECK(gpio_config(&pps));
+    const esp_err_t err = gpio_install_isr_service(0);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(err); /* installed already: fine */
+    ESP_ERROR_CHECK(gpio_isr_handler_add(PIN_GNSS_PPS, on_pps, NULL));
+#endif
 }
 
 int port_gnss_getc(uint32_t timeout_ms) {

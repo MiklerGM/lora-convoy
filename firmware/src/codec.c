@@ -33,6 +33,9 @@ void group_key_init(group_key_t *g, const uint8_t key[16]) {
     const uint8_t tag_block[16] = {0xFF, 'c', 'o', 'n', 'v', 'o', 'y', '-', 't', 'a', 'g'};
     aes128_encrypt(&k, tag_block, out);
     g->tag = out[0];
+    const uint8_t frame_block[16] = {0xFD, 'c', 'o', 'n', 'v', 'o', 'y', '-', 'f', 'r', 'a', 'm', 'e'};
+    aes128_encrypt(&k, frame_block, out);
+    aes128_init(&g->frame, out);
     memset(&k, 0, sizeof(k));
     memset(out, 0, sizeof(out));
 }

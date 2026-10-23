@@ -6,7 +6,7 @@
 #include <strings.h>
 
 int api_status(const api_t *api, int64_t now_us, char *buf, size_t cap) {
-    char node[320];
+    char node[400];
     node_format_status(api->node, now_us, node, sizeof(node));
     return snprintf(buf, cap, "STATUS proto=%d board=%s reset=%s up=%lld %s power=%u dbm=%d", API_PROTO,
                     api->board, api->reset, (long long)(now_us / 1000000), node, api->power,
@@ -36,7 +36,7 @@ static bool hex_key(const char *s, uint8_t key[16]) {
 }
 
 void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, void *ctx) {
-    char out[400];
+    char out[API_LINE];
     uint8_t key[16];
     char *arg = strchr(line, ' ');
     if (arg) *arg++ = '\0';
@@ -62,6 +62,10 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         cfg->slot = (uint8_t)v;
         api->setup_changed = true;
         snprintf(out, sizeof(out), "OK slot=%ld", v);
+    } else if (strcasecmp(line, "slots") == 0 && number(arg, 1, NODE_SLOTS, &v)) {
+        cfg->slots = (uint8_t)v;
+        api->setup_changed = true;
+        snprintf(out, sizeof(out), "OK slots=%ld", v);
     } else if (strcasecmp(line, "interval") == 0 && number(arg, 500, 60000, &v)) {
         cfg->interval_ms = (uint32_t)v;
         api->setup_changed = true;
@@ -80,8 +84,9 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         api->bootloader = true;
         return;
     } else {
-        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, KEY <32 hex>, SLOT 0-%d, INTERVAL 500-60000, "
-                 "POWER 0-3 (0 strongest), FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1);
+        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, KEY <32 hex>, SLOT 0-%d, SLOTS 1-%d, "
+                 "INTERVAL 500-60000, POWER 0-3 (0 strongest), FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
+                 NODE_SLOTS);
     }
     reply(ctx, out);
 }

@@ -11,18 +11,21 @@
  * app that does not know it refuses the board (D3).
  *
  *   phone -> board                 board -> phone
- *   STATUS                         STATUS proto=2 board=... (also sent unasked)
+ *   STATUS                         STATUS proto=3 board=... (also sent unasked)
  *   RIDERS                         RIDER ... for each rider known, then RIDERS <n>
  *   KEY <32 hex digits>            OK keyed group=<tag>: the group's key, from the invitation
- *   SLOT <0-31>, INTERVAL <ms>,    OK <key>=<value>, or ERR <why>
- *   POWER <0-3>
+ *   SLOT <0-31>, SLOTS <1-32>,     OK <key>=<value>, or ERR <why>
+ *   INTERVAL <ms>, POWER <0-3>
  *   FORGET                         FORGOTTEN, over Bluetooth only (ble_nus.c)
  *   REBOOT, BOOTLOADER             -
  *                                  RIDER ... unasked, for every packet taken
  *
  * Commands are case-blind, so the console takes them as typed.
  */
-#define API_PROTO 2
+#define API_PROTO 3
+
+/* The longest line either way, newline aside; the app takes up to 512 characters. */
+#define API_LINE 480
 
 typedef void (*api_reply_fn)(void *ctx, const char *line);
 
@@ -34,7 +37,7 @@ typedef struct {
     int (*tx_dbm)(uint8_t level);   /* what a level puts out on this board */
     /* Set by a command for the caller to carry out, outside the node's lock. */
     bool power_changed;
-    bool setup_changed;             /* key, slot or interval: the caller keeps them over a restart */
+    bool setup_changed;             /* key, slots or interval: the caller keeps them over a restart */
     bool forget;
     bool restart;
     bool bootloader;

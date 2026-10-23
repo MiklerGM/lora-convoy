@@ -40,11 +40,13 @@ typedef struct {
     uint8_t status;
 } position_t;
 
-/* What the 16-byte group key gives: the CCM key and the tag, each from the key by AES on a block
- * that starts with a byte no CCM block can (bit 7 set), so neither can stand in for the other. */
+/* What the 16-byte group key gives: the CCM key, the tag, and the key that draws each frame's
+ * phase (node.c), each from the key by AES on a block of its own that starts with a byte no CCM
+ * block can (bit 7 set), so none can stand in for another. */
 typedef struct {
     uint8_t tag;
     aes128_t ccm;
+    aes128_t frame;
 } group_key_t;
 
 void group_key_init(group_key_t *g, const uint8_t key[16]);
