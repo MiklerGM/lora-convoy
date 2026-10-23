@@ -161,7 +161,9 @@ riders keep between rides ([05](05-osmand-integration.md), Implications). After 
 
 Each update hides the whole layer while OsmAnd rebuilds it ([05](05-osmand-integration.md)). On an
 emulator, at one update a second, the riders were missing from 40–45 % of screenshots; on the
-Version 1 engine, from none. Measure it on a phone first. Then: update less often, or only riders
+Version 1 engine, from none. Measured again on the bench, 2026-10-23 (`bench.py map`, 40 frames
+each, two riders): Version 1 showed both in 40 of 40; OpenGL in 18 and 19 of 40, each rider alone
+in 19 to 31. Measure it on a phone first. Then: update less often, or only riders
 who moved; advise the Version 1 engine; or propose to OsmAnd that its layer move markers instead of
 rebuilding them. Needed by M4.
 
@@ -212,7 +214,9 @@ After M7.
 Samsung's sleeping apps, the battery exemption, reconnects, a soak run (E7). Much of it is in
 dmd2-lora-bridge already, including what its Bluetooth link learned on rides and the app's lean
 `BleBoardLink` leaves out: a bond gone stale on one side, and pinning the chosen board by name.
-**So far:** the app asks for the battery exemption as the bridge did; Play allows that request only
+**So far:** the app binds to OsmAnd again when OsmAnd is stopped or updated (found on the
+bench: the riders stayed off its map until our service restarted); the app asks for the battery
+exemption as the bridge did; Play allows that request only
 for some kinds of app, which matters once it is published (T-app-id). An hour on the emulator
 against a simulated board kept the link and flat memory (ROADMAP, M7); a phone over Bluetooth,
 asleep in a pocket, is the test that counts. The Bluetooth client now runs on the emulator bench
