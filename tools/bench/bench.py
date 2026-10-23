@@ -11,8 +11,12 @@
     bench.py down          stop it all
     bench.py ui PHONE list|tap TEXT     look at or tap a phone's screen, by hand
     bench.py engine PHONE opengl|v1     OsmAnd's map engine on that phone, OsmAnd restarted
-    bench.py map PHONE [FRAMES]         in how many of FRAMES screenshots (30) its OsmAnd shows all
-                                        the other riders: the OpenGL engine's blinking, measured
+    bench.py map PHONE opengl|v1 [FRAMES]   that engine set, in how many of FRAMES screenshots (30)
+                                        its OsmAnd shows all the other riders, and each: the OpenGL
+                                        engine's blinking, measured, with OsmAnd's version
+
+One bench.py at a time: a second is refused while one runs, as its up or down would stop the
+first one's run.
 
 The AVD is prepared once, by android/emulator.sh up, install and map, with OsmAnd's plugin for
 LoRa Convoy switched on (emulator.sh, M1). Bonds live in ~/.cache/lora-convoy/bench; a run's logs
@@ -20,6 +24,7 @@ and screenshots in ~/.cache/lora-convoy/bench/run. Standard library only, but fo
 which runs in a venv with Bumble (requirements.txt).
 """
 import base64
+import fcntl
 import os
 import re
 import signal
@@ -316,8 +321,10 @@ def board_command_line(board: int) -> list:
 
 
 def restart_board(board: int, forget=False) -> None:
-    """Its power cycled; with forget, its bonds cleared too, as its button held down while its
-    phone is out of reach does."""
+    """Its Bluetooth side restarted, as a power cycle restarts a board's, its bonds kept as a
+    board keeps them in flash; with forget, its bonds cleared too, as its button held down while
+    its phone is out of reach does. Its node core in `sim serve` runs on: how the firmware comes
+    back from a restart is for the bench with boards."""
     os.killpg(int((RUN / f"board-{board}.pid").read_text()), signal.SIGTERM)
     time.sleep(2)
     if forget:
@@ -366,13 +373,24 @@ def engine(serial: str, which: str) -> None:
     print(f"engine: phone {serial} now draws with {which}")
 
 
-def measure_map(i: int, frames: int) -> None:
+def osmand_version(serial: str) -> str:
+    m = re.search(r"versionName=(\S+)", adb(serial, "shell", "dumpsys", "package", "net.osmand.plus"))
+    return m.group(1) if m else "?"
+
+
+def measure_map(i: int, which: str, frames: int) -> None:
+    """The blinking, not whether riders show at all (the ride's step): the engine named and set,
+    OsmAnd's version, and the share of frames with every other rider, and with each. What share is
+    too little is not settled yet (T-osmand-opengl)."""
     boards = int((RUN / "phones").read_text()) + 1
     others = [s for s in range(boards) if s != i]
+    engine(phone(i), which)
     seen = riders_on_map(phone(i), others, frames)
     whole = sum(all(s in f for s in others) for f in seen)
     each = ", ".join(f"{NAMES[s]} {sum(s in f for f in seen)}" for s in others)
-    print(f"map: phone {i} showed all {len(others)} others in {whole} of {frames} frames ({each})")
+    print(f"map: phone {i}, OsmAnd {osmand_version(phone(i))}, {'OpenGL' if which == 'opengl' else 'Version 1'} "
+          f"engine: all {len(others)} others in {whole} of {frames} frames ({100 * whole // frames} %); "
+          f"each, of {frames}: {each}")
 
 
 # ---- the ride ----------------------------------------------------------------------------
@@ -454,23 +472,25 @@ def ride() -> None:
     seen = riders_on_map(p0, others)
     with open(RUN / "phone-0-map.png", "wb") as f:
         f.write(subprocess.run(["adb", "-s", p0, "exec-out", "screencap", "-p"], capture_output=True).stdout)
+    # whether each shows at all, in any of ten frames; how often, the blinking, is bench.py map's
     missing = [names[s] for s in others if not any(s in f for f in seen)]
     assert not missing, f"phone 0's map never showed {missing} in {len(seen)} frames"
-    whole = sum(all(s in f for s in others) for f in seen)
-    step(f"OsmAnd restarted, and phone 0's map shows the {len(others)} others again, all of them in {whole} of "
-         f"{len(seen)} frames ({RUN / 'phone-0-map.png'})")
+    step(f"OsmAnd restarted, and phone 0's map shows each of the {len(others)} others again "
+         f"({RUN / 'phone-0-map.png'})")
 
     restart_board(0)
     wait_status(p0, rf"{names[0]}, rider 1 of {boards}.*{boards - 1} riders heard", 90)
     board_says(0, "<- ", 60)  # its commands came, and without a new pairing: the bond was kept
     assert "paired" not in (RUN / "board-0.log").read_text()
-    step("board 0 restarted, kept its bond, and phone 0 came back to it without pairing again")
+    step("board 0's Bluetooth restarted with its bond kept, and phone 0 came back to it without pairing again "
+         "(its node core ran on)")
 
     restart_board(0, forget=True)
     accept_pairing(p0, 120)
     board_says(0, "paired", 60)
     wait_status(p0, rf"{names[0]}, rider 1 of {boards}.*{boards - 1} riders heard", 90)
-    step("board 0 forgot phone 0 while it was away; phone 0 paired again once the rider agreed")
+    step("board 0's Bluetooth restarted without its bonds while phone 0 was away; phone 0 paired again once "
+         "the rider agreed")
 
     main_screen(p1)
     wait_tap(p1, "Forget this board")
@@ -496,8 +516,24 @@ def ride() -> None:
     print("ride: passed")
 
 
+def lock() -> object:
+    """Held until this process ends, by any way it ends."""
+    CACHE.mkdir(parents=True, exist_ok=True)
+    f = open(CACHE / "bench.lock", "a+")
+    try:
+        fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        f.seek(0)
+        sys.exit(f"the bench is busy: {f.read().strip() or 'another bench.py'} runs; wait for it, or stop it")
+    f.truncate(0)
+    f.write(f"bench.py {' '.join(sys.argv[1:])} (pid {os.getpid()})")
+    f.flush()
+    return f
+
+
 if __name__ == "__main__":
     cmd = sys.argv[1] if len(sys.argv) > 1 else ""
+    held = lock() if cmd else None
     if cmd == "up":
         up(int(sys.argv[2]) if len(sys.argv) > 2 else 2)
     elif cmd == "ride":
@@ -516,8 +552,8 @@ if __name__ == "__main__":
         down()
     elif cmd == "engine" and len(sys.argv) == 4 and sys.argv[3] in ("opengl", "v1"):
         engine(phone(int(sys.argv[2])), sys.argv[3])
-    elif cmd == "map" and len(sys.argv) >= 3:
-        measure_map(int(sys.argv[2]), int(sys.argv[3]) if len(sys.argv) > 3 else 30)
+    elif cmd == "map" and len(sys.argv) >= 4 and sys.argv[3] in ("opengl", "v1"):
+        measure_map(int(sys.argv[2]), sys.argv[3], int(sys.argv[4]) if len(sys.argv) > 4 else 30)
     elif cmd == "ui" and len(sys.argv) >= 4:
         serial = phone(int(sys.argv[2]))
         if sys.argv[3] == "list":
