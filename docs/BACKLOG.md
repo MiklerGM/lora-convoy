@@ -179,11 +179,11 @@ Support both once a release has the groups.
 
 ### T-invite: invitations as QR codes, riders' names, several boards
 
-M5's invitation is a string sent as text. Open: a QR code the organiser shows and the rider scans,
-and a link a messenger makes tappable, which wants a domain or app links; riders' names and colours
-in the invitation, so the map stops saying "Rider 2"; one phone setting up several boards, such as a
-pillion's or loaners, without joining each slot itself; a new key for the group when a rider leaves.
-Needed by M7.
+M5's invitation is a string sent as text; since M7 it names the riders, so the map says "Bob", not
+"Rider 2". Open: a QR code the organiser shows and the rider scans, which wants a QR library or
+encoder; a link a messenger makes tappable, which wants a domain or app links; riders' colours; one
+phone setting up several boards, such as a pillion's or loaners, without joining each slot itself;
+a new key for the group when a rider leaves. Needed by M7.
 
 ### T-phone-gps: boards without GNSS
 

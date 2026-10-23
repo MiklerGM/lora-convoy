@@ -216,7 +216,8 @@ class MainActivity : Activity() {
                 "nmea" -> "time from NMEA"
                 else -> "no time yet"
             } + (it.timeErrMs?.let { e -> " ±$e ms" } ?: "")
-            lines.add("Board: ${it.board}, rider ${it.slot + 1}${it.slots?.let { n -> " of $n" } ?: ""}, $group, " +
+            val who = if (mine != null && it.keyed && it.group == mine.groupTag()) "${mine.riderName(it.slot)}, " else ""
+            lines.add("Board: ${it.board}, ${who}rider ${it.slot + 1}${it.slots?.let { n -> " of $n" } ?: ""}, $group, " +
                 (if (it.fix) "GNSS fix" else "no GNSS fix") + ", $clock, ${it.riders} riders heard, " +
                 "${it.dbm ?: "?"} dBm, duty ${it.duty}, started after ${it.reset}")
         }

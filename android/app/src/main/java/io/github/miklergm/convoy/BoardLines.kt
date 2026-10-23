@@ -68,11 +68,11 @@ object BoardLines {
     }
 
     /**
-     * A RIDER line as a [Rider], its ages turned into clock times on this phone's clock at [nowMs].
-     * Unknown values ("?") stay unknown; a negative fix age (the sender's clock is wrong) stays
-     * negative, so the fix shows from the future rather than as fresh.
+     * A RIDER line as a [Rider], its ages turned into clock times on this phone's clock at [nowMs],
+     * named from [group]'s invitation. Unknown values ("?") stay unknown; a negative fix age (the
+     * sender's clock is wrong) stays negative, so the fix shows from the future rather than as fresh.
      */
-    fun rider(line: String, nowMs: Long): Rider? {
+    fun rider(line: String, nowMs: Long, group: Invitation? = null): Rider? {
         if (!line.startsWith("RIDER ")) return null
         val t = tokens(line)
         val slot = t["slot"]?.toIntOrNull() ?: return null
@@ -80,11 +80,13 @@ object BoardLines {
         val lon = t["lon"]?.toDoubleOrNull() ?: return null
         val heardS = t["heard"]?.toDoubleOrNull() ?: return null
         if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
+        // riders count from 1, as the group screen does; slots from 0
+        val name = group?.riderName(slot) ?: "Rider ${slot + 1}"
         return Rider(
             id = "slot$slot",
-            // riders count from 1, as the group screen does; slots from 0
-            name = "Rider ${slot + 1}",
-            short = "${slot + 1}",
+            name = name,
+            // the map's label: a short name whole, a long one cut, an unnamed rider by number
+            short = if (name == "Rider ${slot + 1}") "${slot + 1}" else name.codePoints().limit(8).toArray().let { String(it, 0, it.size) },
             color = PALETTE[slot % PALETTE.size],
             lat = lat,
             lon = lon,
@@ -99,7 +101,7 @@ object BoardLines {
         )
     }
 
-    /** One colour per slot, until riders have names; red and grey are taken. */
+    /** One colour per slot; red and grey are taken. */
     private val PALETTE = intArrayOf(
         0xFF1E88E5.toInt(), 0xFF43A047.toInt(), 0xFFFB8C00.toInt(), 0xFF8E24AA.toInt(),
         0xFF00897B.toInt(), 0xFF6D4C41.toInt(), 0xFF3949AB.toInt(), 0xFFC0CA33.toInt(),

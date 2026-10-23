@@ -26,6 +26,12 @@ class BoardLinesTest {
         assertTrue(r.gpsOk)
         assertFalse(r.help || r.stopped)
         assertEquals("slot5", r.acks)
+        // named from the invitation, the map's label too
+        val group = Invitation(ByteArray(16), 0, 3, 2000, "Bench", listOf("Ann", "Bob", "Christopher"))
+        val named = BoardLines.rider(line, now, group)!!
+        assertEquals("Christopher", named.name)
+        assertEquals("Christop", named.short)
+        assertEquals("3", r.short)
         assertNull(BoardLines.rider(line.replace("acks=5", "acks=-"), now)!!.acks)
     }
 

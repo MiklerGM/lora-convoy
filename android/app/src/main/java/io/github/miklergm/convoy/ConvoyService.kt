@@ -34,6 +34,8 @@ class ConvoyService : Service() {
     /** What this link's board has been sent: this phone's group, and the question for its riders. */
     @Volatile private var sentGroup: Invitation? = null
     @Volatile private var askedRiders = false
+    /** This phone's group, for the riders' names; read again at each status. */
+    @Volatile private var group: Invitation? = null
     /** The board's clash count at its last status on this link, to see it grow. */
     @Volatile private var lastClash: Int? = null
 
@@ -94,7 +96,7 @@ class ConvoyService : Service() {
             stopSelf()
             return
         }
-        BoardLines.rider(line, System.currentTimeMillis())?.let { boardRiders[it.id] = it }
+        BoardLines.rider(line, System.currentTimeMillis(), group)?.let { boardRiders[it.id] = it }
     }
 
     /**
@@ -105,6 +107,7 @@ class ConvoyService : Service() {
     private fun setUp(status: BoardLines.Status) {
         val l = link ?: return
         val mine = GroupActivity.Group.load(this)
+        group = mine
         if (mine != null && mine != sentGroup) {
             if (!status.keyed || status.group != mine.groupTag()) boardRiders.clear()
             mine.commands().forEach(l::send)

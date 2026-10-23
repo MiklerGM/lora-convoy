@@ -40,7 +40,7 @@ board shows only its own position.
 |---|---|---|---|
 | Air format | board and board | binary packets, [PROTOCOL](PROTOCOL.md) from M3 | two bits of the first byte |
 | Phone API | board and app | text lines of `key=value` tokens: over BLE (Nordic UART Service), over TCP to a simulated board, over the USB console on the bench | `proto=` in the status line |
-| Invitation | organiser and riders | one string per rider, `LC1.` and base64url, sent as text ([PROTOCOL](PROTOCOL.md)); a QR code later (T-invite) | its prefix |
+| Invitation | organiser and riders | one string per rider, `LC2.` and base64url, with the riders' names, sent as text ([PROTOCOL](PROTOCOL.md)); a QR code later (T-invite) | its prefix |
 | OsmAnd | app and OsmAnd | AIDL V2 through `android-aidl-lib` 5.4 | OsmAnd's own; checked on connecting |
 
 A side that meets a version it does not know refuses, and says so; it never guesses (D3).

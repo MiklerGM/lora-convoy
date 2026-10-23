@@ -1,5 +1,6 @@
 package io.github.miklergm.convoy
 
+import java.nio.BufferUnderflowException
 import java.nio.ByteBuffer
 import java.security.SecureRandom
 import java.util.Base64
@@ -11,8 +12,9 @@ import javax.crypto.spec.SecretKeySpec
  * which the rider's app sets up their board. It carries the group's key, so whoever holds it can
  * read and forge the group's positions; a key per ride limits what a forwarded one costs (06).
  *
- * `LC1.` and the base64url of: version (1), key (16), slot (1), riders (1), interval in ms (2,
- * big-endian), the name's length (1) and the name in UTF-8. Versioned like every interface (D3).
+ * `LC2.` and the base64url of: version (2), key (16), slot (1), riders (1), interval in ms (2,
+ * big-endian), the group's name, then each rider's name in slot order; a name is its length (1)
+ * and its UTF-8. Versioned like every interface (D3): v1 had no riders' names.
  */
 data class Invitation(
     val key: ByteArray,
@@ -20,19 +22,25 @@ data class Invitation(
     val riders: Int,
     val intervalMs: Int,
     val name: String,
+    /** Each rider's name by slot, as many as riders; an empty one shows as "Rider N". */
+    val names: List<String>,
 ) {
     init {
         require(key.size == 16) { "a group key is 16 bytes" }
         require(riders in 1..32 && slot in 0 until riders) { "slot $slot of $riders riders" }
         require(intervalMs in 500..60000) { "interval $intervalMs ms" }
         require(name.toByteArray(Charsets.UTF_8).size <= MAX_NAME) { "a name of at most $MAX_NAME bytes" }
+        require(names.size == riders) { "a name for each of $riders riders" }
+        require(names.all { it.toByteArray(Charsets.UTF_8).size <= MAX_RIDER_NAME }) {
+            "riders' names of at most $MAX_RIDER_NAME bytes"
+        }
     }
 
     fun encode(): String {
-        val nameBytes = name.toByteArray(Charsets.UTF_8)
-        val b = ByteBuffer.allocate(22 + nameBytes.size)
-            .put(VERSION.toByte()).put(key).put(slot.toByte()).put(riders.toByte())
-            .putShort(intervalMs.toShort()).put(nameBytes.size.toByte()).put(nameBytes)
+        val fields = (listOf(name) + names).map { it.toByteArray(Charsets.UTF_8) }
+        val b = ByteBuffer.allocate(21 + fields.sumOf { 1 + it.size })
+            .put(VERSION.toByte()).put(key).put(slot.toByte()).put(riders.toByte()).putShort(intervalMs.toShort())
+        fields.forEach { b.put(it.size.toByte()).put(it) }
         return PREFIX + Base64.getUrlEncoder().withoutPadding().encodeToString(b.array())
     }
 
@@ -43,14 +51,18 @@ data class Invitation(
     /** The tag the board shows as group= once it has this key. */
     fun groupTag(): Int = groupTag(key)
 
+    /** What the map calls the rider in a slot. */
+    fun riderName(slot: Int): String = names.getOrNull(slot)?.takeIf { it.isNotBlank() } ?: "Rider ${slot + 1}"
+
     override fun equals(other: Any?) = other is Invitation && other.encode() == encode()
     override fun hashCode() = encode().hashCode()
     override fun toString() = "Invitation($name, slot $slot of $riders)"
 
     companion object {
-        const val PREFIX = "LC1."
-        const val VERSION = 1
+        const val PREFIX = "LC2."
+        const val VERSION = 2
         const val MAX_NAME = 32
+        const val MAX_RIDER_NAME = 16
 
         /** Null for anything that is not an invitation this app reads; never a partial one. */
         fun decode(text: String): Invitation? {
@@ -64,24 +76,26 @@ data class Invitation(
             if (bytes.size < 22 || bytes[0].toInt() != VERSION) return null
             val b = ByteBuffer.wrap(bytes)
             b.get()
-            val key = ByteArray(16).also { b.get(it) }
-            val slot = b.get().toInt() and 0xFF
-            val riders = b.get().toInt() and 0xFF
-            val interval = b.getShort().toInt() and 0xFFFF
-            val nameLen = b.get().toInt() and 0xFF
-            if (b.remaining() != nameLen) return null
-            val name = ByteArray(nameLen).also { b.get(it) }.toString(Charsets.UTF_8)
             return try {
-                Invitation(key, slot, riders, interval, name)
+                val key = ByteArray(16).also { b.get(it) }
+                val slot = b.get().toInt() and 0xFF
+                val riders = b.get().toInt() and 0xFF
+                val interval = b.getShort().toInt() and 0xFFFF
+                fun text() = ByteArray(b.get().toInt() and 0xFF).also { b.get(it) }.toString(Charsets.UTF_8)
+                val name = text()
+                val names = List(riders) { text() }
+                if (b.hasRemaining()) null else Invitation(key, slot, riders, interval, name, names)
+            } catch (e: BufferUnderflowException) {
+                null
             } catch (e: IllegalArgumentException) {
                 null
             }
         }
 
-        /** A new group: a fresh key, and one invitation per slot. */
-        fun newGroup(name: String, riders: Int, intervalMs: Int, random: SecureRandom = SecureRandom()): List<Invitation> {
+        /** A new group: a fresh key, and one invitation per rider named, in their order. */
+        fun newGroup(name: String, names: List<String>, intervalMs: Int, random: SecureRandom = SecureRandom()): List<Invitation> {
             val key = ByteArray(16).also { random.nextBytes(it) }
-            return (0 until riders).map { Invitation(key, it, riders, intervalMs, name) }
+            return names.indices.map { Invitation(key, it, names.size, intervalMs, name, names) }
         }
 
         /** The firmware's group tag (codec.c): the first byte of AES-128 under the key of 0xFF "convoy-tag" 0... */

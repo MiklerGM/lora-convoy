@@ -49,8 +49,8 @@ SLOT 0                                     on one, SLOT 1 on the other
 ## 4. The app (M4, M5)
 
 - Find boards, tap one, accept Android's pairing dialog: the main screen shows `Board: …`.
-- Group, Create, then send each other rider their invitation; on each other phone, Join with it.
-  Each board's `group=` tag is the same.
+- Group, Create with the riders' names, then send each other rider their invitation; on each
+  other phone, Join with it. Each board's `group=` tag is the same.
 - OsmAnd, Plugins, LoRa Convoy on: the other riders on the map, ageing grey when not heard.
 - Forget this board, or the board's button held 3 s: the phone can pair again.
 

@@ -153,27 +153,27 @@ which also gives v1's vector:
 
 ## The invitation
 
-One string per rider. The organiser's app makes them for a new group, with a fresh key, and the
-organiser sends each rider theirs; the rider's app keeps it and sets up the board from it. `LC1.`
-and the base64url, without padding, of:
+One string per rider. The organiser's app makes them for a new group from the riders' names, the
+organiser's first, with a fresh key, and the organiser sends each rider theirs; the rider's app
+keeps it, sets up the board from it, and names the riders on the map by it. `LC2.` and the
+base64url, without padding, of:
 
 | Bytes | Field |
 |---|---|
-| 0 | version, 1 |
+| 0 | version, 2 |
 | 1–16 | the group key |
 | 17 | the rider's slot |
 | 18 | riders in the group, 1–32 |
 | 19–20 | the interval in ms, 500–60 000; big-endian |
-| 21 | the length of the name, up to 32 |
-| 22– | the group's name, UTF-8 |
+| 21– | the group's name, up to 32 bytes; then each rider's name in slot order, up to 16 bytes, empty for "Rider N". Each is its length in a byte, then its UTF-8 |
 
-An app refuses anything else whole: another prefix or version, a slot outside the group, bytes
-missing or left over. The invitation carries the key, so whoever holds it can read the group's
+An app refuses anything else whole: another prefix or version, a slot outside the group, a name
+missing, bytes left over. v1 (`LC1.`) had no riders' names. The invitation carries the key, so whoever holds it can read the group's
 positions and send as any of its riders: it goes to one rider, and a new ride gets a new key
 ([06](06-own-protocol.md), security rules).
 
-The key `00 01 … 0f`, slot 2 of 5, every 2 s, "Alps ride":
-`LC1.AQABAgMEBQYHCAkKCwwNDg8CBQfQCUFscHMgcmlkZQ`
+The key `00 01 … 0f`, slot 2 of 5, every 2 s, "Alps ride", riders Ann, Bob, Cid, Dee and Eve:
+`LC2.AgABAgMEBQYHCAkKCwwNDg8CBQfQCUFscHMgcmlkZQNBbm4DQm9iA0NpZANEZWUDRXZl`
 
 The app sends it to the board as `KEY`, `SLOTS`, `SLOT` and `INTERVAL` once per connection, and
 again when the phone joins another group; a board keeps its riders when the key is the one it has.

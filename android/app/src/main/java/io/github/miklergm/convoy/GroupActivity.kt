@@ -24,9 +24,12 @@ class GroupActivity : Activity() {
         super.onCreate(savedInstanceState)
         val pad = (16 * resources.displayMetrics.density).toInt()
         current = TextView(this).apply { textSize = 16f; setPadding(0, pad, 0, pad) }
-        val pasted = EditText(this).apply { hint = "Paste an invitation (LC1.…)"; minLines = 2 }
+        val pasted = EditText(this).apply { hint = "Paste an invitation (${Invitation.PREFIX}…)"; minLines = 2 }
         val name = EditText(this).apply { hint = "Group name"; inputType = InputType.TYPE_CLASS_TEXT }
-        val riders = EditText(this).apply { hint = "Riders, you included (2-32)"; inputType = InputType.TYPE_CLASS_NUMBER }
+        val riders = EditText(this).apply {
+            hint = "Riders' names, you first, with commas between (2 to 32)"
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_CAP_WORDS
+        }
         invitations = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -61,18 +64,18 @@ class GroupActivity : Activity() {
 
     private fun create(nameField: EditText, ridersField: EditText) {
         val name = nameField.text.toString().trim()
-        val count = ridersField.text.toString().toIntOrNull()
+        val names = ridersField.text.split(',').map { it.trim() }.filter { it.isNotEmpty() }
         if (name.isEmpty() || name.toByteArray().size > Invitation.MAX_NAME) {
             nameField.error = "1 to ${Invitation.MAX_NAME} bytes"
             return
         }
-        if (count == null || count !in 2..32) {
-            ridersField.error = "2 to 32"
+        if (names.size !in 2..32 || names.any { it.toByteArray().size > Invitation.MAX_RIDER_NAME }) {
+            ridersField.error = "2 to 32 names, each up to ${Invitation.MAX_RIDER_NAME} bytes"
             return
         }
-        // ponytail: one radio mode and a 2 s interval for every group until group sizing (M6, T-phy)
-        val group = Invitation.newGroup(name, count, 2000)
-        Group.join(this, group[0]) // the organiser rides too, as rider 1
+        // ponytail: one radio mode and a 2 s interval for every group until group sizing (T-phy)
+        val group = Invitation.newGroup(name, names, 2000)
+        Group.join(this, group[0]) // the organiser rides too, first
         Group.saveCreated(this, group[0])
         show()
     }
@@ -80,8 +83,8 @@ class GroupActivity : Activity() {
     private fun show() {
         val mine = Group.load(this)
         current.text = mine?.let {
-            "${it.name}: you are rider ${it.slot + 1} of ${it.riders}, a position every ${it.intervalMs / 1000.0} s. " +
-                "Its boards show group=%02x.".format(it.groupTag())
+            "${it.name}: you are ${it.riderName(it.slot)}, rider ${it.slot + 1} of ${it.riders}, a position every " +
+                "${it.intervalMs / 1000.0} s. Its boards show group=%02x.".format(it.groupTag())
         } ?: "No group yet."
         invitations.removeAllViews()
         val created = Group.created(this) ?: return
@@ -89,11 +92,12 @@ class GroupActivity : Activity() {
         for (slot in 0 until created.riders) {
             if (created.copy(slot = slot) == mine) continue // this phone's own
             val invitation = created.copy(slot = slot).encode()
-            invitations.addView(button("Send rider ${slot + 1} their invitation") {
+            val who = created.riderName(slot)
+            invitations.addView(button("Send $who their invitation") {
                 startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).apply {
                     type = "text/plain"
                     putExtra(Intent.EXTRA_TEXT, invitation)
-                }, "Invitation for rider ${slot + 1}"))
+                }, "Invitation for $who"))
             })
         }
     }
