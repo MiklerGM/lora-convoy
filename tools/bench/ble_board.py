@@ -25,6 +25,7 @@ from bumble.hci import Address
 from bumble.keys import JsonKeyStore
 from bumble.pairing import PairingConfig, PairingDelegate
 from bumble.transport import open_transport
+from bumble.transport.common import TransportInitError
 
 NUS = UUID("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
 RX = UUID("6E400002-B5A3-F393-E0A9-E50E24DCCA9E")  # commands from the phone
@@ -62,7 +63,16 @@ class Board:
         print(f"board {self.index}: {text}", flush=True)
 
     async def run(self):
-        async with await open_transport(f"android-netsim:name=lora-convoy-board-{self.index}") as hci:
+        # netsim comes up with the first emulator: wait for it, as a board waits for its radio
+        for attempt in range(60):
+            try:
+                transport = await open_transport(f"android-netsim:name=lora-convoy-board-{self.index}")
+                break
+            except TransportInitError:
+                if attempt == 59:
+                    raise
+                await asyncio.sleep(2)
+        async with transport as hci:
             device = Device.with_hci(self.name, self.address, hci.source, hci.sink)
             self.device = device
             BONDS.mkdir(parents=True, exist_ok=True)
@@ -159,7 +169,8 @@ class Board:
         self.say("forgot its phone")
         await self.notify(connection, b"FORGOTTEN\n")
         await asyncio.sleep(1)
-        await connection.disconnect()
+        if self.connection is connection:  # the phone often goes first
+            await connection.disconnect()
 
 
 if __name__ == "__main__":
