@@ -28,6 +28,9 @@ typedef struct {
      * arrival, and how far that may be off. The board's own measurement, until E0 gives one. */
     int32_t nmea_lag_us;
     int32_t nmea_err_us;
+    /* Listen in our own slot instead of sending, once in this many frames at random; 0 never. Two
+     * radios given one slot send together, and never hear each other otherwise (T-join). */
+    uint16_t listen_one_in;
 } node_config_t;
 
 typedef struct {
@@ -88,6 +91,7 @@ typedef struct {
     uint32_t tx_skipped;     /* slots passed over without a position to send, or duty left */
     uint32_t tx_unsure;      /* slots passed over: our time was too uncertain to keep to them */
     uint32_t tx_late;        /* slots missed: we were asked after the moment had gone */
+    uint32_t tx_listened;    /* slots spent listening for another radio in ours */
 } node_t;
 
 void node_init(node_t *n, const node_config_t *cfg, uint32_t seed);

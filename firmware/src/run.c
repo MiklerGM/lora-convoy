@@ -343,7 +343,8 @@ void run_start(const char *board, const char *reset) {
     const uint8_t slot = (uint8_t)(h % NODE_SLOTS);
 #endif
     node_config_t cfg = {.slot = slot, .slots = NODE_SLOTS, .interval_ms = NODE_INTERVAL_MS, .duty_permille = 100,
-                         .phy = PHY_V0, .nmea_lag_us = NODE_NMEA_LAG_US, .nmea_err_us = NODE_NMEA_ERR_US};
+                         .phy = PHY_V0, .nmea_lag_us = NODE_NMEA_LAG_US, .nmea_err_us = NODE_NMEA_ERR_US,
+                         .listen_one_in = 32};
     setup_t setup;
     const bool kept = port_setup_load(&setup, sizeof(setup)) && setup.version == SETUP_VERSION &&
                       setup.slot < NODE_SLOTS && setup.slots >= 1 && setup.slots <= NODE_SLOTS &&

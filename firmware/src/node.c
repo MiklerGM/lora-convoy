@@ -242,6 +242,11 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
         n->tx_unsure++;
         return 0;
     }
+    /* Now and then our slot is for listening: another radio in it is heard then, as a clash. */
+    if (n->cfg.listen_one_in && next_random(n) % n->cfg.listen_one_in == 0) {
+        n->tx_listened++;
+        return 0;
+    }
     /* Nothing true to say before the first fix. */
     const uint32_t air_ms = (phy_airtime_us(&n->cfg.phy, PKT_POSITION_LEN) + 999) / 1000;
     const uint32_t limit_ms = 3600u * n->cfg.duty_permille;

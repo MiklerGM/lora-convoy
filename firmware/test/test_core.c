@@ -316,6 +316,16 @@ static void test_node_sends(void) {
         tick(&quiet, s);
         assert(node_poll_tx(&quiet, s, b, sizeof(b)) == 0);
     }
+    /* Now and then it listens in its slot instead, at random: once in four frames here. */
+    node_config_t listener = CFG;
+    listener.listen_one_in = 4;
+    node_init(&quiet, &listener, 1);
+    int heard_out = 0;
+    for (int64_t s = T0; s < T0 + 800 * SEC; s += 1000) {
+        tick(&quiet, s);
+        heard_out += node_poll_tx(&quiet, s, b, sizeof(b)) > 0;
+    }
+    assert(quiet.tx_listened > 70 && quiet.tx_listened < 130 && heard_out + (int)quiet.tx_listened == 400);
     /* Nor while its time is less sure than the slots allow: 200 ms against a budget of 183.6. */
     node_config_t rough = CFG;
     rough.nmea_err_us = 200000;

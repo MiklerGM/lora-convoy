@@ -215,7 +215,7 @@ static void world_init(world_t *w, const scenario_t *sc, int64_t utc0_ms) {
         node_config_t cfg = {.keyed = sc->groups > 0, .slot = (uint8_t)w->slot_of[i],
                              .slots = (uint8_t)w->size_of[i], .interval_ms = sc->interval_ms,
                              .duty_permille = 100, .phy = PHY_V0, .nmea_lag_us = (int32_t)c->told_lag_us,
-                             .nmea_err_us = (int32_t)c->told_err_us};
+                             .nmea_err_us = (int32_t)c->told_err_us, .listen_one_in = 32};
         memset(cfg.key, w->group_of[i] + 1, sizeof(cfg.key));
         node_init(&w->node[i], &cfg, splitmix(sc->seed * 1000u + (uint32_t)i));
         w->clock[i].drift = c->drift_ppm * 1e-6 * ((double)(rnd(&w->rng) % 2001) / 1000 - 1);
@@ -653,6 +653,24 @@ int main(int argc, char **argv) {
                near[n_near * 95 / 100], far[n_far / 2], quick, by_end);
         assert(spread > 7000 && near[n_near * 95 / 100] <= 3.5 && far[n_far / 2] > 30 && far[n_far / 2] < 1e9);
         assert(quick >= 8 && by_end > quick && by_end < 19);
+    }
+
+    /* Two riders given one invitation, so one slot: their packets meet every frame, nobody hears
+     * either, and they cannot hear each other while both send. Listening in their slot one frame in
+     * 32, at random, they hear each other within a minute or so, as a clash (T-join). */
+    {
+        static world_t x;
+        const scenario_t five = {5, 2000, 600 * SEC, 0, 11, 1, GOOD, 0, false};
+        world_init(&x, &five, 1792670400000ll);
+        x.node[4].cfg.slot = 3;
+        int64_t t = 0, found = -1;
+        for (; t < five.duration_us && found < 0; t += STEP_US) {
+            world_step(&x, t);
+            if (x.node[3].rx_clash || x.node[4].rx_clash) found = t;
+        }
+        printf("sim: two riders in one slot are unseen by the others, and hear each other as a clash after %.0f s\n",
+               (double)found / SEC);
+        assert(found > 0 && found < 300 * SEC);
     }
 
     /* Two groups of three on one channel: each sees only its own riders, and drops the other's
