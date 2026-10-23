@@ -90,6 +90,46 @@ def wait_ports_free(phones: int, timeout=60) -> None:
         time.sleep(1)
 
 
+def bluetooth_irk(serial: str) -> str | None:
+    conf = adb(serial, "shell", "cat", "/data/misc/bluedroid/bt_config.conf", check=False)
+    m = re.search(r"LE_LOCAL_KEY_IRK = (\w+)", conf)
+    return m.group(1) if m else None
+
+
+def bluetooth_on(serial: str, on: bool, timeout=30) -> None:
+    adb(serial, "shell", "cmd", "bluetooth_manager", "enable" if on else "disable", check=False)
+    deadline = time.time() + timeout
+    while adb(serial, "shell", "settings", "get", "global", "bluetooth_on", check=False).strip() != ("1" if on else "0"):
+        if time.time() > deadline:
+            sys.exit(f"{serial}: Bluetooth would not turn {'on' if on else 'off'}")
+        time.sleep(1)
+
+
+def own_bluetooth_keys(serial: str, taken: list) -> str:
+    """Restarts the phone's Bluetooth stack without its saved keys until it has made new ones."""
+    adb(serial, "root", check=False)
+    deadline = time.time() + 60  # adbd restarts as root, and commands before it would fail
+    while adb(serial, "shell", "id", "-u", check=False).strip() != "0":
+        if time.time() > deadline:
+            sys.exit(f"{serial}: adb would not run as root")
+        time.sleep(1)
+    shared = bluetooth_irk(serial)
+    for _ in range(5):
+        bluetooth_on(serial, False)
+        adb(serial, "shell", "rm -f /data/misc/bluedroid/bt_config.conf /data/misc/bluedroid/bt_config.bak; "
+                             "pkill -f com.android.bluetooth", check=False)
+        time.sleep(3)
+        bluetooth_on(serial, True)
+        for _ in range(20):  # the stack writes its new keys a little after it is on
+            irk = bluetooth_irk(serial)
+            if irk:
+                break
+            time.sleep(1)
+        if irk and irk != shared and irk not in taken:
+            return irk
+    sys.exit(f"{serial}: its Bluetooth keys stay those of the AVD it was copied from")
+
+
 def booted(serial: str) -> bool:
     return adb(serial, "shell", "getprop", "sys.boot_completed", check=False).strip() == "1"
 
@@ -116,6 +156,12 @@ def up(phones: int) -> None:
         if time.time() > deadline:
             sys.exit("the phones did not boot in 10 minutes")
         time.sleep(5)
+    # Copies of one AVD share its Bluetooth keys, so a board would take one phone for another:
+    # each gets keys of its own, as a real phone has.
+    irks = []
+    for i in range(phones):
+        irks.append(own_bluetooth_keys(phone(i), irks))
+    print("up: each phone's Bluetooth identity key: " + ", ".join(k[:8] for k in irks))
     # the boards' Bluetooth after the phones': netsim starts with the first emulator
     for b in range(phones + 1):
         start(f"board-{b}", str(VENV / "bin/python"), "-I", str(ROOT / "tools/bench/ble_board.py"), str(b), str(PORT))
@@ -178,10 +224,15 @@ def settle(serial: str) -> None:
 
 def wait_tap(serial: str, want: str, timeout=30) -> None:
     deadline = time.time() + timeout
+    tries = 0
     while not tap(serial, want):
         if time.time() > deadline:
             raise AssertionError(f"{serial}: no {want!r} on screen")
         settle(serial)
+        tries += 1
+        if tries % 2 == 0:  # below the fold, perhaps: scroll down, and back up the time after
+            y1, y2 = ("1600", "800") if tries % 4 == 2 else ("800", "1600")
+            adb(serial, "shell", "input", "swipe", "540", y1, "540", y2, "300", check=False)
         time.sleep(2)
 
 
@@ -377,6 +428,22 @@ def ride() -> None:
     wait_status(p1, r"Stopped\.", 30)
     board_says(1, "forgot its phone")
     step("phone 1 forgot its board: both sides dropped the bond")
+
+    # One owner: with phone 0 away (a connected board does not advertise, as the firmware's
+    # one-connection NimBLE does not), phone 1, free now, tries board 0, which turns it away.
+    main_screen(p0)
+    wait_tap(p0, "Stop")
+    main_screen(p1)
+    wait_tap(p1, "Find boards")
+    wait_tap(p1, "LoRaConvoy-C0FFEE00", 60)
+    board_says(0, "it has an owner", 60)
+    main_screen(p1)
+    wait_tap(p1, "Stop")
+    main_screen(p0)
+    wait_tap(p0, "Find boards")
+    wait_tap(p0, "LoRaConvoy-C0FFEE00", 60)
+    wait_status(p0, rf"{names[0]}, rider 1 of {boards}.*{boards - 1} riders heard", 90)
+    step("board 0 turned phone 1 away, having an owner; phone 0 came back to it without pairing")
     print("ride: passed")
 
 
@@ -385,7 +452,17 @@ if __name__ == "__main__":
     if cmd == "up":
         up(int(sys.argv[2]) if len(sys.argv) > 2 else 2)
     elif cmd == "ride":
-        ride()
+        try:
+            ride()
+        except AssertionError:
+            # what each phone showed when it failed, for whoever reads the log
+            for i in range(int((RUN / "phones").read_text())):
+                with open(RUN / f"phone-{i}-failed.png", "wb") as f:
+                    f.write(subprocess.run(["adb", "-s", phone(i), "exec-out", "screencap", "-p"],
+                                           capture_output=True).stdout)
+                (RUN / f"phone-{i}-failed.txt").write_text("\n".join(t for t, _, _ in screen(phone(i))))
+            print(f"ride: FAILED; each phone's screen at the failure is in {RUN}/phone-*-failed.*")
+            raise
     elif cmd == "down":
         down()
     elif cmd == "ui" and len(sys.argv) >= 4:

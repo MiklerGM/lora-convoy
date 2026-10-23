@@ -32,7 +32,10 @@ flowchart LR
 - **`ble_board.py`** makes each board a Bluetooth peripheral in netsim, as `ble_nus.c` serves one:
   the Nordic UART Service, writes only over an encrypted link after Just Works pairing, one owner,
   FORGET, and bonds kept across restarts as a board keeps them in flash. It runs on Google's Bumble.
-- **`bench.py`** starts it all and rides it: `up [PHONES]`, `ride`, `down`.
+- **`bench.py`** starts it all and rides it: `up [PHONES]`, `ride`, `down`. The phones are
+  read-only copies of one AVD, which would share its Bluetooth keys and so look like one phone to
+  a board; `up` has each make keys of its own, as a real phone has. A failed ride leaves each
+  phone's screen at the failure beside the logs.
 
 ## What a ride checks
 
@@ -51,6 +54,7 @@ flowchart LR
    phone pairs again once the rider agrees (Android 15 does it by itself; on phones that do not,
    the app drops the stale bond after two refused sessions, BondHealth).
 8. Phone 1 forgets its board: the board drops the bond, says FORGOTTEN, and Android drops its own.
+9. Phone 1, free now, tries phone 0's board, which turns it away: one owner per board.
 
 ## Running it
 
