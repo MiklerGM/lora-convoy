@@ -52,6 +52,10 @@ typedef struct {
 static node_t s_node;
 static api_t s_api;
 static port_mutex_t s_lock;
+/* One command at a time, whichever transport it came on, from its taking to its saving: a save
+ * then always follows the setup it took, never an older one over a newer. Apart from s_lock, which
+ * stays as short as the radio needs. */
+static port_mutex_t s_command_lock;
 static atomic_bool s_reapply = ATOMIC_VAR_INIT(false);
 static atomic_bool s_restart_after_bond_clear = ATOMIC_VAR_INIT(false);
 static const char *s_reset = "other";
@@ -112,6 +116,7 @@ static void gather(void *ctx, const char *line) {
  * forget the paired phone, which only the transport knows how to answer. */
 static bool command(char *line, replies_t *out) {
     out->n = 0;
+    port_mutex_lock(s_command_lock);
     port_mutex_lock(s_lock);
     api_command(&s_api, line, port_uptime_us(), gather, out);
     const bool forget = s_api.forget, restart = s_api.restart, bootloader = s_api.bootloader;
@@ -131,6 +136,7 @@ static bool command(char *line, replies_t *out) {
         if (!kept) gather(out, "ERR the setup could not be kept");
     }
     memset(&setup, 0, sizeof(setup));
+    port_mutex_give(s_command_lock);
     if (restart) port_restart(0);
 #ifdef PORT_BOOTLOADER
     /* the UF2 drive, for a new image without the reset button's double tap */
@@ -379,6 +385,7 @@ void run_start(const char *board, const char *reset) {
     }
     memset(&setup, 0, sizeof(setup));
     s_lock = port_mutex_create();
+    s_command_lock = port_mutex_create();
     node_init(&s_node, &cfg, port_random() ^ h);
     s_api = (api_t){.node = &s_node, .board = board, .reset = s_reset, .power = NODE_POWER_LEVEL,
                     .tx_dbm = radio_tx_dbm};
