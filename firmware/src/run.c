@@ -59,6 +59,8 @@ static port_mutex_t s_lock;
  * radio needs. */
 static port_mutex_t s_command_lock;
 static atomic_bool s_reapply = ATOMIC_VAR_INIT(false);
+/* A new answer to our call for help: the status goes to the phone now, not in up to 10 s (D16). */
+static atomic_bool s_status_now = ATOMIC_VAR_INIT(false);
 static atomic_bool s_restart_after_bond_clear = ATOMIC_VAR_INIT(false);
 static const char *s_reset = "other";
 
@@ -266,6 +268,7 @@ static void radio_task(void *arg) {
     }
     int64_t next_verify = port_uptime_us() + VERIFY_US;
     char text[API_LINE];   /* a RIDER line is up to that, a group of 32 answering a call included */
+    char news[API_LINE];
     for (;;) {
         port_wdt_feed(watch);
         uint8_t buf[256];
@@ -285,9 +288,17 @@ static void radio_task(void *arg) {
             /* E0's offset from its RxDone, where DIO1 stamped it; a poll's time is no measure */
             if (taken && rx_at) node_on_rx_done(&s_node, rx_at);
             if (taken) node_format_rider(&s_node, buf[2], now, text, sizeof(text));
+            /* A rider's call newly answered goes to the phone now, with its answerers; our own,
+             * with the status, which the status task sends in its order with the commands. */
+            const int caller = s_node.answered_news;
+            s_node.answered_news = -1;
+            if (caller >= 0) node_format_rider(&s_node, (unsigned)caller, now, news, sizeof(news));
+            if (s_node.help_news) atomic_store(&s_status_now, true);
+            s_node.help_news = false;
             port_mutex_give(s_lock);
             if (taken) {
                 if (ble_nus_connected()) ble_nus_send_line(text);
+                if (caller >= 0 && ble_nus_connected()) ble_nus_send_line(news);
             } else {
                 snprintf(text, sizeof(text), "RX dropped len=%u rssi=%d", (unsigned)n, rssi);
             }
@@ -343,7 +354,7 @@ static void service_task(void *arg) {
                 port_restart(RESTART_NOTE_MAGIC | RESTART_FOR_BLE);
             }
         }
-        if ((status_ms += 100) >= STATUS_PUSH_MS) {
+        if ((status_ms += 100) >= STATUS_PUSH_MS || atomic_exchange(&s_status_now, false)) {
             status_ms = 0;
             if (ble_nus_connected()) {
                 port_mutex_lock(s_command_lock);

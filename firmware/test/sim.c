@@ -435,13 +435,29 @@ static void serve_line(board_t *b, char *line, int64_t now_us) {
     b->api.forget = b->api.restart = b->api.bootloader = b->api.radio_changed = false;
 }
 
+/* A packet a board took: its rider's line to the phone, and the news it brought, at once, as a
+ * board sends them (run.c): a call newly answered with its caller's line, an answer to our own call
+ * with the status (D16). */
 static void on_taken(void *ctx, int node, unsigned slot, int64_t t) {
     world_t *w = ctx;
     board_t *b = &s_boards[node];
+    node_t *n = &w->node[node];
+    const int caller = n->answered_news;
+    const bool status = n->help_news;
+    n->answered_news = -1;
+    n->help_news = false;
     if (b->client < 0) return;
     char line[API_LINE];
-    node_format_rider(&w->node[node], slot, t, line, sizeof(line));
+    node_format_rider(n, slot, t, line, sizeof(line));
     send_line(b, line);
+    if (caller >= 0) {
+        node_format_rider(n, (unsigned)caller, t, line, sizeof(line));
+        send_line(b, line);
+    }
+    if (status) {
+        api_status(&b->api, t, line, sizeof(line));
+        send_line(b, line);
+    }
 }
 
 static int listen_on(int port) {
@@ -636,6 +652,50 @@ int main(int argc, char **argv) {
         printf("sim: serve's boards told MODE 9 250 by their phones: %d sent in 20 s before, %d after, %lu slots held\n",
                before, v.sent - before, held);
         assert(before > 20 && v.sent - before > 20 && held == 0 && v.node[0].phy.sf == 9);
+    }
+
+    /* sim serve tells a phone of a new answer to a call for help at once, as a board does (D16):
+     * the caller's phone gets the status with the answer in it, a bystander's the caller's line with
+     * its answerer, with the packet that brought it rather than with the next status. Two phones on
+     * socket pairs; no status but news is sent here. */
+    {
+        static world_t q;
+        const scenario_t three = {3, 2000, 0, 0, 17, 1, GOOD, 0, false};
+        world_init(&q, &three, 1792670400000ll);
+        q.on_taken = on_taken;
+        q.ctx = &q;
+        int phone[2][2];
+        for (int i = 0; i < 3; i++) {
+            s_boards[i] = (board_t){.listener = -1, .client = -1, .api = {.node = &q.node[i], .board = "sim",
+                                    .reset = "poweron", .power = 3, .tx_dbm = sim_dbm}};
+        }
+        for (int k = 0; k < 2; k++) {
+            assert(socketpair(AF_UNIX, SOCK_STREAM, 0, phone[k]) == 0);
+            assert(fcntl(phone[k][1], F_SETFL, O_NONBLOCK) == 0);
+            s_boards[k].client = phone[k][0];
+        }
+        int64_t t = 0;
+        for (; t < 10 * SEC; t += STEP_US) world_step(&q, t);
+        node_set_help(&q.node[0], true);
+        for (; __builtin_popcount(q.node[0].help_heard_by) < 2; t += STEP_US) {
+            world_step(&q, t);
+            assert(t < 30 * SEC);
+        }
+        static char got[2][1 << 16];
+        for (int k = 0; k < 2; k++) {
+            size_t n = 0;
+            for (ssize_t r; (r = read(phone[k][1], got[k] + n, sizeof(got[k]) - 1 - n)) > 0;) n += (size_t)r;
+            got[k][n] = '\0';
+            close(phone[k][0]);
+            close(phone[k][1]);
+            s_boards[k].client = -1;
+        }
+        const bool caller = strstr(got[0], "STATUS ") && strstr(got[0], " help=1 heard=");
+        const bool bystander = strstr(got[1], "RIDER slot=0 ") && strstr(got[1], " answered=2 ");
+        printf("sim: serve tells the phones of an answer to a call for help with the packet that brings it: the "
+               "caller's in its status %s, a bystander's in the caller's line %s\n", caller ? "yes" : "NO",
+               bystander ? "yes" : "NO");
+        assert(caller && bystander);
     }
 
     /* A mode changed under a group (D15): ten riders on SF11/250, whose 370.688 ms packet is longer

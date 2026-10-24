@@ -232,7 +232,8 @@ ms. `txlead=` is how late its own packets' RF began after their moment, least/me
 the radio's TxDone less the airtime (E0).
 
 Unasked, the board sends a `RIDER` line for every packet it takes, and its status every 10 s while
-a phone is connected. The app sends `STATUS` every 10 s, which keeps the link from being dropped
+a phone is connected; and, with the packet that brings a new answer to a call for help, the
+caller's `RIDER` line with its answerers, or its own status when the call is its own. The app sends `STATUS` every 10 s, which keeps the link from being dropped
 as silent. Commands are case-blind.
 
 ```

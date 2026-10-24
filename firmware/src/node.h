@@ -93,6 +93,10 @@ typedef struct {
     bool help;               /* our rider asks for help (the app's HELP) ... */
     uint8_t help_call;       /* ... in the call of this number ... */
     uint32_t help_heard_by;  /* ... and these slots say they hear that call, a bit each */
+    /* News for the phone, at once rather than with the next status, for the platform to send and
+     * clear: a slot new to help_heard_by; a rider whose call another has newly answered, or -1. */
+    bool help_news;
+    int answered_news;
     uint8_t help_next;       /* where the search for a call for help to answer starts */
     bool stopped;            /* slower than walking for a minute */
     int64_t slow_since_us;   /* when it last went under 5 km/h; 0 while faster */

@@ -573,8 +573,17 @@ static void test_node_help(void) {
     }
     assert(pkt_open(b, len, &g, &p) == PKT_OK && !(p.status & ST_HELP) && p.help_heard == 1);
     assert(p.heard_call == a.help_call);
-    assert(node_on_packet(&a, b, len, -80, 0, t) && a.help_heard_by == 1u << 2);
-    assert(node_on_packet(&w, b, len, -80, 0, t));
+    /* A new answerer is news, for the phone at once rather than with the next status: to A of its
+     * own call, to W of A's. The same answer heard again is none. */
+    assert(node_on_packet(&a, b, len, -80, 0, t) && a.help_heard_by == 1u << 2 && a.help_news);
+    a.help_news = false;
+    assert(node_on_packet(&w, b, len, -80, 0, t) && w.answered_news == 1);
+    w.answered_news = -1;
+    for (len = 0; !len; t += 1000) {
+        tick(&c, t);
+        len = node_poll_tx(&c, t, b, sizeof(b));
+    }
+    assert(node_on_packet(&a, b, len, -80, 0, t) && !a.help_news);
     node_format_rider(&w, 1, t, line, sizeof(line));
     assert(strstr(line, " help=1 stopped=0 answered=2 "));
     /* An answer to another rider's call is not one to ours. */

@@ -50,6 +50,7 @@ void node_init(node_t *n, const node_config_t *cfg, uint32_t seed) {
     if (cfg->keyed) group_key_init(&n->group, cfg->key);
     n->last_frame = n->phase_frame = -1;
     n->rx_slot = -1;
+    n->answered_news = -1;
 }
 
 void node_set_key(node_t *n, const uint8_t key[16]) {
@@ -431,11 +432,16 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
      * ponytail: an answer counts for the rest of the call, however long ago it came; the answerer's
      * own heard= tells how long since we heard it at all. */
     if (p.help_heard == n->cfg.slot) {
-        if (n->help && p.heard_call == n->help_call) n->help_heard_by |= 1u << p.slot;
+        if (n->help && p.heard_call == n->help_call && !(n->help_heard_by & 1u << p.slot)) {
+            n->help_heard_by |= 1u << p.slot;
+            n->help_news = true;
+        }
     } else if (p.help_heard < NODE_SLOTS) {
         rider_t *caller = &n->riders[p.help_heard];
-        if (caller->known && (caller->last.status & ST_HELP) && caller->last.call == p.heard_call) {
+        if (caller->known && (caller->last.status & ST_HELP) && caller->last.call == p.heard_call &&
+            !(caller->answered_by & 1u << p.slot)) {
             caller->answered_by |= 1u << p.slot;
+            n->answered_news = p.help_heard;
         }
     }
     return true;
