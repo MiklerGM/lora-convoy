@@ -544,6 +544,15 @@ static void test_node_hears(void) {
     assert(strstr(line, " time=none ") && strstr(line, " cal=phone/250 "));
     uint8_t out[PKT_POSITION_LEN];
     assert(node_next_tx_us(&blind, 0) == INT64_MAX && node_poll_tx(&blind, 3 * SEC, out, sizeof(out)) == 0);
+    /* Its GNSS comes, and says the phone was 2 s ahead: at our clock's 10 s it is 12:00:13, not
+     * 12:00:15. The fix heard at 0 is told by the better calendar now, the moment it was heard
+     * meaning the same: 12:00:03 then, so 3 s old there, 13 s at 10 s. */
+    gnss_fix_t late = fix_at(1792670413000ll, false);
+    node_on_fix(&blind, &late, 10 * SEC);
+    node_format_rider(&blind, 2, 10 * SEC, line, sizeof(line));
+    assert(strstr(line, " fix_age=13 "));
+    node_format_status(&blind, 10 * SEC, line, sizeof(line));
+    assert(strstr(line, " time=nmea ") && strstr(line, " cal=nmea/"));
     node_format_status(&n, 9 * SEC, line, sizeof(line));
     assert(starts(line, "slot=1 slots=4 keyed=1 group=86c91c92 mode=7/250 fix=0 ") && strstr(line, " riders=3 "));
     assert(strstr(line, " time=nmea err=1.") && strstr(line, " budget=183.5 lag=? "));
