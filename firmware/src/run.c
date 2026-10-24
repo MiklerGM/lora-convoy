@@ -265,7 +265,7 @@ static void radio_task(void *arg) {
         port_sleep_ms(5000);
     }
     int64_t next_verify = port_uptime_us() + VERIFY_US;
-    char text[256];
+    char text[API_LINE];   /* a RIDER line is up to that, a group of 32 answering a call included */
     for (;;) {
         port_wdt_feed(watch);
         uint8_t buf[256];

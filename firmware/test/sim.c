@@ -351,7 +351,7 @@ static outcome_t run(const scenario_t *sc, bool print) {
         }
     }
     /* The end of the run: what one node shows for the next. */
-    char line[256];
+    char line[API_LINE];
     for (int i = 0; print && i < sc->nodes; i++) {
         node_format_rider(&s_run.node[i], (unsigned)((s_run.slot_of[i] + 1) % s_run.size_of[i]),
                           local_us(&s_run, i, sc->duration_us), line, sizeof(line));
@@ -429,7 +429,7 @@ static void on_taken(void *ctx, int node, unsigned slot, int64_t t) {
     world_t *w = ctx;
     board_t *b = &s_boards[node];
     if (b->client < 0) return;
-    char line[256];
+    char line[API_LINE];
     node_format_rider(&w->node[node], slot, t, line, sizeof(line));
     send_line(b, line);
 }
