@@ -747,7 +747,7 @@ static void ask(api_t *api, const char *command) {
     char line[64];
     snprintf(line, sizeof(line), "%s", command);
     n_replies = 0;
-    api_command(api, line, 10 * SEC, collect, NULL);
+    api_command(api, line, 10 * SEC, 10 * SEC, collect, NULL);
 }
 
 static const char *api_status_of(const api_t *api) {
@@ -784,6 +784,19 @@ static void test_api(void) {
              (unsigned long)n.boot);
     assert(n_replies == 2 && starts(replies[0], want) && strcmp(replies[1], "RIDERS 1") == 0);
     assert(strstr(replies[0], " gps=1 help=0 stopped=0 "));
+    /* A line that came at 9 s and waited for the node's lock while the rider was heard again, at
+     * 9.5 s: its answer is told as of when it is made, so no rider is heard in the future, which
+     * the phone could not read. Only CLOCK answers with when the line came. */
+    assert(node_on_packet(&n, b, packet(b, &g, 2, 1, 11, 64193), -71, 33, 9 * SEC + SEC / 2));
+    char waited[16] = "RIDERS";
+    n_replies = 0;
+    api_command(&api, waited, 9 * SEC, 10 * SEC, collect, NULL);
+    assert(n_replies == 2 && strstr(replies[0], " heard=0.5 "));
+    snprintf(waited, sizeof(waited), "CLOCK 123456");
+    n_replies = 0;
+    api_command(&api, waited, 9 * SEC, 10 * SEC, collect, NULL);
+    snprintf(want, sizeof(want), "CLOCK t1=123456 boot=%08lx rx=9000000 tx=10000000", (unsigned long)n.boot);
+    assert(n_replies == 1 && strcmp(replies[0], want) == 0);
 
     /* The key it has, sent again by a phone that reconnects: the riders stay. */
     ask(&api, "KEY 000102030405060708090a0b0c0d0e0f");

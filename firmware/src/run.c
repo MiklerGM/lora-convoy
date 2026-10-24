@@ -117,15 +117,14 @@ static void gather(void *ctx, const char *line) {
 }
 
 /* Runs one command and carries out what api_command leaves to its caller. True if it asked to
- * forget the paired phone, which only the transport knows how to answer. */
-static int64_t uptime_us(void) { return port_uptime_us(); }
-
-/* came_us: when the line came, before any lock was waited for, which CLOCK answers with. */
+ * forget the paired phone, which only the transport knows how to answer. came_us: when the line
+ * came, before any lock was waited for, which CLOCK answers with; all else is told as of the
+ * moment the command runs, after any rider heard while it waited. */
 static bool command(char *line, replies_t *out, int64_t came_us) {
     out->n = 0;
     port_mutex_lock(s_command_lock);
     port_mutex_lock(s_lock);
-    api_command(&s_api, line, came_us, gather, out);
+    api_command(&s_api, line, came_us, port_uptime_us(), gather, out);
     const bool forget = s_api.forget, restart = s_api.restart, bootloader = s_api.bootloader;
     if (s_api.radio_changed) atomic_store(&s_reapply, true);
     setup_t setup = {.version = SETUP_VERSION, .keyed = s_node.cfg.keyed, .slot = s_node.cfg.slot,
@@ -429,7 +428,7 @@ void run_start(const char *board, const char *reset) {
     s_lock = port_mutex_create();
     s_command_lock = port_mutex_create();
     node_init(&s_node, &cfg, port_random() ^ h);
-    s_api = (api_t){.node = &s_node, .board = board, .reset = s_reset, .power = NODE_POWER_LEVEL, .clock_us = uptime_us,
+    s_api = (api_t){.node = &s_node, .board = board, .reset = s_reset, .power = NODE_POWER_LEVEL,
                     .tx_dbm = radio_tx_dbm};
     LOGI(TAG, "LoRa Convoy, protocol v%d, phone API %d, on %s after %s: %s, slot %u of %u%s, every %u ms, %d dBm",
          PKT_VERSION, API_PROTO, board, s_reset,

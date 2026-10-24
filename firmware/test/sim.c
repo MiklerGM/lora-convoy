@@ -429,7 +429,7 @@ static void send_line(void *ctx, const char *line) {
  * board, short of what only Bluetooth can do: a mode asked for its radio takes at once, as a board's
  * does once radio_apply succeeds, and the node is told (D15). */
 static void serve_line(board_t *b, char *line, int64_t now_us) {
-    api_command(&b->api, line, now_us, send_line, b);
+    api_command(&b->api, line, now_us, now_us, send_line, b);
     if (b->api.forget) send_line(b, "ERR FORGET is for Bluetooth");
     if (b->api.radio_changed) node_phy_applied(b->api.node, &b->api.node->cfg.phy);
     b->api.forget = b->api.restart = b->api.bootloader = b->api.radio_changed = false;

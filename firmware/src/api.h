@@ -46,7 +46,6 @@ typedef struct {
     const char *reset;              /* why the board last started */
     uint8_t power;                  /* the level the radio is to hold, 0 the strongest */
     int (*tx_dbm)(uint8_t level);   /* what a level puts out on this board */
-    int64_t (*clock_us)(void);      /* our clock now, for CLOCK's answer; none: the command's time */
     /* Set by a command for the caller to carry out, outside the node's lock. */
     bool radio_changed;             /* power or mode: the caller applies the radio again */
     bool setup_changed;             /* key, slots, interval or mode: the caller keeps them over a restart */
@@ -56,8 +55,10 @@ typedef struct {
     bool bootloader;
 } api_t;
 
-/* One line from the phone or the console. The caller holds the node's lock. */
-void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, void *ctx);
+/* One line from the phone or the console. The caller holds the node's lock. came_us: when the line
+ * came, before any lock was waited for, which CLOCK answers with; now_us: the command's time, taken
+ * under the lock, so no moment the node has kept is after it. */
+void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_reply_fn reply, void *ctx);
 
 /* The status line, which the board also sends unasked. */
 int api_status(const api_t *api, int64_t now_us, char *buf, size_t cap);

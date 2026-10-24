@@ -75,7 +75,7 @@ static bool mode(const char *s, phy_t now, phy_t *out) {
     return phy_supported(out);
 }
 
-void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, void *ctx) {
+void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_reply_fn reply, void *ctx) {
     char out[API_LINE];
     phy_t phy;
     uint8_t key[16];
@@ -96,10 +96,9 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         }
         snprintf(out, sizeof(out), "RIDERS %d", known);
     } else if (strcasecmp(line, "clock") == 0 && number(arg, 0, LONG_MAX, &v)) {
-        /* when the request came, the command's time, and when the answer is made */
-        const int64_t made = api->clock_us ? api->clock_us() : now_us;
+        /* when the request came, and when the answer is made */
         snprintf(out, sizeof(out), "CLOCK t1=%ld boot=%08lx rx=%lld tx=%lld", v, (unsigned long)api->node->boot,
-                 (long long)now_us, (long long)made);
+                 (long long)came_us, (long long)now_us);
     } else if (strcasecmp(line, "time") == 0 && phone_time(arg, &at_ms, &utc_ms, &err_ms)) {
         node_set_phone_time(api->node, at_ms * 1000, utc_ms * 1000, err_ms * 1000);
         snprintf(out, sizeof(out), "OK time=phone err=%lld", (long long)err_ms);
