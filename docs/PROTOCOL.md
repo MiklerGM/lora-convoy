@@ -243,8 +243,9 @@ from 0 here; the app shows riders from 1.
 
 ## What comes next
 
-- The frame number in the nonce instead of the session (T-nonce), and the fix's age at the slot
-  instead of its second (T-fix-time).
+- A nonce from a 64-bit session and its counter, unique whatever the clocks do, and the packet's
+  freshness apart from it, by an authenticated time of sending beside the fix's age (T-nonce,
+  T-fix-time, [09](09-protocol-next.md)).
 - Time for boards without a fix, from the packets they hear, and a clock disciplined against PPS
   for longer holdover (T-timing); the L76K's lag, measured (E0).
 - The mode chosen for the group's size and freshness, carried in the invitation (T-phy).

@@ -204,3 +204,29 @@ The whole repository: firmware, app, tools and documents.
   owner's.
 - **Cost:** nobody can build a closed product on this firmware or protocol code; the protocol
   itself, as documented, stays free to implement.
+
+### D15. The mode in use is the mode applied (2026-10-24)
+
+The schedule and the duty ledger reckon with the radio mode the radio has taken, never one only
+asked for; a board sends nothing between a new mode asked and the radio confirming it.
+
+- **Why:** `MODE` changed the core's mode at once, while the radio task sent one more packet on the
+  old one: after SF11/250 to SF7/250 the core booked 31 ms for a packet of 370.688 ms, which at ten
+  riders, slots 181.818 ms apart, runs over the next slots ([09](09-protocol-next.md)).
+- **So:** the core keeps the mode it was told and the mode the radio confirmed, and sends only when
+  they are one. A group's profile, once it carries the mode, is applied the same way.
+- **Cost:** a slot or two of silence at each change of mode.
+
+### D16. A time keeps its meaning to the phone (2026-10-24)
+
+The time of an event, a fix, a packet heard, an answer to a call for help, reaches the app as a
+time, not as an age reckoned when the line was made: a line waits in queues and on the air, and
+its ages would come out younger by that wait.
+
+- **Why:** a position 29 s old that reached the app 5 s later was shown 29 s old, and fresh; and a
+  caller's board hears an answer within a second, while its phone learnt of it with the next
+  status, up to 10 s on ([09](09-protocol-next.md)).
+- **So:** the board's lines say when they were made, on its UTC, and the app reckons the board's
+  clock against its own from the lines that came quickest; a change in who answers our call is
+  told at once.
+- **Cost:** a token more in each line, and ages on the phone as good as that reckoning.

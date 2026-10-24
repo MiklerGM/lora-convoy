@@ -50,8 +50,10 @@ reserved in flash ([06](06-own-protocol.md), security rules). The frame number n
 schedule, so M5 may start with a session and change. **v1, for now:** a 32-bit session drawn at
 every start and before the counter wraps, with a 16-bit counter. A nonce repeats if two sessions
 of one slot under one key draw the same value: about n²/2^33 for n sessions, one in 8 600 for a
-thousand restarts. M6 kept the session; now that every board knows the frame, its number could
-replace it.
+thousand restarts. M6 kept the session. The frame number alone would not do: a duplicated slot,
+a time set back, a changed interval or a second message in a frame repeat it; a 64-bit session with
+64 bits of real entropy keeps the nonce unique, and the packet's freshness is a field of its own
+([09](09-protocol-next.md)).
 
 ### T-tag: the tag's length
 

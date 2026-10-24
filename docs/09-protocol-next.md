@@ -2,7 +2,9 @@
 
 **2026-10-24.** The owner [owner]: comparative measures of v3 in the simulator first; no profile
 fixed yet; help without a position goes into v4's agreed change, not as a fix to v3; a basic E0
-early, before the fixes and v4. An outside review of v3 [review] went over the format, the
+early, before the fixes and v4. A re-check the same day [recheck] added two decisions, the mode in
+use being the mode applied (D15) and times keeping their meaning to the phone (D16), refined E0's
+method, and bounded what the simulator's numbers say. An outside review of v3 [review] went over the format, the
 schedule, help and the air. Its findings are checked here against the code [code] and recomputed
 with `tools/airtime.py` at v3's preamble of 8 [calc]; each figure is a bound from the model, not a
 measurement. What follows is what to keep, what the owner decides first, and in what order the
@@ -55,10 +57,20 @@ One key for a trusted group, any member of which can send as any slot ([SECURITY
   out of 869.40–869.65 MHz, the window whose 10 % the budget is for [code] ([08](08-regions.md)).
   Settings the region does not allow are refused; some duty cycle is kept for help and control;
   a board's restart does not start a new hour of duty [review].
+- **The mode applied before it is used** (D15). `MODE` changes the core's mode at once, and the
+  radio task sends one more packet on the old mode before it applies the new: the schedule and the
+  ledger reckon with one mode while the air carries another [code] [recheck].
+- **Times kept to the phone** (D16). RIDER lines carry ages reckoned when they were made, and the
+  app counts them from the line's arrival, so a line's wait in the queue and on the air is lost: a
+  position 29 s old, delivered 5 s later, shows 29 s old and fresh [code] [recheck]. And a caller
+  hears of an answer only with the next status, up to 10 s after its board did: a change in who
+  answers goes out at once.
 - **The bounds of time.** An NMEA fix parsed more than a second after its edge is paired with the
-  next edge, a second out, and `lag=` shows a plausible 100 ms; the guard counts the error and
-  1 ms, while a send may start up to 2 ms late [code]. One bound, from the scheduled moment to the
-  radio's first RF, measured (E0), and a check that the marks agree with each other.
+  next edge, a second out, and `lag=` shows a plausible 100 ms [code]. The guard counts the error
+  and `TX_ERR_US`, 1 ms, which the known path already exceeds: on the Heltec the front end's switch
+  alone waits 1 ms before SetTx (`fem_transmit`), and the packet's making and SPI come on top; and a
+  send may start up to 2 ms late besides [code] [recheck]. One bound, from the scheduled moment to
+  the radio's first RF, measured (E0), and a check that the marks agree with each other.
 
 ## The next layout: decided together, then the bytes
 
@@ -130,15 +142,21 @@ One key for a trusted group, any member of which can send as any slot ([SECURITY
 
 ## v3, measured in the simulator
 
-2026-10-24, `make -C firmware sim`: the node core as built, on simulated air [sim]. The numbers to
-compare v4's choices with; none of them is a measurement on hardware.
+2026-10-24, `make -C firmware sim`: the node core as built, on simulated air [sim]. A model of v3
+to compare v4's choices with, and no more [recheck]: every board here has PPS and a perfect
+crystal, the air starts the moment `node_poll_tx` gives a packet, past the real driver and its
+timing, and an age is the one a board shows, not the one OsmAnd shows after the phone. So these are
+not numbers for today's L1, nor freshness on the map. A longest gap is the longest observed in one
+run, which another seed moves: 12.0 s here became 18.0 s with only the seed changed, delivery and
+the 95th percentile staying put. For comparing v4, a small fixed series of seeds, each measure
+given as its median over the series and the largest observed.
 
-- **Gaps.** Three riders, nothing lost: the longest a rider goes without another is 4 s, a frame
-  and one spent listening in its slot. With 10 % lost at random, 10 s. Twenty riders in slots,
-  6 s.
+- **Gaps**, the longest observed. Three riders, nothing lost: 4 s, a frame and one spent listening
+  in its slot. With 10 % lost at random, 10 s. Twenty riders in slots, 6 s.
 - **Two groups of ten on one channel**, the same frame: 68.2 % delivered, but the losses come in
-  bursts, when the two groups' phases meet: the position on the map is 6.5 s old at the 95th
-  percentile, a rider goes up to 12 s without another, and up to 11 s hearing none of its group.
+  bursts, when the two groups' phases meet: the position a board shows is 6.5 s old at the 95th
+  percentile, and in this run a rider went up to 12 s without another, and up to 11 s hearing none
+  of its group.
 - **The outages counted in.** The column of twenty spreading to 9.5 km, radios sure within 1 km:
   in reach, fixes 2.5 s old at the 95th percentile; over every pair, in reach or not, 4 s at the
   median and 966 s at the 95th percentile, and older than 30 s 45 % of the time.
@@ -161,9 +179,18 @@ compare v4's choices with; none of them is a measurement on hardware.
 2. **The simulator measures what matters**, on v3: the map's age with outages in, the longest gap,
    the time to the first answer with several callers, two groups with burst losses. v4's choices
    are then compared on numbers.
-3. **A basic E0 on the boards** [owner: early]: from a fix's PPS edge and its NMEA sentence to
-   the actual start of RF, UART, parsing, locks, the packet's making and SPI included, on both
-   boards. Its numbers bound the schedule before anything is fixed on it.
+3. **A basic E0 on the boards** [owner: early], measured as [recheck] refines it:
+   - sending: from the scheduled moment to the actual start of RF, taken as the radio's TxDone
+     less the packet's airtime, the event stamped by an interrupt whose error is known, on both
+     boards; the front end's 1 ms, the packet's making and SPI all fall inside;
+   - receiving: RxDone on the receiver's UTC less the sender's scheduled start and the airtime,
+     not against the slot's end, which hides lateness: at ten riders a packet 100 ms late still
+     ends some 51 ms before its slot's boundary;
+   - the losses counted beside the offsets, as the latest packets may be the ones that collided;
+     the driver's poll every 5 ms shows an L1's large offset, never the 1 ms bound;
+   - the Heltec's NMEA lag taken for the L1 only as a first guess: the measure includes each
+     platform's UART and processing.
+   Its numbers bound the schedule before anything is fixed on it.
 4. **The fixes without a new layout**, one at a time, as in the review rounds before: a profile
    checked whole, the region's bounds, the bounds of time.
 5. **v4**, item by item: header and version, tag, session and nonce, freshness and the fix's age,
