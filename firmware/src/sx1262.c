@@ -339,7 +339,7 @@ static bool configure(void) {
     uint8_t calib = 0x7F;
     uint8_t image[2];
     image_band(s_phy.freq_hz, image);
-    uint8_t irq[8] = {0xFF, 0xFF, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00};
+    uint8_t irq[8] = {0xFF, 0xFF, 0x00, IRQ_TX_DONE | IRQ_RX_DONE, 0x00, 0x00, 0x00, 0x00};
 
 #define STEP(what, expr) do { if (!(expr)) { LOGW(TAG, "configure: %s failed", what); \
                                              return false; } } while (0)

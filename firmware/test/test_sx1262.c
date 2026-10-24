@@ -85,6 +85,7 @@ static struct {
     uint8_t drop;           /* a command the bus fails, once */
     uint8_t refuse;         /* a command the chip refuses, once */
     bool dio1_dead;         /* its DIO1 never rises, as with the line not wired */
+    uint16_t dio1_mask;     /* the IRQs SetDioIrqParams routed to DIO1: it rises for those only */
 } chip = {.mode = MODE_STANDBY};
 
 static int spi_device_polling_transmit(spi_device_handle_t spi, spi_transaction_t *t) {
@@ -110,11 +111,12 @@ static int spi_device_polling_transmit(spi_device_handle_t spi, spi_transaction_
         case CMD_WRITE_REGISTER: memcpy(&chip.regs[tx[1] << 8 | tx[2]], &tx[3], n - 3); break;
         case CMD_READ_REGISTER: memcpy(&rx[4], &chip.regs[tx[1] << 8 | tx[2]], n - 4); break;
         case CMD_SET_RF_FREQUENCY: memcpy(chip.frequency, &tx[1], 4); break;
+        case CMD_SET_DIO_IRQ_PARAMS: chip.dio1_mask = (uint16_t)(tx[3] << 8 | tx[4]); break;
         case CMD_SET_MODULATION: memcpy(chip.modulation, &tx[1], 4); break;
         case CMD_SET_TX:
             chip.txmod_at_tx = chip.regs[REG_TX_MODULATION];
             chip.mode = MODE_STANDBY;   /* a packet goes out at once, DIO1 rising at its TxDone */
-            if (!chip.dio1_dead) s_dio1_us = s_now_us + 777;
+            if (!chip.dio1_dead && (chip.dio1_mask & IRQ_TX_DONE)) s_dio1_us = s_now_us + 777;
             break;
         case CMD_SET_STANDBY: chip.mode = MODE_STANDBY; break;
         case CMD_SET_RX: chip.mode = MODE_RX; break;
