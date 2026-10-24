@@ -128,6 +128,32 @@ One key for a trusted group, any member of which can send as any slot ([SECURITY
   access and the existing baselines ([03](03-alternatives.md)); if twenty riders at 1–2 s are a
   must, their case is much stronger [review].
 
+## v3, measured in the simulator
+
+2026-10-24, `make -C firmware sim`: the node core as built, on simulated air [sim]. The numbers to
+compare v4's choices with; none of them is a measurement on hardware.
+
+- **Gaps.** Three riders, nothing lost: the longest a rider goes without another is 4 s, a frame
+  and one spent listening in its slot. With 10 % lost at random, 10 s. Twenty riders in slots,
+  6 s.
+- **Two groups of ten on one channel**, the same frame: 68.2 % delivered, but the losses come in
+  bursts, when the two groups' phases meet: the position on the map is 6.5 s old at the 95th
+  percentile, a rider goes up to 12 s without another, and up to 11 s hearing none of its group.
+- **The outages counted in.** The column of twenty spreading to 9.5 km, radios sure within 1 km:
+  in reach, fixes 2.5 s old at the 95th percentile; over every pair, in reach or not, 4 s at the
+  median and 966 s at the 95th percentile, and older than 30 s 45 % of the time.
+- **Several calls for help at once**, among twenty riders with 10 % lost, ten rounds each, the
+  median and the worst:
+
+  | Callers at once | First answer | All 19 answers |
+  |---:|---:|---:|
+  | 1 | 0.9 s, 2.1 s | 6.3 s, 8.2 s |
+  | 2 | 1.3 s, 3.4 s | 7.9 s, 11.7 s |
+  | 4 | 1.6 s, 4.6 s | 13.9 s, 34.2 s |
+
+- **A caller restarted during its call**, calling again at once: 7 of 40 new calls were answered
+  before they went out at all, by answers to the old call that took the same number.
+
 ## How it is settled
 
 1. **The owner's decisions** above: the scenario's numbers, the size against freshness and PPS,

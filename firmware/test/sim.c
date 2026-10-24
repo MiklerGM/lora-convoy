@@ -85,6 +85,9 @@ typedef struct {
                                 counts as forever */
     int collisions;          /* packets that overlapped another ... */
     int within;              /* ... from their own group */
+    double gap;              /* seconds: the longest a rider went without a packet from another of
+                                its group, the worst pair, its last gap up to the end included */
+    double gap_group;        /* seconds: the longest a rider went hearing none of its group at all */
     int sent;
     int silent;              /* riders who sent nothing */
     unsigned long unsure;    /* slots passed over for an uncertain time, all riders together */
@@ -109,6 +112,11 @@ typedef struct {
     double north_m[MAX_NODES], east_m[MAX_NODES]; /* where each rider is, from Vaduz, this second */
     int sent, collisions, within, sent_by[MAX_NODES];
     long taken, expected, taken_from[MAX_NODES];
+    /* Gaps, in true time from the warm-up on: when each node last took a packet from each other,
+     * and from anyone of its group, and the longest it went without (09). */
+    int64_t heard_at[MAX_NODES][MAX_NODES], gap[MAX_NODES][MAX_NODES];
+    int64_t any_at[MAX_NODES], any_gap[MAX_NODES];
+    int64_t gaps_from;
     /* told of every packet a node takes, for a phone connected to it */
     void (*on_taken)(void *ctx, int node, unsigned slot, int64_t t);
     void *ctx;
@@ -196,9 +204,16 @@ static bool reaches(world_t *w, int j, int i) {
     return (double)(rnd(&w->rng) % 1000000) / 1e6 < (1.5 * r - d) / (0.5 * r);
 }
 
+/* The gap ending at t, since *at or the warm-up's end, kept if the longest yet. */
+static void gap_to(const int64_t *at, int64_t *longest, int64_t t, int64_t from) {
+    const int64_t since = *at > from ? *at : from;
+    if (t - since > *longest) *longest = t - since;
+}
+
 static void world_init(world_t *w, const scenario_t *sc, int64_t utc0_ms) {
     memset(w, 0, sizeof(*w));
     w->sc = *sc;
+    w->gaps_from = 10 * (int64_t)sc->interval_ms * 1000;
     w->rng = sc->seed ? sc->seed : 1;
     w->utc0_ms = utc0_ms;
     /* Riders split into groups by halves, thirds ...; group g has the key g+1, g+1 ..., and its
@@ -291,6 +306,9 @@ static void world_step(world_t *w, int64_t t) {
             if (node_on_packet(&w->node[i], x->bytes, x->len, -90, 20, local_us(w, i, t))) {
                 w->taken++;
                 w->taken_from[x->from]++;
+                gap_to(&w->heard_at[i][x->from], &w->gap[i][x->from], t, w->gaps_from);
+                gap_to(&w->any_at[i], &w->any_gap[i], t, w->gaps_from);
+                w->heard_at[i][x->from] = w->any_at[i] = t;
                 if (w->on_taken) w->on_taken(w->ctx, i, x->bytes[2], local_us(w, i, t));
             }
         }
@@ -340,6 +358,15 @@ static outcome_t run(const scenario_t *sc, bool print) {
     out.age_p50 = n_ages ? ages[n_ages / 2] : 1e9;
     out.age_p95 = n_ages ? ages[n_ages * 95 / 100] : 1e9;
     free(ages);
+    for (int i = 0; i < sc->nodes; i++) {
+        gap_to(&s_run.any_at[i], &s_run.any_gap[i], sc->duration_us, s_run.gaps_from);
+        out.gap_group = fmax(out.gap_group, (double)s_run.any_gap[i] / SEC);
+        for (int j = 0; j < sc->nodes; j++) {
+            if (j == i || s_run.group_of[j] != s_run.group_of[i]) continue;
+            gap_to(&s_run.heard_at[i][j], &s_run.gap[i][j], sc->duration_us, s_run.gaps_from);
+            out.gap = fmax(out.gap, (double)s_run.gap[i][j] / SEC);
+        }
+    }
     out.sent = s_run.sent;
     out.collisions = s_run.collisions;
     out.within = s_run.within;
@@ -517,22 +544,24 @@ int main(int argc, char **argv) {
     /* Three riders, a slot each every 2 s: each hears the others every frame. */
     const scenario_t three = {3, 2000, 600 * SEC, 0, 1, 1, GOOD, 0, false};
     outcome_t o = run(&three, false);
-    printf("sim: 3 riders every 2 s: %.1f %% delivered, %d collisions, fix age p50 %.1f s, p95 %.1f s\n",
-           100 * o.delivered, o.collisions, o.age_p50, o.age_p95);
-    assert(o.delivered > 0.99 && o.collisions == 0 && o.age_p95 <= 3.5);
+    printf("sim: 3 riders every 2 s: %.1f %% delivered, %d collisions, fix age p50 %.1f s, p95 %.1f s, "
+           "the longest gap %.0f s\n", 100 * o.delivered, o.collisions, o.age_p50, o.age_p95, o.gap);
+    /* a gap is a frame, or a few where a rider listened in its slot: never more without loss */
+    assert(o.delivered > 0.99 && o.collisions == 0 && o.age_p95 <= 3.5 && o.gap >= 2 && o.gap <= 8);
 
     /* With 10 % random loss on top, still everyone, a little older. */
     const scenario_t lossy = {3, 2000, 600 * SEC, 0.10, 2, 1, GOOD, 0, false};
     o = run(&lossy, false);
-    printf("sim: 3 riders, 10 %% random loss: %.1f %% delivered, fix age p50 %.1f s, p95 %.1f s\n",
-           100 * o.delivered, o.age_p50, o.age_p95);
+    printf("sim: 3 riders, 10 %% random loss: %.1f %% delivered, fix age p50 %.1f s, p95 %.1f s, the longest gap "
+           "%.0f s\n", 100 * o.delivered, o.age_p50, o.age_p95, o.gap);
     assert(o.delivered > 0.85 && o.delivered < 0.95 && o.age_p95 <= 5.5);
 
     /* Twenty riders every 2 s: random access lost 45 % of them to collisions (M5); slots lose none. */
     const scenario_t twenty = {20, 2000, 600 * SEC, 0, 3, 1, GOOD, 0, false};
     o = run(&twenty, false);
-    printf("sim: 20 riders every 2 s in slots: %.1f %% delivered, %d collisions, fix age p50 %.1f s, p95 %.1f s "
-           "(random access: 55 %%, p95 8.5 s)\n", 100 * o.delivered, o.collisions, o.age_p50, o.age_p95);
+    printf("sim: 20 riders every 2 s in slots: %.1f %% delivered, %d collisions, fix age p50 %.1f s, p95 %.1f s, "
+           "the longest gap %.0f s (random access: 55 %%, p95 8.5 s)\n", 100 * o.delivered, o.collisions,
+           o.age_p50, o.age_p95, o.gap);
     assert(o.delivered > 0.99 && o.collisions == 0 && o.age_p95 <= 3.5);
 
     /* Real clocks: crystals 20 ppm off, boards started seconds apart, half of them L1s without PPS
@@ -609,6 +638,73 @@ int main(int argc, char **argv) {
         assert(first[19] < 5 && all[19] < 20);
     }
 
+    /* Several calls for help at once (09): an answer names one call a packet, each in turn, so with
+     * h callers an answerer comes back to each every h frames. */
+    for (int h = 1; h <= 4; h *= 2) {
+        static world_t m;
+        const scenario_t many = {20, 2000, 0, 0.10, 12, 1, GOOD, 0, false};
+        world_init(&m, &many, 1792670400000ll);
+        double first[10 * 4], all[10 * 4];
+        int n = 0;
+        int64_t t = 0;
+        for (; t < 20 * SEC; t += STEP_US) world_step(&m, t);
+        for (int round = 0; round < 10; round++) {
+            int callers[4];
+            int64_t answered[4] = {0}, done[4] = {0};
+            for (int c = 0; c < h; c++) node_set_help(&m.node[callers[c] = (round * 7 + c * 5) % 20], true);
+            const int64_t asked = t;
+            for (int left = h; left > 0; t += STEP_US) {
+                world_step(&m, t);
+                for (int c = 0; c < h; c++) {
+                    const uint32_t by = m.node[callers[c]].help_heard_by;
+                    if (by && !answered[c]) answered[c] = t;
+                    if (!done[c] && __builtin_popcount(by) >= 19) left -= (done[c] = t) > 0;
+                }
+                assert(t - asked < 120 * SEC);
+            }
+            for (int c = 0; c < h; c++) {
+                first[n] = (double)(answered[c] - asked) / SEC;
+                all[n++] = (double)(done[c] - asked) / SEC;
+                node_set_help(&m.node[callers[c]], false);
+            }
+            for (const int64_t end = t + 4 * SEC + rnd(&m.rng) % 2000 * 1000; t < end; t += STEP_US) world_step(&m, t);
+        }
+        qsort(first, (size_t)n, sizeof(double), by_value);
+        qsort(all, (size_t)n, sizeof(double), by_value);
+        printf("sim: %d call%s for help at once among 20 riders, 10 %% of packets lost: first answered within %.1f s, "
+               "by all 19 within %.1f s (the median; at worst %.1f and %.1f s)\n", h, h > 1 ? "s" : "", first[n / 2],
+               all[n / 2], first[n - 1], all[n - 1]);
+    }
+
+    /* A caller restarted during its call, calling again at once (09): its new call takes the old
+     * one's number once in seven, and the others' answers to the old one count for the new one
+     * before it has gone out at all. */
+    {
+        static world_t r;
+        const scenario_t again = {20, 2000, 0, 0, 13, 1, GOOD, 0, false};
+        world_init(&r, &again, 1792670400000ll);
+        int early = 0, restarts = 0;
+        int64_t t = 0;
+        for (; t < 20 * SEC; t += STEP_US) world_step(&r, t);
+        for (; restarts < 40; restarts++) {
+            const int i = restarts % 20;
+            node_set_help(&r.node[i], true);
+            for (const int64_t asked = t; __builtin_popcount(r.node[i].help_heard_by) < 19; t += STEP_US) {
+                world_step(&r, t);
+                assert(t - asked < 60 * SEC);
+            }
+            const node_config_t cfg = r.node[i].cfg;
+            node_init(&r.node[i], &cfg, splitmix(7000u + (uint32_t)restarts));
+            node_set_help(&r.node[i], true);
+            for (; r.node[i].sent == 0; t += STEP_US) world_step(&r, t);
+            early += r.node[i].help_heard_by != 0;
+            node_set_help(&r.node[i], false);
+            for (const int64_t end = t + 10 * SEC; t < end; t += STEP_US) world_step(&r, t);
+        }
+        printf("sim: a caller restarted during its call, and calling again at once: %d of %d new calls were answered "
+               "before they went out, by answers to the old one\n", early, restarts);
+    }
+
     /* A column of twenty on one road, spreading out to some 9 km in 20 minutes, its radios in reach
      * for sure within 1 km, as in forest (06: out of range means stale, not lost). Rider 6 stops
      * after ten minutes for five, and calls for help: those in reach answer at once, those behind as
@@ -617,8 +713,8 @@ int main(int argc, char **argv) {
         static world_t c;
         const scenario_t road = {20, 2000, 1200 * SEC, 0, 10, 1, GOOD, 1000, true};
         world_init(&c, &road, 1792670400000ll);
-        static double near[20 * 19 * 1200], far[20 * 19 * 1200];
-        size_t n_near = 0, n_far = 0;
+        static double near[20 * 19 * 1200], far[20 * 19 * 1200], every[20 * 19 * 1200];
+        size_t n_near = 0, n_far = 0, n_every = 0, over30 = 0;
         int quick = 0, by_end = 0;
         for (int64_t t = 0; t < road.duration_us; t += STEP_US) {
             world_step(&c, t);
@@ -638,6 +734,8 @@ int main(int argc, char **argv) {
                     const double age = r->known ? (double)(utc - r->fix_utc_ms) / 1000 : 1e9, d = distance_m(&c, i, j);
                     if (d <= road.range_m) near[n_near++] = age;
                     if (d >= 1.5 * road.range_m) far[n_far++] = age;
+                    every[n_every++] = age;
+                    over30 += age > 30;
                 }
             }
         }
@@ -647,10 +745,13 @@ int main(int argc, char **argv) {
         }
         qsort(near, n_near, sizeof(double), by_value);
         qsort(far, n_far, sizeof(double), by_value);
+        qsort(every, n_every, sizeof(double), by_value);
         printf("sim: a column of 20 spreading to %.1f km, radios reaching 1 km: in reach, fixes %.1f s old at the "
                "95th percentile; out of it, the last fix stays, %.0f s old at the median. A call for help from a "
-               "stopped rider: %d answer within 10 s, %d of 19 before it rides on\n", spread / 1000,
-               near[n_near * 95 / 100], far[n_far / 2], quick, by_end);
+               "stopped rider: %d answer within 10 s, %d of 19 before it rides on. Every pair, out of reach or not: "
+               "%.0f s old at the median, %.0f s at the 95th percentile, over 30 s old %.0f %% of the time\n",
+               spread / 1000, near[n_near * 95 / 100], far[n_far / 2], quick, by_end, every[n_every / 2],
+               every[n_every * 95 / 100], 100.0 * (double)over30 / (double)n_every);
         assert(spread > 7000 && near[n_near * 95 / 100] <= 3.5 && far[n_far / 2] > 30 && far[n_far / 2] < 1e9);
         assert(quick >= 8 && by_end > quick && by_end < 19);
     }
@@ -695,7 +796,9 @@ int main(int argc, char **argv) {
     const scenario_t neighbours = {20, 2000, 600 * SEC, 0, 8, 2, GOOD, 0, false};
     o = run(&neighbours, false);
     printf("sim: two groups of 10 on one channel: %.1f %% delivered, the worst rider %.1f %%, %d collisions, "
-           "%d of them within a group\n", 100 * o.delivered, 100 * o.worst, o.collisions, o.within);
+           "%d of them within a group; losses in bursts: fix age p95 %.1f s, the longest gap %.0f s, the longest "
+           "a rider heard none of its group %.0f s\n", 100 * o.delivered, 100 * o.worst, o.collisions, o.within,
+           o.age_p95, o.gap, o.gap_group);
     assert(o.within == 0 && o.delivered > 0.55 && o.delivered < 0.78 && o.worst > 0.5);
     return 0;
 }
