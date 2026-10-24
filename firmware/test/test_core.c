@@ -284,7 +284,7 @@ static void test_node_sends(void) {
      * started 1.5 ms late, as the status says. */
     const int64_t air = phy_airtime_us(&n.cfg.phy, PKT_POSITION_LEN);
     char e0[512];
-    node_on_tx_done(&n, due + air + 1500, PKT_POSITION_LEN);
+    node_on_tx_done(&n, due + air + 1500);
     node_format_status(&n, due, e0, sizeof(e0));
     assert(strstr(e0, " txlead=1500/1500/1500 "));
     /* And on the far side: a board on the same clock hears it end 100 ms after its slot's moment
@@ -662,6 +662,44 @@ static void test_node_help(void) {
     printf("node: a call for help answered by those who hear it, each in turn; stopped after a minute\n");
 }
 
+static void test_node_mode(void) {
+    /* D15: the mode in use is the mode applied. A node sending on v0's SF7/250 ... */
+    node_t n;
+    uint8_t b[32];
+    char line[512];
+    node_init(&n, &CFG, 21);
+    int64_t t = T0;
+    size_t len = 0;
+    for (; !len; t += 1000) {
+        tick(&n, t);
+        len = node_poll_tx(&n, t, b, sizeof(b));
+    }
+    /* ... asked for SF11/250, as MODE asks: until the radio has taken it every slot passes over,
+     * booking nothing, however many frames the radio takes, or if it never does. */
+    phy_t slow = PHY_V0;
+    slow.sf = 11;
+    n.cfg.phy = slow;
+    const uint32_t booked = node_duty_used_ms(&n, t);
+    for (const int64_t end = t + 10 * SEC; t < end; t += 1000) {
+        tick(&n, t);
+        assert(node_poll_tx(&n, t, b, sizeof(b)) == 0);
+    }
+    assert(n.tx_held >= 4 && node_duty_used_ms(&n, t) == booked);
+    /* Taken: its next slot sends, and books a packet of SF11's 370.688 ms. */
+    node_phy_applied(&n, &slow);
+    const int64_t due = node_next_tx_us(&n, t);
+    for (; t < due; t += 1000) tick(&n, t);
+    assert(node_poll_tx(&n, due, b, sizeof(b)) == PKT_POSITION_LEN && node_duty_used_ms(&n, due) == booked + 371);
+    /* Its TxDone reckons with the airtime it went with, though v0's mode is asked for meanwhile:
+     * RF 1.5 ms late, not 341 ms. */
+    n.cfg.phy = PHY_V0;
+    node_on_tx_done(&n, due + 370688 + 1500);
+    node_format_status(&n, due, line, sizeof(line));
+    assert(strstr(line, " txlead=1500/1500/1500 "));
+    printf("node: a mode asked for is used once the radio has taken it, never before, and each packet "
+           "keeps the airtime it went with\n");
+}
+
 /* ---- the phone API ------------------------------------------------------------------ */
 
 static char replies[8][400];
@@ -796,7 +834,7 @@ static void test_api(void) {
     assert(n_replies == 1 && starts(replies[0], "ERR "));
 
     /* The longest status there can be still fits a line. */
-    n.sent = n.tx_late = n.tx_unsure = n.tx_skipped = n.rx_bad = n.rx_foreign = n.rx_forged = 4294967295u;
+    n.sent = n.tx_late = n.tx_unsure = n.tx_skipped = n.tx_held = n.rx_bad = n.rx_foreign = n.rx_forged = 4294967295u;
     n.rx_replay = n.rx_clash = 4294967295u;
     n.cfg.slot = 31;
     n.held.lat_e7 = -900000000;
@@ -829,6 +867,7 @@ int main(void) {
     test_node_duty();
     test_node_hears();
     test_node_help();
+    test_node_mode();
     test_api();
     return 0;
 }

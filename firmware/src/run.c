@@ -241,11 +241,25 @@ static void gnss_task(void *arg) {
 
 /* ---- the radio -------------------------------------------------------------------- */
 
+/* The mode asked for, to the radio, and the node told once the radio has it: until then it sends
+ * nothing (ARCHITECTURE D15). A mode asked for again meanwhile is the next one applied. */
+static bool apply_radio(void) {
+    port_mutex_lock(s_lock);
+    const phy_t want = s_node.cfg.phy;
+    const uint8_t power = s_api.power;
+    port_mutex_give(s_lock);
+    if (!radio_apply(&want, power)) return false;
+    port_mutex_lock(s_lock);
+    node_phy_applied(&s_node, &want);
+    port_mutex_give(s_lock);
+    return true;
+}
+
 static void radio_task(void *arg) {
     (void)arg;
     const int watch = port_wdt_watch();
     radio_init();
-    while (!radio_apply(&s_node.cfg.phy, s_api.power)) {
+    while (!apply_radio()) {
         LOGE(TAG, "the radio will not take its configuration; trying again");
         port_wdt_feed(watch);
         port_sleep_ms(5000);
@@ -295,7 +309,7 @@ static void radio_task(void *arg) {
             const bool sent = radio_send(buf, len, &done);
             if (sent && done) {
                 port_mutex_lock(s_lock);
-                node_on_tx_done(&s_node, done, len);
+                node_on_tx_done(&s_node, done);
                 port_mutex_give(s_lock);
             }
             snprintf(text, sizeof(text), "TX counter=%lu len=%u %s", (unsigned long)counter, (unsigned)len,
@@ -306,7 +320,7 @@ static void radio_task(void *arg) {
         const bool reapply = atomic_exchange(&s_reapply, false);
         if (reapply || now >= next_verify) {
             /* a new power level, or a chip that no longer holds our configuration */
-            if (reapply || !radio_verify()) radio_apply(&s_node.cfg.phy, s_api.power);
+            if (reapply || !radio_verify()) apply_radio();
             next_verify = now + VERIFY_US;
         }
     }

@@ -69,7 +69,9 @@ typedef struct {
 typedef enum { TIME_NONE, TIME_NMEA, TIME_PPS } time_source_t;
 
 typedef struct {
-    node_config_t cfg;
+    node_config_t cfg;       /* its phy is the mode asked for ... */
+    phy_t phy;               /* ... this the one the radio has taken, which the schedule, the ledger
+                                and each packet's airtime reckon with (ARCHITECTURE D15) */
     gnss_fix_t fix;          /* the last RMC, valid or not */
     int64_t fix_us;
     gnss_fix_t held;         /* the last valid position */
@@ -96,6 +98,7 @@ typedef struct {
     int64_t slow_since_us;   /* when it last went under 5 km/h; 0 while faster */
     int64_t last_frame;      /* the frame we last sent in, or passed over */
     int64_t tx_due_us;       /* our clock at the moment of the packet last handed over; 0 once done */
+    uint32_t tx_air_us;      /* and its airtime, in the mode it went with */
     int rx_slot;             /* the slot of the packet last taken, until its RxDone is told; -1 none */
     size_t rx_len;
     spread_t tx_lead;        /* E0: from a packet's moment to its RF beginning, by the radio's TxDone */
@@ -113,6 +116,7 @@ typedef struct {
     uint32_t tx_unsure;      /* slots passed over: our time was too uncertain to keep to them */
     uint32_t tx_late;        /* slots missed: we were asked after the moment had gone */
     uint32_t tx_listened;    /* slots spent listening for another radio in ours */
+    uint32_t tx_held;        /* slots passed over while the radio had yet to take a mode asked for */
 } node_t;
 
 void node_init(node_t *n, const node_config_t *cfg, uint32_t seed);
@@ -147,7 +151,13 @@ void node_on_rx_done(node_t *n, int64_t done_us);
 
 /* The radio's TxDone, on our clock, for the packet node_poll_tx gave last: how late its RF began
  * after its moment, less the airtime, goes into the status (txlead=, E0). */
-void node_on_tx_done(node_t *n, int64_t done_us, size_t len);
+void node_on_tx_done(node_t *n, int64_t done_us);
+
+/* The radio has taken this mode (radio_apply said so): from now the schedule, the ledger and the
+ * airtime of what is sent reckon with it, and a node whose mode asked for is another sends nothing
+ * until the radio has taken that one too. A node starts with its configured mode taken, which the
+ * platform applies before it sends anything (run.c). */
+void node_phy_applied(node_t *n, const phy_t *phy);
 
 /* Our clock at the moment of our next slot, for the platform to be ready by; INT64_MAX while no
  * slot can be told (no key, no time, a slot outside the group). Due already if not above now_us. */

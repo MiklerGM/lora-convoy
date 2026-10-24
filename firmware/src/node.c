@@ -40,6 +40,7 @@ static uint32_t next_random(node_t *n) {
 void node_init(node_t *n, const node_config_t *cfg, uint32_t seed) {
     memset(n, 0, sizeof(*n));
     n->cfg = *cfg;
+    n->phy = cfg->phy;
     n->rng = seed ? seed : 0x9E3779B9u;
     /* The platform's seed is from the chip's own generator, so every start draws a new session. */
     n->session = next_random(n);
@@ -179,7 +180,7 @@ static int64_t frame_us(const node_t *n) { return (int64_t)n->cfg.interval_ms * 
 static int64_t spacing_us(const node_t *n) { return frame_us(n) / (n->cfg.slots + 1); }
 
 int64_t node_time_budget_us(const node_t *n) {
-    const int64_t gap = spacing_us(n) - phy_airtime_us(&n->cfg.phy, PKT_POSITION_LEN) - RX_GAP_US;
+    const int64_t gap = spacing_us(n) - phy_airtime_us(&n->phy, PKT_POSITION_LEN) - RX_GAP_US;
     return gap > 0 ? gap / 2 : 0;
 }
 
@@ -249,6 +250,11 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
         n->tx_late++;
         return 0;
     }
+    /* A mode asked for that the radio has yet to take: the air would carry the old one (D15). */
+    if (!phy_same(&n->phy, &n->cfg.phy)) {
+        n->tx_held++;
+        return 0;
+    }
     /* Too unsure of the time, the packet could land on a neighbour's slot. */
     if (err + TX_ERR_US > node_time_budget_us(n)) {
         n->tx_unsure++;
@@ -260,7 +266,7 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
         return 0;
     }
     /* Nothing true to say before the first fix. */
-    const uint32_t air_ms = (phy_airtime_us(&n->cfg.phy, PKT_POSITION_LEN) + 999) / 1000;
+    const uint32_t air_ms = (phy_airtime_us(&n->phy, PKT_POSITION_LEN) + 999) / 1000;
     const uint32_t limit_ms = 3600u * n->cfg.duty_permille;
     if (!n->have_held || cap < PKT_POSITION_LEN || node_duty_used_ms(n, now_us) + air_ms > limit_ms) {
         n->tx_skipped++;
@@ -288,6 +294,7 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
     if (++n->counter == 0) n->session = next_random(n);
     n->sent++;
     n->tx_due_us = now_us - (utc - at);
+    n->tx_air_us = phy_airtime_us(&n->phy, PKT_POSITION_LEN);
     duty_book(&n->duty, now_us, air_ms);
     return pkt_seal(out, &p, &n->group);
 }
@@ -315,7 +322,7 @@ void node_on_rx_done(node_t *n, int64_t done_us) {
     const int slot = n->rx_slot;
     n->rx_slot = -1;
     if (slot < 0 || !node_utc_us(n, done_us, &end_utc, &end_err)) return;
-    const int64_t start = end_utc - phy_airtime_us(&n->cfg.phy, n->rx_len), k = start / frame_us(n);
+    const int64_t start = end_utc - phy_airtime_us(&n->phy, n->rx_len), k = start / frame_us(n);
     int64_t late = INT64_MAX;
     for (int64_t f = k - 1; f <= k + 1; f++) {
         const int64_t off = start - slot_utc_us(n, f, phase_us(n, f), (unsigned)slot);
@@ -324,9 +331,11 @@ void node_on_rx_done(node_t *n, int64_t done_us) {
     spread_add(&n->riders[slot].offset, late);
 }
 
-void node_on_tx_done(node_t *n, int64_t done_us, size_t len) {
+void node_phy_applied(node_t *n, const phy_t *phy) { n->phy = *phy; }
+
+void node_on_tx_done(node_t *n, int64_t done_us) {
     if (!n->tx_due_us) return;
-    spread_add(&n->tx_lead, done_us - phy_airtime_us(&n->cfg.phy, len) - n->tx_due_us);
+    spread_add(&n->tx_lead, done_us - n->tx_air_us - n->tx_due_us);
     n->tx_due_us = 0;
 }
 
@@ -505,7 +514,7 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     return snprintf(buf, cap,
                     "slot=%u slots=%u keyed=%d group=%08lx mode=%u/%lu fix=%d stopped=%d help=%d heard=%d lat=%s lon=%s sats=%u "
                     "hdop=%u.%u time=%s err=%s "
-                    "budget=%lld.%lld lag=%s txlead=%s tx=%lu late=%lu unsure=%lu skipped=%lu duty=%lu.%02lu%% riders=%d "
+                    "budget=%lld.%lld lag=%s txlead=%s tx=%lu late=%lu unsure=%lu skipped=%lu held=%lu duty=%lu.%02lu%% riders=%d "
                     "bad=%lu foreign=%lu forged=%lu replay=%lu clash=%lu",
                     n->cfg.slot, n->cfg.slots, n->cfg.keyed ? 1 : 0, (unsigned long)(n->cfg.keyed ? n->group.id : 0), n->cfg.phy.sf,
                     (unsigned long)(n->cfg.phy.bw_hz / 1000),
@@ -515,7 +524,8 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
                     n->fix.hdop10 % 10, SOURCE[n->time], err_ms, (long long)(budget / 1000),
                     (long long)(budget % 1000 / 100), lag, spread_text(txlead, sizeof(txlead), &n->tx_lead),
                     (unsigned long)n->sent, (unsigned long)n->tx_late,
-                    (unsigned long)n->tx_unsure, (unsigned long)n->tx_skipped, (unsigned long)(used / 36000),
+                    (unsigned long)n->tx_unsure, (unsigned long)n->tx_skipped, (unsigned long)n->tx_held,
+                    (unsigned long)(used / 36000),
                     (unsigned long)(used % 36000 / 360), known, (unsigned long)n->rx_bad,
                     (unsigned long)n->rx_foreign, (unsigned long)n->rx_forged, (unsigned long)n->rx_replay,
                     (unsigned long)n->rx_clash);

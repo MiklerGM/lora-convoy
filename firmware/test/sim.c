@@ -268,7 +268,7 @@ static void world_step(world_t *w, int64_t t) {
             transmission_t *x = &w->air[w->in_air++];
             x->from = i;
             x->start = t;
-            x->end = t + phy_airtime_us(&w->node[i].cfg.phy, len);
+            x->end = t + phy_airtime_us(&w->node[i].phy, len);   /* in the mode its radio has */
             x->done = false;
             memcpy(x->bytes, b, len);
             x->len = len;
@@ -282,7 +282,7 @@ static void world_step(world_t *w, int64_t t) {
         transmission_t *x = &w->air[k];
         if (x->done || x->end > t) continue;
         x->done = true;
-        node_on_tx_done(&w->node[x->from], local_us(w, x->from, x->end), x->len);
+        node_on_tx_done(&w->node[x->from], local_us(w, x->from, x->end));
         bool collided = false, within = false;
         for (int j = 0; j < w->in_air; j++) {
             if (j != k && w->air[j].start < x->end && w->air[j].end > x->start) {
@@ -608,6 +608,37 @@ int main(int argc, char **argv) {
            "frame (%d packets); told it is unsure, it keeps quiet (%d silent, %d collisions)\n", wrong_within,
            o.silent, o.within);
     assert(wrong_within > 500 && o.silent == 1 && o.within == 0);
+
+    /* A mode changed under a group (D15): ten riders on SF11/250, whose 370.688 ms packet is longer
+     * than their slots are apart, so silent; then all asked for SF7/250, which their radios take a
+     * frame later. Until then nothing goes out, in either mode; after, nothing collides within the
+     * group, and each packet lasts as long as the mode it went with. */
+    {
+        static world_t m;
+        const scenario_t ten = {10, 2000, 0, 0, 15, 1, GOOD, 0, false};
+        world_init(&m, &ten, 1792670400000ll);
+        phy_t slow = PHY_V0;
+        slow.sf = 11;
+        for (int i = 0; i < 10; i++) {
+            m.node[i].cfg.phy = slow;
+            node_phy_applied(&m.node[i], &slow);
+        }
+        int64_t t = 0;
+        for (; t < 20 * SEC; t += STEP_US) world_step(&m, t);
+        const int silent = m.sent;
+        for (int i = 0; i < 10; i++) m.node[i].cfg.phy = PHY_V0;
+        for (; t < 22 * SEC; t += STEP_US) world_step(&m, t);
+        const int before = m.sent;
+        unsigned long held = 0;
+        for (int i = 0; i < 10; i++) {
+            held += m.node[i].tx_held;
+            node_phy_applied(&m.node[i], &PHY_V0);
+        }
+        for (; t < 80 * SEC; t += STEP_US) world_step(&m, t);
+        printf("sim: a mode changed under ten riders, their radios a frame late to take it: %d sent before, %lu slots "
+               "held, %d sent after, %d collisions within the group\n", before, held, m.sent - before, m.within);
+        assert(silent == 0 && before == 0 && held >= 10 && m.sent - before > 10 * 25 && m.within == 0);
+    }
 
     /* E0 in the model (09): an L1 told nothing of its NMEA's 100 ms lag, in a group of three, its
      * slots 500 ms apart, so nothing collides: the other boards hear it begin 100 ms after its

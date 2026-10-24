@@ -224,7 +224,9 @@ status shows `keyed=` and the group's id, `00000000` without a key: the first fo
 block the tag comes from, so the tag first, `86c91c92` for the key `00 01 … 0f`. It counts the packets
 refused as `foreign=`, `forged=`, `replay=` and `clash=`. Of its time it shows where it comes from
 (`time=none`, `nmea` or `pps`), how far off it may be and the budget, in ms (`err=`, `budget=`),
-and the slots passed over (`late=`, `unsure=`). A board with both PPS and NMEA measures E0's number
+and the slots passed over (`late=`, `unsure=`, and `held=` while the radio has yet to take a mode
+asked for: `mode=` is the mode asked for, and until the radio has taken it the board sends nothing,
+ARCHITECTURE D15). A board with both PPS and NMEA measures E0's number
 for boards without PPS: `lag=` is the NMEA fix's lag behind its PPS edge, last, least and most, in
 ms. `txlead=` is how late its own packets' RF began after their moment, least/mean/most in µs, by
 the radio's TxDone less the airtime (E0).

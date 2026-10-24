@@ -22,6 +22,11 @@ bool phy_supported(const phy_t *p) {
            p->freq_hz >= 150000000 && p->freq_hz <= 960000000;
 }
 
+bool phy_same(const phy_t *a, const phy_t *b) {
+    return a->freq_hz == b->freq_hz && a->bw_hz == b->bw_hz && a->sf == b->sf && a->cr == b->cr &&
+           a->preamble == b->preamble && a->sync[0] == b->sync[0] && a->sync[1] == b->sync[1];
+}
+
 uint32_t phy_symbol_us(const phy_t *p) { return (uint32_t)((1000000ull << p->sf) / p->bw_hz); }
 
 bool phy_ldro(const phy_t *p) { return phy_symbol_us(p) >= 16380; }

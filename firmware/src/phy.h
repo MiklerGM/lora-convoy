@@ -21,6 +21,9 @@ extern const phy_t PHY_V0;
 
 bool phy_supported(const phy_t *p);
 
+/* The same mode, field by field. */
+bool phy_same(const phy_t *a, const phy_t *b);
+
 /* Microseconds per symbol: exact for the four bandwidths above. */
 uint32_t phy_symbol_us(const phy_t *p);
 
