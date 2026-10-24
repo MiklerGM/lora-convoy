@@ -54,7 +54,8 @@ places.
   not of each other. The simulator's figures for 10 and 20 nodes count only if, for those three,
   its delivered share, channel load and gate skips match the radios'.
 - **Pass criteria are written before it runs:** the delivered share and the 95th-percentile
-  shown-fix age at 5, 10 and 20 senders, against the target set by question 2 in [01](01-goals.md).
+  shown-fix age at 5, 10 and 20 senders, against the same measures of our candidate setups in the
+  same scenario ([09](09-protocol-next.md)), since question 2 in [01](01-goals.md) sets no number.
   Without them, E6 cannot fail.
 - **The like-for-like arm is AEAD**, about 10.5 s for 20 riders on paper: the protocol in
   [06](06-own-protocol.md) proves group membership the same way. Signing proves which rider sent a

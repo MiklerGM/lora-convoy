@@ -4,8 +4,10 @@ Tickets: open decisions, and features that no milestone has taken yet. Each says
 options known so far, what would settle it, and which milestone needs it; any of them can become a
 GitHub issue as it stands. [ROADMAP](ROADMAP.md) names the tickets each milestone waits for.
 
-The owner's questions 1–7 in [01](01-goals.md) stay there. Questions 1 and 2, group size and
-freshness, set the default radio mode in M5.
+The owner's open questions in [01](01-goals.md) stay there. Group size and freshness, its first
+two, were settled on 2026-10-24: ten riders as a first reference, a setup computed when a group is
+made, and freshness measured on setups the radio can achieve rather than guessed
+([ARCHITECTURE](ARCHITECTURE.md), D18; T-setup).
 
 ## For the owner
 
@@ -28,12 +30,25 @@ code, and the order to settle it in are in [09](09-protocol-next.md).
 
 ### T-phy: radio modes, sync word, preamble
 
-v0 uses SF7/250 at 869.525 MHz, a sync word of our own and an 8-symbol preamble. Open: the default
-modes per group size ([06](06-own-protocol.md), Sizing), the sync word's value and whether EBYTE
+v0 uses SF7/250 at 869.525 MHz, a sync word of our own and an 8-symbol preamble. Open: the modes
+a group's setup chooses among (T-setup; [06](06-own-protocol.md), Sizing), the sync word's value and whether EBYTE
 and other chips leave it alone, a shorter preamble. Settled by E2 (range) and E10 (occupancy) in
 [07](07-experiments.md), and a hardware check of the sync word: in dmd2-lora-bridge one wrong
 sync symbol cost most packets. M5 went without it: v1 keeps v0's mode for every group, and the
 invitation does not carry one yet. Needed by M7.
+
+### T-setup: a group's setup, computed when it is made
+
+Agreed [owner, 2026-10-24] ([ARCHITECTURE](ARCHITECTURE.md), D18): the organiser sets the roster,
+the app computes the interval, the schedule and the radio mode from the slots, the packet's size
+and airtime, the clocks' error and the radio's limits, every board gets that one setup, and one
+that does not fit is refused. Nothing changes on the move. **For now:** every group gets 2 s and
+one mode from the app, so an L1 without PPS is silent from the eighth rider on; the invitation
+carries no mode; and `GROUP` takes setups too tight for the board's time error, the board then
+silent ([09](09-protocol-next.md), fixes that need no new layout). Candidates for the comparison
+runs, not profiles, are in [09](09-protocol-next.md): 5 riders every 2 s, 10 every 3 s, 20 every
+6 s, on SF7/250. Settled by those runs and by E0 and E2 on the boards; recomputed once v4's size is
+agreed.
 
 ### T-length: the packet's final length
 
@@ -78,7 +93,10 @@ itself (`lag=`). Still open: the lag on the L1 (E0), the fix stamped by the UART
 than by the parser, time from packets heard without a fix, and clock drift calibration for longer
 holdover ([T-clock-drift](#t-clock-drift-calibrate-local-clocks)). A fix that came after the next
 PPS edge would be paired with it, a second out: the lag must stay well under a second (E0), or the
-interrupt must count edges.
+interrupt must count edges. Agreed for a lost fix [owner, 2026-10-24]: the board keeps its last
+position and sends only in its own slot while its time's error fits the slot's margin, then stops
+and listens, with no random sends and no extra retries ([ARCHITECTURE](ARCHITECTURE.md), D19); how
+long that lasts is measured, not assumed.
 
 ### T-clock-drift: calibrate local clocks
 
@@ -114,7 +132,8 @@ board can keep transmitting safely; no longer holdover is promised before those 
 Spare slots and their single allocator, a roster change at an activation epoch, what happens when
 the organiser's radio is lost ([06](06-own-protocol.md), open questions). **M6, for now:** each
 rider's slot comes with their invitation, so a late joiner finds it waiting; a board sits out the
-frame running when its time comes. Two radios in one slot meet in every frame and never hear each
+frame running when its time comes. A group's roster and schedule do not change on the move for now
+(T-setup). Two radios in one slot meet in every frame and never hear each
 other, so each board listens in its slot one frame in 32: they hear each other as a clash within
 half a minute on average, and the app tells the rider. Still open: what a clash should make a board
 do by itself, more riders than the invitations, and a use for the spare slot. Needed by M7.
@@ -135,16 +154,17 @@ when a rider counts as stopped).
 ### T-help: "need help", and the rider's state
 
 [01](01-goals.md) asks for a rider's state, "need help" first, to show in another rider's app
-within N seconds. **v4** [owner, 2026-10-24]: one state the rider chooses, need help among normal,
-please stop, need fuel and helping, said in every packet until changed, beside the facts the board
-observes; no automatic answers, the interface showing that the state is going out and how fresh
-each rider's radio contact is, promising no delivery; helping names no one, back to an addressee
-if rides show a need ([09](09-protocol-next.md), the participant's state). **v3, for now:** the flag and the call's
-number in every packet of the caller, and a byte in every packet that answers one call heard,
-naming it, each in turn when several call ([PROTOCOL](PROTOCOL.md)): among twenty riders the first answer comes in 1.1 s and the
-last in 5.4 s, at the median, v3's history once v4 is built. Still open: N itself (question 2 in
-[01](01-goals.md)); a call from the board's button when the phone is gone; a state that outlives a
-restart of the board; a call heard only through a relay (T-relay).
+within N seconds; N is measured on the candidate setups, not guessed (T-setup). **v4** [owner,
+2026-10-24] ([ARCHITECTURE](ARCHITECTURE.md), D17): one state the rider chooses, need help among
+normal, please stop, need fuel and helping, said in every packet until changed, beside the facts
+the board observes; no automatic answers, the interface showing that the state is going out and
+how fresh each rider's radio contact is, promising no delivery; helping names no one, back to an
+addressee if rides show a need; normal again after a restart or a loss of power, need help
+included; no button for it on the board in the first iteration (T-board-ui). **v3, for now:** the
+flag and the call's number in every packet of the caller, and a byte in every packet that answers
+one call heard, naming it, each in turn when several call ([PROTOCOL](PROTOCOL.md)): among twenty
+riders the first answer comes in 1.1 s and the last in 5.4 s, at the median, v3's history once v4
+is built. Still open: a call heard only through a relay (T-relay).
 
 ### T-relay: work out relaying
 
@@ -195,8 +215,22 @@ rate limit. Open: GPX or our binary geometry, and who runs it ([01](01-goals.md)
 
 ### T-osmand-extras: more on the map
 
-Trails, a widget listing riders nearest first, a predicted point marked as prediction, colours
+Trails, a widget listing riders nearest first, a predicted point (T-predict), colours
 riders keep between rides ([05](05-osmand-integration.md), Implications). After M4.
+
+### T-predict: a predicted position
+
+A later task [owner, 2026-10-24]. A prediction from speed and course has a bounded horizon and
+looks unlike a measured position; at a fork it may show the wrong road. Neither it nor an
+animation changes a fix's time, makes a position fresh or changes a rider's observed facts
+([ARCHITECTURE](ARCHITECTURE.md), D20). No field is added for it now.
+
+### T-last-seen: the last observation, said as such
+
+The point's menu gives when the radio last heard the rider and when its fix was taken, then
+"Stopped" or a speed with nothing to say that it is the last fix's. It should read as the last
+observation, "stopped at the last fix", so it does not say the rider stands now
+([ARCHITECTURE](ARCHITECTURE.md), D19). Wording in the app only; no new field.
 
 ### T-osmand-opengl: riders blink on OsmAnd's OpenGL engine
 
@@ -279,6 +313,12 @@ Needed by M7.
 
 The Heltec V3 (no GNSS), the RAK4631 with its GNSS, the T-Beam, the ThinkNode M1, the Wio Tracker
 L1 Pro 1W (its radio's own power switch). After M4.
+
+### T-board-ui: a screen and a button on the board
+
+A later task [owner, 2026-10-24]: a screen on some boards, and a button to switch the rider's chosen
+state. Not now: no display support and no new use of the buttons; the first iteration needs no
+button for help ([ARCHITECTURE](ARCHITECTURE.md), D17).
 
 ### T-power: power
 

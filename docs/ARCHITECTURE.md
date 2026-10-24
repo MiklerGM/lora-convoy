@@ -87,8 +87,8 @@ beat (E6 in [07](07-experiments.md)), not a part of it.
 
 - **Cost:** firmware on every board we support, and no interoperability with plain Meshtastic
   radios in the first versions (question 4 in [01](01-goals.md)).
-- **Still open:** questions 1 and 2 in [01](01-goals.md), group size and freshness. They no
-  longer decide the direction, but they set the default radio mode (M5).
+- **Settled since:** group size and freshness (2026-10-24): a setup computed for each group, and
+  freshness measured on setups the radio can achieve rather than fixed by guess (D18).
 
 ### D2. One repository
 
@@ -230,3 +230,71 @@ its ages would come out younger by that wait.
   clock against its own from the lines that came quickest; a change in who answers our call is
   told at once.
 - **Cost:** a token more in each line, and ages on the phone as good as that reckoning.
+
+### D17. One participant's state for every activity (2026-10-24)
+
+The boards are for motorcyclists, cyclists, hikers and mixed groups, and a code means the same for
+all of them. A packet carries the facts its board observes, any of them at once: a current
+position, stopped, battery low; and one state its rider chooses: normal, need help, please stop
+(a request to the group, where stopped is a fact), need fuel, helping. The chosen state is said
+again in every packet until it is changed or called off; the app offers the buttons that fit an
+activity.
+
+- **No automatic answers.** No board answers a call for help by itself: there is no call number to
+  match answers by, and no list of those who answered. Helping names no one, and the app never
+  claims from it that help is on its way to a given rider; with several calls at once, who helps
+  whom is unknown, and that is accepted. An addressee comes back if rides show a need for one.
+- **After a restart or a loss of power** the chosen state is normal again, need help included.
+- **On the board itself**, no button for help in the first iteration; a screen and a button to
+  choose a state on some boards is a later task (T-board-ui).
+- **Why:** a radio that received a call says nothing of a person's answer to it, and a state said
+  again in every packet needs no bookkeeping of its own.
+- **So:** v3's byte of answers stays in v4, reserved and sent as zero. The facts and the chosen
+  state may share one byte, but no bit and no layout is fixed yet ([09](09-protocol-next.md)).
+- **Cost:** a caller learns of no delivery: the app shows that the state is going out and how
+  fresh each rider's radio contact is instead. A call cut short by a restart must be made again.
+
+### D18. A group's setup is computed when the group is made (2026-10-24)
+
+The organiser sets the roster. The app computes the interval, the schedule and the radio mode from
+the number of slots, the packet's size and airtime, the clocks' error and the radio's limits; every
+rider's board gets that one setup, and a setup that does not fit is refused. Nothing changes the
+roster or the schedule on the move.
+
+- **Ten riders** are the first iteration's reference, not a technical maximum: a larger group gets
+  a longer interval, never a schedule that breaks.
+- **Freshness** is not a number guessed in advance. Setups the radio can achieve are proposed and
+  measured, each by three different measures: the interval between sendings, the age of the
+  position on the map, and the longest gap between successful updates. Profiles are fixed only
+  after measuring on the boards ([09](09-protocol-next.md)).
+- **Why:** slots keep apart only if every board of a group runs one setup, and a setup checked
+  whole cannot leave a board silent, as one too tight for its time error does now.
+- **Cost:** a change of roster or mode is a new setup, made at a regroup (T-join).
+
+### D19. A board without GNSS keeps its last position and its own slot (2026-10-24)
+
+A fix lost is not time lost. A board keeps its last reliable position and when it was taken, and
+its last speed and stop go out as the last observation. It sends only in its own slot, and only
+while its time's error fits the slot's margin; past that it stops sending and listens. Losing GNSS
+starts no random sending and no extra retries.
+
+- **In the app** three things stay apart: how fresh the radio contact is, how old the position is,
+  and what movement or stop was last observed. "Heard 2 s ago; position a minute old; stopped at
+  the last fix" says nothing of whether the rider stands now. No new field is needed for it.
+- **v4** may send a rider's state without a position, before the first fix too, if the board's
+  time is good enough for its slot (D17).
+- **Why:** a tunnel or a forest takes the fix and leaves the clock running, and a board that
+  guessed at its slot would take a neighbour's.
+- **Cost:** a long outage silences a board that still has its last position to tell. How long its
+  time holds comes from measurements, not from an assumption (T-timing, T-clock-drift).
+
+### D20. What is measured stays apart from what is drawn (2026-10-24)
+
+An animation or a prediction on the map never changes a fix's time, never makes a position fresh,
+and never changes a rider's observed facts. A prediction from speed and course, if one comes, has
+a bounded horizon and looks unlike a measured position.
+
+- **Why:** at a fork a prediction may show the wrong road, which is the very turn a rider catching
+  up watches for.
+- **Cost:** the map moves a fix at a time until a prediction is built (T-predict); nothing is added
+  to the format for it now.

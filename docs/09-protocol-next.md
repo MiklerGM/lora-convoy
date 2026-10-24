@@ -5,34 +5,41 @@ fixed yet; help without a position goes into v4's agreed change, not as a fix to
 early, before the fixes and v4. A re-check the same day [recheck] added two decisions, the mode in
 use being the mode applied (D15) and times keeping their meaning to the phone (D16), refined E0's
 method, and bounded what the simulator's numbers say. Later the same day the owner set the
-participant's state for every activity, with no automatic answers to a call for help (below). An
-outside review of v3 [review] went over the format, the
-schedule, help and the air. Its findings are checked here against the code [code] and recomputed
-with `tools/airtime.py` at v3's preamble of 8 [calc]; each figure is a bound from the model, not a
-measurement. What follows is what to keep, what the owner decides first, and in what order the
-rest gets settled. It continues [06](06-own-protocol.md)'s open questions; decisions go to
-[ARCHITECTURE](ARCHITECTURE.md) and the tickets of [BACKLOG](BACKLOG.md) as they are made.
+participant's state for every activity, with no automatic answers to a call for help (below), and
+then settled the scenarios, the group's size and setup, the state after a restart, a board without
+GNSS, and what the map may draw ([ARCHITECTURE](ARCHITECTURE.md), D17–D20). An outside review of
+v3 [review] went over the format, the schedule, help and the air. Its findings are checked here
+against the code [code] and recomputed with `tools/airtime.py` at v3's preamble of 8 [calc]; each
+figure is a bound from the model, not a measurement. What follows is what to keep, what the
+owner has decided, and in what order the rest gets settled. It continues
+[06](06-own-protocol.md)'s open questions; decisions go to [ARCHITECTURE](ARCHITECTURE.md) and the
+tickets of [BACKLOG](BACKLOG.md) as they are made.
 
 ## What stays
 
 Personal slots, each rider sending their own position, a board that runs without its phone, and
 two ages, the position's and the radio's. One fixed roster a ride, with an invitation for each
 rider. The rule that a board unsure of its time passes its slot over rather than risk a
-neighbour's. The phase drawn per frame, so two groups on one channel do not collide every frame.
-One key for a trusted group, any member of which can send as any slot ([SECURITY](../SECURITY.md)).
+neighbour's, and a board that loses its fix keeps its last position and its own slot as long as
+its time allows (D19). The phase drawn per frame, so two groups on one channel do not collide
+every frame. One key for a trusted group, any member of which can send as any slot
+([SECURITY](../SECURITY.md)).
 
-## First: what the owner decides
+## The owner's decisions
 
-1. **The scenario, and its three numbers.** Finding a rider who fell behind, seeing who turned off
-   at a fork, and following the bike ahead need different freshness. At 60 km/h a bike covers 33 m
-   in 2 s, 83 m in 5 s and 500 m in 30 s [calc], so 30 s of freshness and 60 m of error are not
-   one requirement said twice. Wanted, for the main scenario: the age of the position on the map;
-   the longest gap without any update; the delay from a rider choosing a state to its showing in
-   another rider's app ([01](01-goals.md)). Counted
-   with the outages in: a rider behind a ridge for 5 % of a ride bounds the 95th percentile,
-   however often everyone sends [review].
-2. **The group's size against its freshness, and the L1 without PPS.** With NMEA's ±100 ms, as the
-   L1 has it, v3's schedule needs at least [calc]:
+1. **The scenarios** [owner]. Both, neither above the other: a leader watching the whole group, to
+   notice who fell behind or stopped; and a rider catching up, watching those ahead so as not to
+   miss a turn. A last position stays on the map with a clear age, however old: it is still of use.
+   The two need different freshness: at 60 km/h a bike covers 33 m in 2 s, 83 m in 5 s and 500 m
+   in 30 s [calc]. No number is set by guess: setups the radio can achieve are proposed and
+   measured (D18), by the age of the position on the map, the longest gap between successful
+   updates and the delay from a rider choosing a state to its showing in another rider's app
+   ([01](01-goals.md)), the interval kept apart from all three. Counted with the outages in: a
+   rider behind a ridge for 5 % of a ride bounds the 95th percentile, however often everyone sends
+   [review].
+2. **The group's size and its setup** [owner]. Ten riders are the first iteration's reference, not
+   a technical maximum, and a group's setup is computed when the group is made (D18). The bound,
+   with NMEA's ±100 ms as the L1 has it, under v3's schedule [calc]:
 
    | Mode, v3's 25 bytes | On air | Frame for 10 riders | for 20 |
    |---|---:|---:|---:|
@@ -40,55 +47,54 @@ One key for a trusted group, any member of which can send as any slot ([SECURITY
    | SF9/250 | 102.912 ms | 3.38 s | 6.45 s |
    | SF10/125 | 411.648 ms | 6.77 s | 12.93 s |
 
-   At today's 2 s an L1 is silent from the eighth rider on [code]. So: 1–2 s means PPS on every
-   board, or NMEA measured much better than ±100 ms; otherwise about 5 s for ten riders and 10 s
-   for twenty, which changes how the map feels. The review would take ten riders as the main
-   profile and twenty with slower updates [review].
+   At today's 2 s an L1 is silent from the eighth rider on [code]. Candidates for the comparison
+   runs, not profiles: v3's 25 bytes on SF7/250, under today's model of time error [owner] [calc]:
+
+   | Riders | Each sends every | Air taken, all riders | Time error a slot allows |
+   |---:|---:|---:|---:|
+   | 5 | 2 s | 7.7 % | 149 ms |
+   | 10 | 3 s | 10.3 % | 119 ms |
+   | 20 | 6 s | 10.3 % | 125 ms |
+
+   The tolerances and the range are still being measured on the boards, and the candidates are
+   computed again once v4's size is agreed.
 3. **What a call for help promises** [owner]: a state the caller's packets carry until it is called
    off, and no more. The interface shows that it is going out and how fresh the radio contact with
    each rider is, and promises no delivery of a given call (the participant's state, below). It
-   goes out before the first fix too, in v4's change. Still open: a call from the
-   board's button with the phone gone, and whether it outlives a restart or a loss of power.
+   goes out before the first fix too, in v4's change, if the board's time is good enough for its
+   slot. No button on the board for it in the first iteration, and after a restart or a loss of
+   power the state is normal again, need help included (D17).
 
 ## The participant's state, for every activity
 
-2026-10-24 [owner]. The boards are for motorcyclists, cyclists, hikers and mixed groups. The format
-carries a rider's position, its freshness and the rider's state, alike for all; an activity shows
-only in settings and in which buttons the interface offers. A code means the same for everyone:
-"need fuel" is fuel.
+Decided 2026-10-24 [owner] and kept in [ARCHITECTURE](ARCHITECTURE.md), D17: the boards are for
+motorcyclists, cyclists, hikers and mixed groups; a packet carries the facts its board observes,
+any of them at once (a current position, stopped, battery low), and one state its rider chooses
+(normal, need help, please stop, need fuel, helping), said again in every packet until changed or
+called off, its codes the same for every activity; no board answers a call for help by itself, and
+helping names no one; after a restart the state is normal again. What that means for v4:
 
-- **Facts the board observes**, any of them at once: stopped; a current position, the GNSS having
-  a fix; its battery low.
-- **One state the rider chooses**: normal; need help; please stop, asking the group to; need fuel;
-  helping. Stopped is a fact, please stop a request to the group, and helping a person's choice,
-  which no radio's receipt of a packet can stand for.
-- **Helping names no one** in v4 [owner]: a general state chosen by hand, with no addressee. The app
-  does not claim from it that help is on its way to a given rider; with several calls at once, who
-  helps whom stays unknown, and that is accepted. An addressee comes back if rides show a real need
-  for one.
-- **Said again in every packet** until changed or called off, as the facts are. A state repeated so
-  needs no number of its own for each change, unless a concrete need for one is found.
-- **No automatic answers to a call for help.** v4 has no field for "whose call my
-  radio heard", no call number kept only to match answers to calls, no lists of the boards that
-  answered, and no word to the phone when those change. That a board hears a neighbour does not
-  show the neighbour hears it, and that is accepted: the interface shows that a state is going out
-  and how fresh the radio contact with each rider is, and promises no delivery of a given call. Who
-  hears whom is a question for the link's diagnosis in general, later, with no new load on the air
-  for it now.
+- **No answers on the air.** v4 has no field for "whose call my radio heard", no call number kept
+  only to match answers, no lists of those who answered, and no word to the phone when they change.
+  That a board hears a neighbour does not show the neighbour hears it: who hears whom is for the
+  link's diagnosis in general, later, with no new load on the air for it now.
 - **The byte freed by the answers** stays, reserved and sent as zero, and needs no purpose now;
   the packet is not shrunk to 24 bytes for its sake. The authentication tag keeps its whole
-  length; and v4's protection and time are not bound to 25 bytes: their bytes are
-  counted when the whole layout is agreed.
+  length; and v4's protection and time are not bound to 25 bytes: their bytes are counted when the
+  whole layout is agreed.
+- **The packing**: the facts and the chosen state may share one byte, as discussed; no bit and no
+  layout of v4 is fixed yet.
 - **When a rider counts as stopped.** v3's rule, a minute under 5 km/h and moving again over
   10 km/h, takes a walker for stopped within a minute and never moving again, and a cyclist
   climbing at 6–8 km/h after a stop for stopped still [code]. A rule for every activity, by distance
   rather than speed: stopped after two minutes within 30 m of one point, moving once out of it. A
   hypothesis, to be checked against recorded rides, walks and climbs before it is kept. Nor is a
   missing position a stop.
-- **The ages of the position and of the radio contact** are kept apart from the rider's last speed:
-  a speed of 0 does not show that the rider is still standing once contact is lost.
-- **Open**: whether the chosen state outlives a restart of the board; and what the fact of a stop
-  says once the fix is lost, where v3 goes on sending the last it saw [code].
+- **Three things apart** (D19): how fresh the radio contact is, how old the position is, and what
+  movement or stop was last observed, none of them tied to the rider's last speed. "Heard 2 s ago;
+  position a minute old; stopped at the last fix" says nothing of whether the rider stands now, and
+  a speed of 0 does not show that the rider is still standing once contact is lost. No new field is
+  needed for it.
 
 For instance: a motorcyclist refuelling, stopped and in the normal state; a cyclist with a puncture,
 stopped and asking the group to stop; a hiker fallen into a gully, needing help, stopped, with no
@@ -98,15 +104,16 @@ helping, which by itself does not say whom.
 **v3 has, of this**: the facts of a current position and of a stop, the stop by its speed rule, and
 a bit for a low battery that nothing sets yet; one chosen state, need help, with every board that
 hears it answering automatically, the call's number to match the answers, and their lists on the
-phones. It stays as it is until v4 is built.
+phones. A board that loses its fix sends its last position with that position's own time, marked
+as not current, and the stop it last computed [code]. It stays as it is until v4 is built.
 
 ## Fixes that need no new layout
 
-- **A group's radio profile, checked whole.** `GROUP` leaves the mode alone, which `MODE` keeps
-  apart, so a board can join a group and stay on a mode the others do not use. `GROUP` takes 32
-  riders every 500 ms, a slot spacing of 15.15 ms under a 30.848 ms packet, and the board then
-  stays silent [code]. A setup should be refused unless its slots fit its frame with the board's
-  own time error; the mode should come with the group (T-phy), or one PHY be fixed for now.
+- **A group's radio profile, checked whole** [owner: agreed, D18]. `GROUP` leaves the mode alone,
+  which `MODE` keeps apart, so a board can join a group and stay on a mode the others do not use.
+  `GROUP` takes 32 riders every 500 ms, a slot spacing of 15.15 ms under a 30.848 ms packet, and
+  the board then stays silent [code]. A setup is refused unless its slots fit its frame with the
+  board's own time error, and the mode comes with the group's setup (T-setup).
 - **The region bounding the settings.** `MODE … 500` is taken at 869.525 MHz, and 500 kHz spills
   out of 869.40–869.65 MHz, the window whose 10 % the budget is for [code] ([08](08-regions.md)).
   Settings the region does not allow are refused; some duty cycle is kept for help and control;
@@ -142,12 +149,12 @@ phones. It stays as it is until v4 is built.
   and a board can say it is alive while its position is old. The fix's age beside it, saturating
   at a value that means "older than that": v3's fix time of 16 bits is unwrapped within 9 h 6 min,
   and past 18 h 12 min an old fix looks recent [code] [review].
-- **The state without a position** [owner: in v4's change]. Before its first fix a
+- **The state without a position** [owner: in v4's change] (D19). Before its first fix a
   board sends nothing, its rider's state included, though its time may be good enough for its slot
   already (`node_poll_tx`) [code]. With a usable time it sends the state, marked as without a
   position.
 - **The participant's state** (above): the observed facts, and one chosen state of five, room left
-  for more.
+  for more; one byte may hold them all, no bit fixed yet.
 - **No call number** [owner]. v3's seven numbers repeat, a new call taking an old one's number once
   in seven after a restart [review]; with no automatic answers to match, the number goes, and a
   state repeated needs none.
@@ -175,9 +182,9 @@ phones. It stays as it is until v4 is built.
 - **Range** is antennas, mounting and terrain before it is a link budget. Over 4 km at 869.5 MHz
   the first Fresnel zone is 18.6 m in radius at mid-path [calc], far above a bike's antenna.
   Mounting, polarisation, the rider's body, metal, the amplifier's supply and both directions of
-  each link want measuring: that a board hears a rider does not show the rider hears it. A higher SF hears further, sends
-  longer, and is longer exposed to interference. If a column splits behind terrain, one plain
-  relay helps where sending faster does not (T-relay) [review].
+  each link want measuring: that a board hears a rider does not show the rider hears it. A higher
+  SF hears further, sends longer, and is longer exposed to interference. If a column splits behind
+  terrain, one plain relay helps where sending faster does not (T-relay) [review].
 - **The roster** stays fixed a ride: a late rider takes a slot kept for them; a change of frame,
   roster or PHY is a new setup at a regroup, and on the move would need an epoch to switch at.
   Two radios in one slot are found in some 33 s by the first of the two and 66 s by a given one, at
@@ -232,9 +239,11 @@ given as its median over the series and the largest observed.
 
 ## How it is settled
 
-1. **The owner's decisions** above: the scenario's numbers, the size against freshness and PPS,
-   what help promises. No profile is fixed before them [owner].
-2. **The simulator measures what matters**, on v3: the map's age with outages in, the longest gap,
+1. **The owner's decisions** (above), 2026-10-24: both scenarios, and no number guessed; ten
+   riders as a reference, and a setup computed when a group is made; help a state said until called
+   off, normal again after a restart. No profile is fixed before the measurements [owner].
+2. **The simulator measures what matters**, on v3 and its three candidate setups: the map's age
+   with outages in, the longest gap,
    the delay from a state's choice to its showing in another rider's app, with several callers
    (on v3 counted so far only through its answers), two groups with burst losses. v4's choices
    are then compared on numbers.

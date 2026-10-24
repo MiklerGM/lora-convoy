@@ -2,22 +2,27 @@
 
 ## Use case
 
-A group of riders, mostly motorcycles, often off-road or in the mountains where there is no mobile
-coverage. Each rider wants to:
+A group on the move, motorcyclists, cyclists, hikers or a mix of them, often off-road or in the
+mountains where there is no mobile coverage. Two uses, neither above the other [owner]: a leader
+watching the whole group, to notice who fell behind or stopped; and a rider catching up, watching
+those ahead so as not to miss a turn. Each rider wants to:
 
 - see where the others are, on the navigation map they already use (OsmAnd on Android);
 - notice who has stopped, fallen behind or taken another turn;
 - send a few short things: "need help", a regroup point, a line of text.
 
+A last position is of use however old: it stays on the map, with a clear age.
+
 ## Requirements (draft)
 
 | | Target | Notes |
 |---|---|---|
-| Group size | designed for 10 riders; up to 20, with freshness degrading in proportion (twice the riders, at most twice the interval), never a breakdown | both numbers are assumptions to confirm (question 1) |
-| Position freshness | the age of the fix **shown on the receiver's map**, at a stated percentile (e.g. 95 % of the time under N s) | not the transmission interval: losses, relays and phone or Bluetooth outages count too. At 60 km/h a 10 s old point is already 167 m behind. For comparison: DMD sent every 1.5–6 s, tuned Meshtastic 5–10 s ([03](03-alternatives.md)) |
-| Separate statuses | "radio last heard", "GPS fix age" and the rider's state are three different facts | a fresh heartbeat proves neither a fresh position nor that one's own state was received: hearing a rider does not show that the rider hears back |
-| State delivery | the delay until a rider's state, "need help" first, shows in another rider's app: within N s at the 95th percentile, from the sender choosing it to its showing in the receiver's app, under the radio conditions the scenario states | N still to set (question 2). It shows the state reached the app, not that anyone looked at the screen. [06](06-own-protocol.md) sizes the slots that carry it |
-| No GPS fix | the rider's own app says there is no fix; the others see "no position" or an aged last fix, never a fresh-looking one | a radio without a valid time base must not transmit into a schedule ([06](06-own-protocol.md)) |
+| Group size | ten riders as the first iteration's reference, not a technical maximum; a larger group gets a longer interval, never a breakdown | settled 2026-10-24 ([ARCHITECTURE](ARCHITECTURE.md), D18) |
+| Position freshness | the age of the fix **shown on the receiver's map**, and the longest gap between successful updates, at a stated percentile | no number is set by guess: setups the radio can achieve are proposed and measured first ([09](09-protocol-next.md)). The transmission interval is a third measure, apart from both: losses, relays and phone or Bluetooth outages count too. At 60 km/h a 10 s old point is already 167 m behind. For comparison: DMD sent every 1.5–6 s, tuned Meshtastic 5–10 s ([03](03-alternatives.md)) |
+| Separate statuses | how fresh the radio contact is, how old the position is, the movement or stop last observed, and the rider's state are different facts: "heard 2 s ago; position a minute old; stopped at the last fix" | a fresh heartbeat proves neither a fresh position nor that one's own state was received: hearing a rider does not show that the rider hears back. A last observed stop does not say the rider stands now |
+| State delivery | the delay until a rider's state, "need help" first, shows in another rider's app: within N s at the 95th percentile, from the sender choosing it to its showing in the receiver's app, under the radio conditions the scenario states | N is not set: measured first on the candidate setups ([09](09-protocol-next.md)). It shows the state reached the app, not that anyone looked at the screen. [06](06-own-protocol.md) sizes the slots that carry it |
+| No GPS fix | a lost fix is not lost time: the board keeps its last position and when it was taken, its last speed and stop shown as the last observation; the rider's own app says there is no fix, and the others never see a fresh-looking position | the board sends only in its own slot while its time is good enough for it, then stops and listens; no random sends, no extra retries ([ARCHITECTURE](ARCHITECTURE.md), D19) |
+| Drawn positions | an animated or predicted position never changes a fix's time, never makes a position fresh, never changes a rider's observed facts; a prediction, if any, has a bounded horizon and looks unlike a measured position | at a fork a prediction may show the wrong road; a later task ([ARCHITECTURE](ARCHITECTURE.md), D20) |
 | Range | direct radio range, roughly 1–4 km | how far a column spreads is still to confirm |
 | Infrastructure | during the ride, none: no repeaters, no internet | a hub for slow data is a wish (below); positions never go through it |
 | Phone | Android with OsmAnd | iOS out of scope: OsmAnd's API there is different ([05](05-osmand-integration.md)) |
@@ -26,7 +31,7 @@ coverage. Each rider wants to:
 | Duty ledger | each device keeps, and can export, its transmit time per hour by category: positions, relays, routes, retries, control | a self-built device has no manufacturer's declaration to rely on |
 | Privacy | only the group can read or forge its positions | |
 | Interoperability with plain Meshtastic | a decision, not an option (question 4) | a yes rules out the scheduled design of [06](06-own-protocol.md) for a first version |
-| Group setup | the organiser states the number of riders; slots, frame and radio mode follow from it | [06](06-own-protocol.md) |
+| Group setup | the organiser sets the roster; the app computes the interval, the schedule and the radio mode from the slots, the packet's size and airtime, the clocks' error and the radio's limits; every rider's board gets that one setup, and a setup that does not fit is refused | when the group is made; nothing changes the roster or the schedule on the move ([ARCHITECTURE](ARCHITECTURE.md), D18) |
 | Route sharing | nice to have: send a route or a change to it during the ride | via points fit one packet ([06](06-own-protocol.md)) |
 | Route safety | a shared route is never silently altered off-road: exact or within 2 m, never snapped, integrity-checked | [06](06-own-protocol.md) |
 
@@ -58,14 +63,8 @@ what it would touch.
 
 ## Open questions for the owner
 
-1. How many riders does a group usually have?
-2. How fresh must a shown position be, and how often may it be late: is 10 s at the 95th
-   percentile enough, or does it need 1–2 s? And how soon must a rider's state, "need help" first,
-   show in the others' app?
-   Two independent reviews proposed a candidate: the shown fix under about 30 s old and the map
-   error under about 60 m, both at the 95th percentile, with predicted points marked and stop and
-   help sent at once ([07](07-experiments.md), E9 tests it). The answer decides between the two
-   paths: at 10–15 s a tuned Meshtastic with a companion may be enough.
+Questions 1 and 2 are settled (below); the others keep their numbers.
+
 3. How far does a column spread on a typical ride?
 4. Will some riders bring plain Meshtastic radios and apps, so that they must interoperate?
 5. Is the node powered by the bike, or must it run a day on its own battery?
@@ -74,3 +73,13 @@ what it would touch.
    [08](08-regions.md); Morocco, for one, allows 869.40–869.65 MHz at 500 mW.
 7. Does the organiser ride with the group, and where in it? In [06](06-own-protocol.md) the
    organiser's radio hands out spare slots.
+
+## Settled questions
+
+1. **How many riders?** Settled 2026-10-24: ten as the first iteration's reference, not a
+   technical maximum; each group's setup is computed for its roster when it is made
+   ([ARCHITECTURE](ARCHITECTURE.md), D18).
+2. **How fresh, and how soon a state?** Settled 2026-10-24: no number is set by guess. Setups the
+   radio can achieve are proposed and measured, by the shown position's age, the longest gap
+   between updates and a state's delay to another rider's app ([09](09-protocol-next.md)); riders
+   judging replays (E9 in [07](07-experiments.md)) is one of those measurements.
