@@ -293,6 +293,26 @@ def wait_status(serial: str, want: str, timeout=60) -> str:
         time.sleep(5)
 
 
+def type_whole(serial: str, text: str) -> None:
+    """Into the field in focus, a piece at a time, as a busy emulator drops the tail of a long
+    `input text`: typed again until the field holds it whole."""
+    for _ in range(3):
+        for k in range(0, len(text), 16):
+            adb(serial, "shell", "input", "text", text[k:k + 16])
+        if any(t == text for t, _, _ in screen(serial)):
+            return
+        adb(serial, "shell", "input", "keyevent", "KEYCODE_MOVE_END", *["KEYCODE_DEL"] * (len(text) + 8))
+    raise AssertionError(f"{serial}: could not type {text!r} whole")
+
+
+def wait_text(serial: str, want: str, timeout=30) -> None:
+    deadline = time.time() + timeout
+    while not any(want in t for t, _, _ in screen(serial)):
+        if time.time() > deadline:
+            raise AssertionError(f"{serial}: no {want!r} on screen")
+        time.sleep(1)
+
+
 def press(serial: str, items: list, want: str) -> bool:
     """Taps what reads exactly want, on a screen already read."""
     hits = [(x, y) for t, x, y in items if t == want]
@@ -484,9 +504,10 @@ def ride() -> None:
         wait_tap(p, "Group")
         time.sleep(2)
         wait_tap(p, "Paste an invitation")
-        adb(p, "shell", "input", "text", invitation(i))
+        type_whole(p, invitation(i))
         adb(p, "shell", "input", "keyevent", "KEYCODE_BACK")
         wait_tap(p, "Join")
+        wait_text(p, f"you are {names[i]}")
         step(f"phone {i} joined as {names[i]}")
     beacon = boards - 1
     assert all(r.startswith("OK group=") for r in board_command(beacon, f"GROUP {key} {beacon} {boards} 2000"))
