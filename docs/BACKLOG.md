@@ -75,9 +75,29 @@ measures each board. **M6, for now:** PPS edges paired with the NMEA fix of thei
 alone less a lag the board is told; 50 ppm of drift in holdover, and silence once the uncertainty
 leaves the budget ([PROTOCOL](PROTOCOL.md)). A Heltec with its kit measures the L76K's NMEA lag
 itself (`lag=`). Still open: the lag on the L1 (E0), the fix stamped by the UART's interrupt rather
-than by the parser, time from packets heard without a fix, and a clock disciplined against PPS for
-longer holdover. A fix that came after the next PPS edge would be paired with it, a second out: the
-lag must stay well under a second (E0), or the interrupt must count edges.
+than by the parser, time from packets heard without a fix, and clock drift calibration for longer
+holdover ([T-clock-drift](#t-clock-drift-calibrate-local-clocks)). A fix that came after the next
+PPS edge would be paired with it, a second out: the lag must stay well under a second (E0), or the
+interrupt must count edges.
+
+### T-clock-drift: calibrate local clocks
+
+After basic E0, measure each board's local clock against GNSS, estimate its frequency error in
+ppm, and correct the local-to-UTC mapping so it holds time longer without GNSS. Start with PPS on
+the Heltec. On the L1, assess whether a long series of NMEA marks suffices after E0 bounds their
+lag and jitter; UART and parser delays must not be mistaken for clock drift.
+
+Only consistent time marks may calibrate it: reject jumps and ambiguous PPS/NMEA pairing. Leave
+monotonic uptime, its interval measurements and the held position's timestamp unchanged. A rate
+correction must not cause duplicate or late transmissions. Keep the slot's time-error gate: the
+initial uncertainty remains, and grows with the residual drift, allowing for the estimate's error
+and changes in temperature and load. Without a trustworthy calibration, use the existing drift
+assumption.
+
+Settled by the actual C with known positive and negative drift, loss and return of the reference,
+then E0 on each board comparing the UTC error during an outage before and after calibration, under
+load and temperature changes. The result must justify the remaining uncertainty and the time a
+board can keep transmitting safely; no longer holdover is promised before those measurements.
 
 ### T-join: late joiners and roster changes
 
