@@ -63,7 +63,7 @@ static atomic_bool s_restart_after_bond_clear = ATOMIC_VAR_INIT(false);
 static const char *s_reset = "other";
 
 /* Console lines start with a word a bench script can look for: TX, RX, RIDER, STATUS, GNSS. */
-static void console_line(const char *text) { LOGI("line", "%s", text); }
+static void console_line(const char *text) { port_console_line(text); }
 
 /* ---- why the board last started ------------------------------------------------ */
 

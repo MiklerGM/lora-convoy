@@ -54,6 +54,7 @@ uint32_t port_restart_note(void);
 const char *port_reset_cause(void);
 
 void port_console_open(void);
+static inline void port_console_line(const char *text) { ESP_LOGI("line", "%s", text); }
 int port_console_getc(uint32_t timeout_ms);
 
 void port_gnss_open(void);

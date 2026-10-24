@@ -43,6 +43,10 @@ void port_log(char level, const char *tag, const char *fmt, ...) {
     }
 }
 
+/* The string itself to the logger, which copies it whole into its 8 KiB, rather than through
+ * port_log's 200 bytes: a STATUS line with E0's txlead= runs to some 480. */
+void port_console_line(const char *text) { LOG_INF("line: %s", text); }
+
 /* ---- kernel objects -------------------------------------------------------- */
 
 port_mutex_t port_mutex_create(void) {

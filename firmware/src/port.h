@@ -55,6 +55,8 @@
  *                                               sw other - in ESP-IDF's words where it has one
  *
  *   void    port_console_open(void)             the host's side of the console
+ *   void    port_console_line(const char *text) a line of the phone API's to it, whole, up to
+ *                                               API_LINE, as LOGI cuts its own lines shorter
  *   int     port_console_getc(uint32_t timeout_ms)   the next byte, or -1
  *
  *   LOGI(tag, fmt, ...), LOGW(...), LOGE(...)   one line each
