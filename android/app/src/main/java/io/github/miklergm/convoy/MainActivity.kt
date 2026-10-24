@@ -10,6 +10,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.PowerManager
+import android.os.SystemClock
 import android.provider.Settings
 import android.text.InputType
 import android.view.View
@@ -199,7 +200,7 @@ class MainActivity : Activity() {
         }
         val lines = mutableListOf(ConvoyService.sourceText ?: "", osmand)
         ConvoyService.linkState?.let { lines.add("Link: $it") }
-        if (System.currentTimeMillis() - ConvoyService.clashAtMs < 60_000) {
+        if (ConvoyService.clashAtMs != 0L && SystemClock.elapsedRealtime() - ConvoyService.clashAtMs < 60_000) {
             lines.add("Another board is sending in your slot, so the others see neither: has one invitation " +
                 "been used twice? Each rider needs their own.")
         }

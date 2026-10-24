@@ -104,7 +104,7 @@ class ConvoyService : Service() {
             } else {
                 board = status
                 boardRiders.group(status.group)
-                lastClash?.let { if (status.clash > it) clashAtMs = System.currentTimeMillis() }
+                lastClash?.let { if (status.clash > it) clashAtMs = SystemClock.elapsedRealtime() }
                 lastClash = status.clash
                 setUp()
             }
@@ -182,13 +182,14 @@ class ConvoyService : Service() {
                 val c = centre ?: osmand.mapCentre()?.also { centre = it }
                 c?.let { MockRiders.at(it.first, it.second, startMs, now) }
             } else {
+                // every wait on our monotonic clock, which a change of the phone's date leaves alone
+                val mono = SystemClock.elapsedRealtime()
                 // a live board says what it knows every 10 s, and this keeps its link from going quiet
-                if (now >= nextPoll) {
+                if (mono >= nextPoll) {
                     link?.send("STATUS")
-                    nextPoll = now + 10_000
+                    nextPoll = mono + 10_000
                 }
                 // the clocks: three exchanges as a link begins, then one every 10 s
-                val mono = SystemClock.elapsedRealtime()
                 if ((clocksAsked < 3 || mono >= nextClock) && link?.send("CLOCK $mono") == true) {
                     clocksAsked++
                     nextClock = mono + 10_000
@@ -285,7 +286,7 @@ class ConvoyService : Service() {
         /** The group the board has said it took on this link: this phone's, once it has. */
         @Volatile var confirmed: Invitation? = null
             private set
-        /** When the board last heard another radio in its slot; 0 for never. */
+        /** When the board last heard another radio in its slot, on our monotonic clock; 0 for never. */
         @Volatile var clashAtMs = 0L
             private set
     }

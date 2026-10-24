@@ -7,6 +7,7 @@ import android.content.ServiceConnection
 import android.net.Uri
 import android.os.IBinder
 import android.os.RemoteException
+import android.os.SystemClock
 import android.util.Log
 import net.osmand.aidlapi.IOsmAndAidlInterface
 import net.osmand.aidlapi.gpx.ImportGpxParams
@@ -91,8 +92,8 @@ class OsmAnd(private val context: Context) {
 
     /** For one-off callers, on their own thread: waits until the service is bound, or gives up. */
     fun awaitConnected(timeoutMs: Long): Boolean {
-        val until = System.currentTimeMillis() + timeoutMs
-        while (api == null && state != State.MISSING && System.currentTimeMillis() < until) Thread.sleep(50)
+        val until = SystemClock.elapsedRealtime() + timeoutMs
+        while (api == null && state != State.MISSING && SystemClock.elapsedRealtime() < until) Thread.sleep(50)
         return api != null
     }
 
