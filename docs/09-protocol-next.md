@@ -1,6 +1,8 @@
 # 09. The protocol's next version
 
-**2026-10-24, nothing decided yet.** An outside review of v3 [review] went over the format, the
+**2026-10-24.** The owner [owner]: comparative measures of v3 in the simulator first; no profile
+fixed yet; help without a position goes into v4's agreed change, not as a fix to v3; a basic E0
+early, before the fixes and v4. An outside review of v3 [review] went over the format, the
 schedule, help and the air. Its findings are checked here against the code [code] and recomputed
 with `tools/airtime.py` at v3's preamble of 8 [calc]; each figure is a bound from the model, not a
 measurement. What follows is what to keep, what the owner decides first, and in what order the
@@ -53,17 +55,10 @@ One key for a trusted group, any member of which can send as any slot ([SECURITY
   out of 869.40–869.65 MHz, the window whose 10 % the budget is for [code] ([08](08-regions.md)).
   Settings the region does not allow are refused; some duty cycle is kept for help and control;
   a board's restart does not start a new hour of duty [review].
-- **Help without a position.** Before its first fix a board sends nothing, its call for help and
-  its answers to others' included, though its time may be good enough for its slot already
-  (`node_poll_tx`) [code]. With a usable time it should send its status, its call and its answers,
-  marked "no position"; status bit 7 is free for that mark [code].
 - **The bounds of time.** An NMEA fix parsed more than a second after its edge is paired with the
   next edge, a second out, and `lag=` shows a plausible 100 ms; the guard counts the error and
   1 ms, while a send may start up to 2 ms late [code]. One bound, from the scheduled moment to the
   radio's first RF, measured (E0), and a check that the marks agree with each other.
-- **An age past its range.** A fix time of 16 bits is unwrapped within 9 h 6 min; past 18 h 12 min
-  an old fix looks recent [code]. Until v4 carries an age, the app shows such an age as "over
-  9 h" rather than a number.
 
 ## The next layout: decided together, then the bytes
 
@@ -79,7 +74,12 @@ One key for a trusted group, any member of which can send as any slot ([SECURITY
 - **The packet's freshness apart from the fix's age.** An authenticated time of sending, or frame
   number, taken within a window: a receiver just restarted no longer takes an old recorded packet,
   and a board can say it is alive while its position is old. The fix's age beside it, saturating
-  at a value that means "older than that" [review].
+  at a value that means "older than that": v3's fix time of 16 bits is unwrapped within 9 h 6 min,
+  and past 18 h 12 min an old fix looks recent [code] [review].
+- **Help without a position** [owner: in v4's change]. Before its first fix a board sends nothing,
+  its call for help and its answers to others' included, though its time may be good enough for
+  its slot already (`node_poll_tx`) [code]. With a usable time it sends its status, its call and
+  its answers, marked as without a position.
 - **The identity of a call for help.** Seven numbers repeat: after a restart a new call takes the
   old one's number once in seven, and seven calls go round. A generation kept over restarts, or a
   random token big enough [review]. Or a short message of its own, help and answers, sent in a
@@ -131,14 +131,18 @@ One key for a trusted group, any member of which can send as any slot ([SECURITY
 ## How it is settled
 
 1. **The owner's decisions** above: the scenario's numbers, the size against freshness and PPS,
-   what help promises. Nothing below is fixed before them.
+   what help promises. No profile is fixed before them [owner].
 2. **The simulator measures what matters**, on v3: the map's age with outages in, the longest gap,
    the time to the first answer with several callers, two groups with burst losses. v4's choices
    are then compared on numbers.
-3. **The fixes without a new layout**, one at a time, as in the review rounds before: a profile
-   checked whole, the region's bounds, help without a position, the bounds of time, the age past
-   its range.
-4. **v4**, item by item: header and version, tag, session and nonce, freshness and the fix's age,
-   help's identity and the message types; then the bytes, then the profiles recomputed. One change
-   of firmware, app and docs together (D3), and an outside review of it.
-5. **The boards**: E0 and E2 put numbers into the profiles; then this document is revised.
+3. **A basic E0 on the boards** [owner: early]: from a fix's PPS edge and its NMEA sentence to
+   the actual start of RF, UART, parsing, locks, the packet's making and SPI included, on both
+   boards. Its numbers bound the schedule before anything is fixed on it.
+4. **The fixes without a new layout**, one at a time, as in the review rounds before: a profile
+   checked whole, the region's bounds, the bounds of time.
+5. **v4**, item by item: header and version, tag, session and nonce, freshness and the fix's age,
+   help's identity, help without a position and the message types; then the bytes, then the
+   profiles recomputed. One change of firmware, app and docs together (D3), and an outside review
+   of it.
+6. **The boards again**: E2 with real mounting, and the full E0; only then are profiles fixed
+   [owner], and this document is revised.
