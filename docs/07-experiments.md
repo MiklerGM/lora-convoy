@@ -9,7 +9,8 @@ headline numbers are therefore:
 
 - the share of known, transmitted sequence numbers that arrive;
 - the median and 95th-percentile age of the fix each map shows;
-- how long a help message takes to arrive, and to be acknowledged.
+- how long a rider's state, "need help" first, takes from its choice to its showing in another
+  rider's app.
 
 Packet intervals or RSSI alone cannot answer it. Logs carry millisecond timestamps referenced to
 GPS time at both ends: Meshtastic's own fix times are whole seconds [code: `mesh.pb.h`,

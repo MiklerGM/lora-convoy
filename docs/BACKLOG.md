@@ -134,18 +134,17 @@ when a rider counts as stopped).
 
 ### T-help: "need help", and the rider's state
 
-A flag plus a follow-up, or a spare slot; who acknowledges, and how the sender learns it was heard.
-[01](01-goals.md) asks for an acknowledgement within N seconds. **v4** [owner,
-2026-10-24]: one state the rider chooses, need help among normal, please stop, need fuel and
-helping, said in every packet until changed, beside the facts the board observes; no automatic
-answers, the interface showing that the state is going out and how fresh each rider's radio
-contact is, promising no delivery ([09](09-protocol-next.md), the participant's state). **v3, for now:** the flag and the call's
+[01](01-goals.md) asks for a rider's state, "need help" first, to show in another rider's app
+within N seconds. **v4** [owner, 2026-10-24]: one state the rider chooses, need help among normal,
+please stop, need fuel and helping, said in every packet until changed, beside the facts the board
+observes; no automatic answers, the interface showing that the state is going out and how fresh
+each rider's radio contact is, promising no delivery; helping names no one, back to an addressee
+if rides show a need ([09](09-protocol-next.md), the participant's state). **v3, for now:** the flag and the call's
 number in every packet of the caller, and a byte in every packet that answers one call heard,
 naming it, each in turn when several call ([PROTOCOL](PROTOCOL.md)): among twenty riders the first answer comes in 1.1 s and the
-last in 5.4 s, at the median. Still open: N itself, now the time until the others' maps show a
-call (question 2 in [01](01-goals.md)); a call from the board's button when the phone is gone; a
-state that outlives a restart of the board; helping a rider named; a call heard only through a
-relay (T-relay).
+last in 5.4 s, at the median, v3's history once v4 is built. Still open: N itself (question 2 in
+[01](01-goals.md)); a call from the board's button when the phone is gone; a state that outlives a
+restart of the board; a call heard only through a relay (T-relay).
 
 ### T-relay: work out relaying
 

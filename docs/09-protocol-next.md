@@ -27,7 +27,8 @@ One key for a trusted group, any member of which can send as any slot ([SECURITY
    at a fork, and following the bike ahead need different freshness. At 60 km/h a bike covers 33 m
    in 2 s, 83 m in 5 s and 500 m in 30 s [calc], so 30 s of freshness and 60 m of error are not
    one requirement said twice. Wanted, for the main scenario: the age of the position on the map;
-   the longest gap without any update; the time until the others' maps show a call for help. Counted
+   the longest gap without any update; the delay from a rider choosing a state to its showing in
+   another rider's app ([01](01-goals.md)). Counted
    with the outages in: a rider behind a ridge for 5 % of a ride bounds the 95th percentile,
    however often everyone sends [review].
 2. **The group's size against its freshness, and the L1 without PPS.** With NMEA's ±100 ms, as the
@@ -61,6 +62,10 @@ only in settings and in which buttons the interface offers. A code means the sam
 - **One state the rider chooses**: normal; need help; please stop, asking the group to; need fuel;
   helping. Stopped is a fact, please stop a request to the group, and helping a person's choice,
   which no radio's receipt of a packet can stand for.
+- **Helping names no one** in v4 [owner]: a general state chosen by hand, with no addressee. The app
+  does not claim from it that help is on its way to a given rider; with several calls at once, who
+  helps whom stays unknown, and that is accepted. An addressee comes back if rides show a real need
+  for one.
 - **Said again in every packet** until changed or called off, as the facts are. A state repeated so
   needs no number of its own for each change, unless a concrete need for one is found.
 - **No automatic answers to a call for help.** v4 has no field for "whose call my
@@ -70,22 +75,25 @@ only in settings and in which buttons the interface offers. A code means the sam
   and how fresh the radio contact with each rider is, and promises no delivery of a given call. Who
   hears whom is a question for the link's diagnosis in general, later, with no new load on the air
   for it now.
-- **The byte freed by the answers** stays, reserved and sent as zero, until a real need is found
-  for it; the packet is not shrunk to 24 bytes for its sake. The authentication tag keeps its whole
+- **The byte freed by the answers** stays, reserved and sent as zero, and needs no purpose now;
+  the packet is not shrunk to 24 bytes for its sake. The authentication tag keeps its whole
   length; and v4's protection and time are not bound to 25 bytes: their bytes are
   counted when the whole layout is agreed.
 - **When a rider counts as stopped.** v3's rule, a minute under 5 km/h and moving again over
   10 km/h, takes a walker for stopped within a minute and never moving again, and a cyclist
   climbing at 6–8 km/h after a stop for stopped still [code]. A rule for every activity, by distance
   rather than speed: stopped after two minutes within 30 m of one point, moving once out of it. A
-  hypothesis, to be checked against recorded rides, walks and climbs before it is kept.
-- **When a position turns old** is not tied to the rider's last speed: a speed of 0 does not show
-  that the rider is still standing once contact is lost.
-- **Open**: helping a rider named; and whether the chosen state outlives a restart of the board.
+  hypothesis, to be checked against recorded rides, walks and climbs before it is kept. Nor is a
+  missing position a stop.
+- **The ages of the position and of the radio contact** are kept apart from the rider's last speed:
+  a speed of 0 does not show that the rider is still standing once contact is lost.
+- **Open**: whether the chosen state outlives a restart of the board; and what the fact of a stop
+  says once the fix is lost, where v3 goes on sending the last it saw [code].
 
 For instance: a motorcyclist refuelling, stopped and in the normal state; a cyclist with a puncture,
 stopped and asking the group to stop; a hiker fallen into a gully, needing help, stopped, with no
-current position, the last one shown with its age; the rider who turns back for the hiker, helping.
+current position, the last one shown with its age; the rider who turns back for the hiker,
+helping, which by itself does not say whom.
 
 **v3 has, of this**: the facts of a current position and of a stop, the stop by its speed rule, and
 a bit for a low battery that nothing sets yet; one chosen state, need help, with every board that
@@ -182,8 +190,8 @@ phones. It stays as it is until v4 is built.
 - **E2** with the antennas mounted as on a ride.
 - Two groups side by side, with losses in bursts; several riders in a state at once; a board
   restarted while in one.
-- Measured as the map's age, the gaps' lengths and the time until the others' maps show a state,
-  not only the share delivered. The simulator can count all of them before any hardware.
+- Measured as the map's age, the gaps' lengths and the delay until a state shows in another
+  rider's app, not only the share delivered. The simulator can count all of them before any hardware.
 - If 5–10 s and small groups are enough, GNSS-timed slots are to be weighed again against simpler
   access and the existing baselines ([03](03-alternatives.md)); if twenty riders at 1–2 s are a
   must, their case is much stronger [review].
@@ -210,8 +218,8 @@ given as its median over the series and the largest observed.
   median and 966 s at the 95th percentile, and older than 30 s 45 % of the time.
 - **Several calls for help at once**, among twenty riders with 10 % lost, ten rounds each, the
   median and the worst. This and the next measure v3's automatic answers, which v4 drops
-  [owner]; they stay for the record. How soon the others hear a call, the measure that stays, is
-  not counted yet:
+  [owner]; they stay as v3's history. The measure that replaces them, from a state's choice to its
+  showing in another rider's app, is not counted yet:
 
   | Callers at once | First answer | All 19 answers |
   |---:|---:|---:|
@@ -227,8 +235,8 @@ given as its median over the series and the largest observed.
 1. **The owner's decisions** above: the scenario's numbers, the size against freshness and PPS,
    what help promises. No profile is fixed before them [owner].
 2. **The simulator measures what matters**, on v3: the map's age with outages in, the longest gap,
-   how soon a call for help reaches the others with several callers (on v3 counted so far only
-   through its answers), two groups with burst losses. v4's choices
+   the delay from a state's choice to its showing in another rider's app, with several callers
+   (on v3 counted so far only through its answers), two groups with burst losses. v4's choices
    are then compared on numbers.
 3. **A basic E0 on the boards** [owner: early], measured as [recheck] refines it:
    - sending: from the scheduled moment to the actual start of RF, taken as the radio's TxDone

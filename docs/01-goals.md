@@ -15,8 +15,8 @@ coverage. Each rider wants to:
 |---|---|---|
 | Group size | designed for 10 riders; up to 20, with freshness degrading in proportion (twice the riders, at most twice the interval), never a breakdown | both numbers are assumptions to confirm (question 1) |
 | Position freshness | the age of the fix **shown on the receiver's map**, at a stated percentile (e.g. 95 % of the time under N s) | not the transmission interval: losses, relays and phone or Bluetooth outages count too. At 60 km/h a 10 s old point is already 167 m behind. For comparison: DMD sent every 1.5–6 s, tuned Meshtastic 5–10 s ([03](03-alternatives.md)) |
-| Separate statuses | "radio last heard", "GPS fix age" and "help acknowledged" are three different facts | a fresh heartbeat proves neither a fresh position nor delivered help |
-| Help delivery | "need help" acknowledged within N s at the 95th percentile | N still to set (question 2); [06](06-own-protocol.md) sizes the slots that carry it |
+| Separate statuses | "radio last heard", "GPS fix age" and the rider's state are three different facts | a fresh heartbeat proves neither a fresh position nor that one's own state was received: hearing a rider does not show that the rider hears back |
+| State delivery | the delay until a rider's state, "need help" first, shows in another rider's app: within N s at the 95th percentile, from the sender choosing it to its showing in the receiver's app, under the radio conditions the scenario states | N still to set (question 2). It shows the state reached the app, not that anyone looked at the screen. [06](06-own-protocol.md) sizes the slots that carry it |
 | No GPS fix | the rider's own app says there is no fix; the others see "no position" or an aged last fix, never a fresh-looking one | a radio without a valid time base must not transmit into a schedule ([06](06-own-protocol.md)) |
 | Range | direct radio range, roughly 1–4 km | how far a column spreads is still to confirm |
 | Infrastructure | during the ride, none: no repeaters, no internet | a hub for slow data is a wish (below); positions never go through it |
@@ -60,7 +60,8 @@ what it would touch.
 
 1. How many riders does a group usually have?
 2. How fresh must a shown position be, and how often may it be late: is 10 s at the 95th
-   percentile enough, or does it need 1–2 s? And how soon must "need help" be acknowledged?
+   percentile enough, or does it need 1–2 s? And how soon must a rider's state, "need help" first,
+   show in the others' app?
    Two independent reviews proposed a candidate: the shown fix under about 30 s old and the map
    error under about 60 m, both at the 95th percentile, with predicted points marked and stop and
    help sent at once ([07](07-experiments.md), E9 tests it). The answer decides between the two
