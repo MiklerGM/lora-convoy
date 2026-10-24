@@ -35,6 +35,12 @@ typedef struct {
     uint16_t listen_one_in;
 } node_config_t;
 
+/* E0's measures (07, 09): the least, the sum and the most of what was measured, and how often. */
+typedef struct {
+    int64_t min_us, max_us, sum_us;
+    uint32_t n;
+} spread_t;
+
 typedef struct {
     bool known;
     position_t last;
@@ -50,6 +56,8 @@ typedef struct {
     uint16_t counter_seen[NODE_SESSIONS];
     uint8_t sessions_seen;
     uint32_t answered_by;    /* while it calls for help: the slots heard answering this call */
+    spread_t offset;         /* E0: how late its packets began, from their end on our UTC, less the
+                                airtime and their slot's moment */
 } rider_t;
 
 /* Transmit time over the last hour, a minute at a time. */
@@ -87,6 +95,8 @@ typedef struct {
     bool stopped;            /* slower than walking for a minute */
     int64_t slow_since_us;   /* when it last went under 5 km/h; 0 while faster */
     int64_t last_frame;      /* the frame we last sent in, or passed over */
+    int64_t tx_due_us;       /* our clock at the moment of the packet last handed over; 0 once done */
+    spread_t tx_lead;        /* E0: from a packet's moment to its RF beginning, by the radio's TxDone */
     int64_t phase_frame;     /* the frame whose phase is in phase_us, for phase_spacing; -1 none */
     int64_t phase_us;
     int64_t phase_spacing;
@@ -127,6 +137,10 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
  * Its airtime is booked against the duty cycle when it is handed over, so a send that then fails
  * errs on the safe side. */
 size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap);
+
+/* The radio's TxDone, on our clock, for the packet node_poll_tx gave last: how late its RF began
+ * after its moment, less the airtime, goes into the status (txlead=, E0). */
+void node_on_tx_done(node_t *n, int64_t done_us, size_t len);
 
 /* Our clock at the moment of our next slot, for the platform to be ready by; INT64_MAX while no
  * slot can be told (no key, no time, a slot outside the group). Due already if not above now_us. */

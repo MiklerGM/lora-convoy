@@ -1,6 +1,7 @@
 #include "node.h"
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 /* How old our own fix may be and still count as the GNSS's current one. */
@@ -193,8 +194,8 @@ static int64_t phase_us(const node_t *n, int64_t k) {
     return (int64_t)(r % (uint64_t)spacing_us(n));
 }
 
-static int64_t slot_utc_us(const node_t *n, int64_t k, int64_t phase) {
-    return k * frame_us(n) + phase + (int64_t)n->cfg.slot * spacing_us(n);
+static int64_t slot_utc_us(const node_t *n, int64_t k, int64_t phase, unsigned slot) {
+    return k * frame_us(n) + phase + (int64_t)slot * spacing_us(n);
 }
 
 /* The same, with the phase kept for the frame: one AES per frame, not per poll. */
@@ -204,7 +205,7 @@ static int64_t our_slot(node_t *n, int64_t k) {
         n->phase_frame = k;
         n->phase_spacing = spacing_us(n);
     }
-    return slot_utc_us(n, k, n->phase_us);
+    return slot_utc_us(n, k, n->phase_us, n->cfg.slot);
 }
 
 /* ---- sending ------------------------------------------------------------------- */
@@ -285,6 +286,7 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
     /* The nonce must never repeat: before the counter wraps, a new session. */
     if (++n->counter == 0) n->session = next_random(n);
     n->sent++;
+    n->tx_due_us = now_us - (utc - at);
     duty_book(&n->duty, now_us, air_ms);
     return pkt_seal(out, &p, &n->group);
 }
@@ -293,9 +295,22 @@ int64_t node_next_tx_us(const node_t *n, int64_t now_us) {
     int64_t utc, err;
     if (!n->cfg.keyed || n->cfg.slot >= n->cfg.slots || !node_utc_us(n, now_us, &utc, &err)) return INT64_MAX;
     const int64_t k = utc / frame_us(n);
-    int64_t at = slot_utc_us(n, k, phase_us(n, k));
-    if (k <= n->last_frame || utc - at > TX_LATE_US) at = slot_utc_us(n, k + 1, phase_us(n, k + 1));
+    int64_t at = slot_utc_us(n, k, phase_us(n, k), n->cfg.slot);
+    if (k <= n->last_frame || utc - at > TX_LATE_US) at = slot_utc_us(n, k + 1, phase_us(n, k + 1), n->cfg.slot);
     return now_us + (at - utc);
+}
+
+static void spread_add(spread_t *s, int64_t v) {
+    if (!s->n || v < s->min_us) s->min_us = v;
+    if (!s->n || v > s->max_us) s->max_us = v;
+    s->sum_us += v;
+    s->n++;
+}
+
+void node_on_tx_done(node_t *n, int64_t done_us, size_t len) {
+    if (!n->tx_due_us) return;
+    spread_add(&n->tx_lead, done_us - phy_airtime_us(&n->cfg.phy, len) - n->tx_due_us);
+    n->tx_due_us = 0;
 }
 
 /* ---- receiving ------------------------------------------------------------------- */
@@ -383,6 +398,18 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
     r->rssi_dbm = (int16_t)rssi_dbm;
     r->snr_db4 = (int16_t)snr_db4;
     r->fix_utc_ms = fix_utc_ms;
+    /* E0: how late it began, from its end on our UTC, less the airtime and the moment of its slot
+     * in the frame nearest to it. */
+    int64_t end_utc, end_err;
+    if (node_utc_us(n, now_us, &end_utc, &end_err)) {
+        const int64_t start = end_utc - phy_airtime_us(&n->cfg.phy, len), k = start / frame_us(n);
+        int64_t late = INT64_MAX;
+        for (int64_t f = k - 1; f <= k + 1; f++) {
+            const int64_t off = start - slot_utc_us(n, f, phase_us(n, f), p.slot);
+            if (llabs(off) < llabs(late)) late = off;
+        }
+        spread_add(&r->offset, late);
+    }
     /* It hears a call for help: ours, or another rider's, and the call it names, not one before.
      * ponytail: an answer counts for the rest of the call, however long ago it came; the answerer's
      * own heard= tells how long since we heard it at all. */
@@ -398,6 +425,17 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
 }
 
 /* ---- lines ------------------------------------------------------------------------- */
+
+/* E0's measure as text: least/mean/most in microseconds, or ? before any. */
+static const char *spread_text(char *s, size_t cap, const spread_t *v) {
+    if (!v->n) {
+        snprintf(s, cap, "?");
+    } else {
+        snprintf(s, cap, "%lld/%lld/%lld", (long long)v->min_us, (long long)(v->sum_us / (int64_t)v->n),
+                 (long long)v->max_us);
+    }
+    return s;
+}
 
 /* Degrees x 1e7 as text, sign included: -0.5 must not print as 0.5. */
 static const char *deg(char *s, size_t cap, int32_t e7) {
@@ -425,23 +463,25 @@ int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf,
     if (r->last.course2 != COURSE_UNKNOWN) snprintf(course, sizeof(course), "%u", r->last.course2 * 2u);
     const long long heard10 = (now_us - r->heard_us) / 100000;
     const int snr = r->snr_db4 < 0 ? -r->snr_db4 : r->snr_db4;
+    char offset[72];
     return snprintf(buf, cap,
                     "RIDER slot=%u group=%08lx lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
-                    "help=%d stopped=%d answered=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu",
+                    "help=%d stopped=%d answered=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu offset=%s",
                     slot, (unsigned long)n->group.id, deg(lat, sizeof(lat), r->last.lat_e7),
                     deg(lon, sizeof(lon), r->last.lon_e7),
                     age, heard10 / 10, heard10 % 10, speed, course,
                     (r->last.status & ST_GPS_OK) ? 1 : 0, (r->last.status & ST_HELP) ? 1 : 0,
                     (r->last.status & ST_STOPPED) ? 1 : 0, answered, r->rssi_dbm, r->snr_db4 < 0 ? "-" : "",
                     snr / 4, snr % 4 * 25, (unsigned long)r->received,
-                    (unsigned long)((uint16_t)(r->last.counter - r->first_counter) + 1u));
+                    (unsigned long)((uint16_t)(r->last.counter - r->first_counter) + 1u),
+                    spread_text(offset, sizeof(offset), &r->offset));
 }
 
 int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     const uint32_t used = node_duty_used_ms(n, now_us);
     int known = 0;
     for (int i = 0; i < NODE_SLOTS; i++) known += n->riders[i].known;
-    char lat[16], lon[16], err_ms[48] = "?", lag[48] = "?";
+    char lat[16], lon[16], err_ms[48] = "?", lag[48] = "?", txlead[72];
     const bool current = n->fix.valid && now_us - n->fix_us <= FIX_FRESH_US;
     static const char *const SOURCE[] = {"none", "nmea", "pps"};
     int64_t utc, err;
@@ -457,7 +497,7 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     return snprintf(buf, cap,
                     "slot=%u slots=%u keyed=%d group=%08lx mode=%u/%lu fix=%d stopped=%d help=%d heard=%d lat=%s lon=%s sats=%u "
                     "hdop=%u.%u time=%s err=%s "
-                    "budget=%lld.%lld lag=%s tx=%lu late=%lu unsure=%lu skipped=%lu duty=%lu.%02lu%% riders=%d "
+                    "budget=%lld.%lld lag=%s txlead=%s tx=%lu late=%lu unsure=%lu skipped=%lu duty=%lu.%02lu%% riders=%d "
                     "bad=%lu foreign=%lu forged=%lu replay=%lu clash=%lu",
                     n->cfg.slot, n->cfg.slots, n->cfg.keyed ? 1 : 0, (unsigned long)(n->cfg.keyed ? n->group.id : 0), n->cfg.phy.sf,
                     (unsigned long)(n->cfg.phy.bw_hz / 1000),
@@ -465,7 +505,8 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
                     deg(lat, sizeof(lat), n->held.lat_e7),
                     deg(lon, sizeof(lon), n->held.lon_e7), n->fix.sats, n->fix.hdop10 / 10,
                     n->fix.hdop10 % 10, SOURCE[n->time], err_ms, (long long)(budget / 1000),
-                    (long long)(budget % 1000 / 100), lag, (unsigned long)n->sent, (unsigned long)n->tx_late,
+                    (long long)(budget % 1000 / 100), lag, spread_text(txlead, sizeof(txlead), &n->tx_lead),
+                    (unsigned long)n->sent, (unsigned long)n->tx_late,
                     (unsigned long)n->tx_unsure, (unsigned long)n->tx_skipped, (unsigned long)(used / 36000),
                     (unsigned long)(used % 36000 / 360), known, (unsigned long)n->rx_bad,
                     (unsigned long)n->rx_foreign, (unsigned long)n->rx_forged, (unsigned long)n->rx_replay,

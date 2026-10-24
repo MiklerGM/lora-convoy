@@ -280,6 +280,20 @@ static void test_node_sends(void) {
     /* on whole milliseconds again, so the fixes keep coming on the second */
     for (t = (due / 1000 + 4) * 1000; (due = node_next_tx_us(&n, t)) > t + 1000; t += 1000) tick(&n, t);
     assert(node_poll_tx(&n, due, b, sizeof(b)) == PKT_POSITION_LEN);
+    /* E0: the radio's TxDone 1.5 ms after the slot's moment and the packet's airtime is RF that
+     * started 1.5 ms late, as the status says. */
+    const int64_t air = phy_airtime_us(&n.cfg.phy, PKT_POSITION_LEN);
+    char e0[512];
+    node_on_tx_done(&n, due + air + 1500, PKT_POSITION_LEN);
+    node_format_status(&n, due, e0, sizeof(e0));
+    assert(strstr(e0, " txlead=1500/1500/1500 "));
+    /* And on the far side: a board on the same clock hears it end 100 ms after its slot's moment
+     * and its airtime, so it started 100 ms late. */
+    node_t rx = n;
+    rx.cfg.slot = 2;
+    assert(node_on_packet(&rx, b, PKT_POSITION_LEN, -80, 0, due + air + 100000));
+    node_format_rider(&rx, 1, due + air + 100000, e0, sizeof(e0));
+    assert(strstr(e0, " offset=100000/100000/100000"));
     t = due;
 
     /* The fix is lost: the held position goes on, with its old time and without GPS_OK. */
@@ -784,6 +798,7 @@ static void test_api(void) {
     n.held.lon_e7 = -1800000000;
     n.lag_us = n.lag_min_us = n.lag_max_us = 999999;
     n.help_heard_by = 0xFFFFFFFFu;
+    n.tx_lead = (spread_t){.min_us = -99999999, .max_us = 999999999, .sum_us = -99999999, .n = 1};
     n.mark_err_us = 999999999;
     char line[API_LINE + 64];
     const int len = api_status(&api, 99999999 * SEC, line, sizeof(line));
@@ -791,6 +806,7 @@ static void test_api(void) {
     /* And the longest rider line: each field at its widest, and every other rider answering. */
     n.riders[0] = (rider_t){.known = true, .fix_utc_ms = 1, .rssi_dbm = -32768, .snr_db4 = -32767,
                             .received = 4294967295u, .answered_by = 0xFFFFFFFEu,
+                            .offset = {.min_us = -99999999, .max_us = 999999999, .sum_us = -99999999, .n = 1},
                             .last = {.lat_e7 = -900000000, .lon_e7 = -1800000000, .speed_kmh = 254,
                                      .course2 = 179, .status = 0x0F, .call = 7, .counter = 65535}};
     const int rider_len = node_format_rider(&n, 0, 99999999 * SEC, line, sizeof(line));

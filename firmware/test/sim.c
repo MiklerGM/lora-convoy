@@ -282,6 +282,7 @@ static void world_step(world_t *w, int64_t t) {
         transmission_t *x = &w->air[k];
         if (x->done || x->end > t) continue;
         x->done = true;
+        node_on_tx_done(&w->node[x->from], local_us(w, x->from, x->end), x->len);
         bool collided = false, within = false;
         for (int j = 0; j < w->in_air; j++) {
             if (j != k && w->air[j].start < x->end && w->air[j].end > x->start) {
@@ -303,7 +304,8 @@ static void world_step(world_t *w, int64_t t) {
                        distance_m(w, o->from, i) < 1.5 * w->sc.range_m;
             }
             if (lost || (double)(rnd(&w->rng) % 1000000) / 1e6 < w->sc.loss) continue;
-            if (node_on_packet(&w->node[i], x->bytes, x->len, -90, 20, local_us(w, i, t))) {
+            /* at its end, as a radio's RxDone comes, not at the step that found it ended */
+            if (node_on_packet(&w->node[i], x->bytes, x->len, -90, 20, local_us(w, i, x->end))) {
                 w->taken++;
                 w->taken_from[x->from]++;
                 gap_to(&w->heard_at[i][x->from], &w->gap[i][x->from], t, w->gaps_from);
@@ -605,6 +607,24 @@ int main(int argc, char **argv) {
            "frame (%d packets); told it is unsure, it keeps quiet (%d silent, %d collisions)\n", wrong_within,
            o.silent, o.within);
     assert(wrong_within > 500 && o.silent == 1 && o.within == 0);
+
+    /* E0 in the model (09): an L1 told nothing of its NMEA's 100 ms lag, in a group of three, its
+     * slots 500 ms apart, so nothing collides: the other boards hear it begin 100 ms after its
+     * moment, give or take its NMEA's jitter, and each other on time; each board's own RF starts
+     * within the simulator's step of a millisecond. The model has no driver: on a board, E0 measures
+     * the rest. */
+    {
+        const clocks_t late = {.nmea_only = 1, .lag_us = 100000, .jitter_us = 5000, .told_err_us = 10000};
+        const scenario_t three_late = {3, 2000, 120 * SEC, 0, 14, 1, late, 0, false};
+        run(&three_late, false);
+        const spread_t *l1 = &s_run.node[1].riders[s_run.slot_of[0]].offset, *pps = &s_run.node[1].riders[s_run.slot_of[2]].offset;
+        const spread_t *lead = &s_run.node[2].tx_lead;
+        printf("sim: E0 in the model: an L1 told nothing of its NMEA's lag is heard %.1f ms late on average (%.1f to "
+               "%.1f), a board with PPS %.1f ms; RF %.2f ms after its moment at most\n", l1->sum_us / 1000.0 / l1->n,
+               l1->min_us / 1000.0, l1->max_us / 1000.0, pps->sum_us / 1000.0 / pps->n, lead->max_us / 1000.0);
+        assert(l1->n > 30 && l1->sum_us / l1->n > 94000 && l1->sum_us / l1->n < 106000);
+        assert(pps->n > 30 && pps->max_us >= 0 && pps->max_us <= 1000 && lead->max_us <= 1000);
+    }
 
     /* "Need help", answered (01, help delivery): each of twenty riders calls in turn, with 10 % of
      * packets lost; how long until one of the others answers, and until all of them have. */
