@@ -6,7 +6,7 @@
 #include <strings.h>
 
 int api_status(const api_t *api, int64_t now_us, char *buf, size_t cap) {
-    char node[400];
+    char node[API_LINE];   /* the node's part never takes more than a whole line */
     node_format_status(api->node, now_us, node, sizeof(node));
     return snprintf(buf, cap, "STATUS proto=%d board=%s reset=%s up=%lld %s power=%u dbm=%d kept=%d", API_PROTO,
                     api->board, api->reset, (long long)(now_us / 1000000), node, api->power,

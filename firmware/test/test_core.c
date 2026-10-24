@@ -845,7 +845,9 @@ static void test_api(void) {
     n.mark_err_us = 999999999;
     char line[API_LINE + 64];
     const int len = api_status(&api, 99999999 * SEC, line, sizeof(line));
-    assert(len > 300 && len < API_LINE);
+    /* whole, to its last field: a length alone would pass a line cut short inside */
+    static const char tail[] = " replay=4294967295 clash=4294967295 power=0 dbm=22 kept=0";
+    assert(len > 300 && len < API_LINE && strcmp(line + len - (int)strlen(tail), tail) == 0);
     /* And the longest rider line: each field at its widest, and every other rider answering. */
     n.riders[0] = (rider_t){.known = true, .fix_utc_ms = 1, .rssi_dbm = -32768, .snr_db4 = -32767,
                             .received = 4294967295u, .answered_by = 0xFFFFFFFEu,

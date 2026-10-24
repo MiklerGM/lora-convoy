@@ -29,8 +29,9 @@
  */
 #define API_PROTO 5
 
-/* The longest line either way, newline aside; the app takes up to 512 characters. */
-#define API_LINE 480
+/* A buffer for the longest line either way, its NUL in and the newline aside: up to 511
+ * characters, as the app takes up to 512 and Zephyr's queue 512 bytes (ble_nus.c). */
+#define API_LINE 512
 
 typedef void (*api_reply_fn)(void *ctx, const char *line);
 
