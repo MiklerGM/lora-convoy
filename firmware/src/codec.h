@@ -51,6 +51,7 @@ typedef struct {
  * block can (bit 7 set), so none can stand in for another. */
 typedef struct {
     uint8_t tag;
+    uint32_t id;        /* the tag's block's first four bytes, the tag first: the group, to the phone */
     aes128_t ccm;
     aes128_t frame;
 } group_key_t;

@@ -8,25 +8,31 @@ class BoardRidersTest {
     private fun rider(slot: Int, help: Boolean = false) = Rider("slot$slot", "Rider ${slot + 1}", "${slot + 1}", 0,
         47.0, 9.0, fixAtMs = 0, heardAtMs = 0, speedKmh = null, courseDeg = null, help = help)
 
+    // the groups of the keys 00 01 .. 0f and 0f 0e 00 ..: their ids, from OpenSSL
+    private val before = 0x86c91c92L
+    private val after = 0x79e8d53cL
+
     @Test
-    fun `riders the board no longer knows leave with its status, whatever lines were lost`() {
+    fun `riders of the group before go once the board is in another, a slot taken again among them`() {
         val riders = BoardRiders()
-        // the group before: two riders, one calling for help
-        riders.take(rider(1), 0)
-        riders.take(rider(2, help = true), 0)
-        // another group set up: its table asked for lost its end, and one rider's line came
-        riders.take(rider(3), 9_000)
-        riders.known(setOf("slot3"), 10_000)
-        assertEquals(setOf("slot3"), riders.all.map { it.id }.toSet())
+        riders.group(before)
+        riders.take(rider(1, help = true), before)
+        riders.take(rider(2), before)
+        // another group: its rider in slot 1 heard by the board, and that line lost on the way
+        riders.group(after)
+        assertEquals(emptyList<Rider>(), riders.all)
+        // a line of the group before, made before the new key, comes late
+        riders.take(rider(2), before)
+        assertEquals(emptyList<Rider>(), riders.all)
     }
 
     @Test
-    fun `a rider whose line has just come stays, as a status may be older than the line`() {
+    fun `riders of the board's group stay through its statuses, heard again or not`() {
         val riders = BoardRiders()
-        riders.take(rider(4), 10_000)
-        riders.known(emptySet(), 11_000)
-        assertEquals(1, riders.all.size)
-        riders.known(emptySet(), 20_000)
-        assertEquals(0, riders.all.size)
+        riders.group(before)
+        riders.take(rider(1), before)
+        riders.group(before)
+        riders.take(rider(3), before)
+        assertEquals(setOf("slot1", "slot3"), riders.all.map { it.id }.toSet())
     }
 }

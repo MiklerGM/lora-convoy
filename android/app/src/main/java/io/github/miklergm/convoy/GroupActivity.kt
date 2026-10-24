@@ -84,7 +84,7 @@ class GroupActivity : Activity() {
         val mine = Group.load(this)
         current.text = mine?.let {
             "${it.name}: you are ${it.riderName(it.slot)}, rider ${it.slot + 1} of ${it.riders}, a position every " +
-                "${it.intervalMs / 1000.0} s. Its boards show group=%02x.".format(it.groupTag())
+                "${it.intervalMs / 1000.0} s. Its boards show group=%08x.".format(it.groupId())
         } ?: "No group yet."
         invitations.removeAllViews()
         val created = Group.created(this) ?: return

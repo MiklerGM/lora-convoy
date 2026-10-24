@@ -90,7 +90,7 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         node_set_key(api->node, key);
         memset(key, 0, sizeof(key));
         api->setup_changed = true;
-        snprintf(out, sizeof(out), "OK keyed group=%02x", api->node->group.tag);
+        snprintf(out, sizeof(out), "OK keyed group=%08lx", (unsigned long)api->node->group.id);
     } else if (strcasecmp(line, "group") == 0) {
         long slot, slots, interval;
         if (group_setup(arg, key, &slot, &slots, &interval)) {
@@ -99,7 +99,7 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
             cfg->slots = (uint8_t)slots;
             cfg->interval_ms = (uint32_t)interval;
             api->setup_changed = true;
-            snprintf(out, sizeof(out), "OK group=%02x slot=%ld slots=%ld interval=%ld", api->node->group.tag, slot,
+            snprintf(out, sizeof(out), "OK group=%08lx slot=%ld slots=%ld interval=%ld", (unsigned long)api->node->group.id, slot,
                      slots, interval);
         } else {
             snprintf(out, sizeof(out), "ERR group: <32 hex digits> <slot below slots> <slots 1-%d> <interval 500-60000>",

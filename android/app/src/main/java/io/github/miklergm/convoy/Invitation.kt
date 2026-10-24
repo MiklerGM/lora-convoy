@@ -47,8 +47,8 @@ data class Invitation(
     /** The board's commands for this invitation (firmware/src/api.h): its slot in a frame of as many. */
     fun setup(): String = "GROUP ${key.toHex()} $slot $riders $intervalMs"
 
-    /** The tag the board shows as group= once it has this key. */
-    fun groupTag(): Int = groupTag(key)
+    /** The id the board shows as group= once it has this key. */
+    fun groupId(): Long = groupId(key)
 
     /** What the map calls the rider in a slot. */
     fun riderName(slot: Int): String = names.getOrNull(slot)?.takeIf { it.isNotBlank() } ?: "Rider ${slot + 1}"
@@ -97,15 +97,18 @@ data class Invitation(
             return names.indices.map { Invitation(key, it, names.size, intervalMs, name, names) }
         }
 
-        /** The firmware's group tag (codec.c): the first byte of AES-128 under the key of 0xFF "convoy-tag" 0... */
+        /**
+         * The firmware's group id (codec.c): the first four bytes of AES-128 under the key of 0xFF
+         * "convoy-tag" 0..., big-endian; its first byte is the tag the packets carry.
+         */
         @Suppress("GetInstance") // ECB on one fixed block: a value derived from the key, no message encrypted
-        fun groupTag(key: ByteArray): Int {
+        fun groupId(key: ByteArray): Long {
             val block = ByteArray(16)
             block[0] = 0xFF.toByte()
             "convoy-tag".toByteArray(Charsets.US_ASCII).copyInto(block, 1)
             val aes = Cipher.getInstance("AES/ECB/NoPadding")
             aes.init(Cipher.ENCRYPT_MODE, SecretKeySpec(key, "AES"))
-            return aes.doFinal(block)[0].toInt() and 0xFF
+            return aes.doFinal(block).take(4).fold(0L) { id, b -> id shl 8 or (b.toLong() and 0xFF) }
         }
 
         private fun ByteArray.toHex() = joinToString("") { "%02x".format(it) }

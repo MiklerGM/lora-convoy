@@ -82,7 +82,7 @@ class ConvoyService : Service() {
                 boardRiders.clear()
             } else {
                 board = status
-                status.known?.let { slots -> boardRiders.known(slots.map { "slot$it" }.toSet(), System.currentTimeMillis()) }
+                boardRiders.group(status.group)
                 lastClash?.let { if (status.clash > it) clashAtMs = System.currentTimeMillis() }
                 lastClash = status.clash
                 setUp()
@@ -90,11 +90,12 @@ class ConvoyService : Service() {
             return
         }
         BoardLines.setup(line)?.let { taken ->
-            // the board has the group this phone sent, whole: then its riders, and its status,
-            // which names whom it knows, for the riders of the group before to go (BoardRiders)
+            // the board has the group this phone sent, whole: the riders of the group before go
+            // (BoardRiders), and the board's are asked
             val sent = sentGroup ?: return
             if (taken.of(sent)) {
                 confirmed = sent
+                boardRiders.group(taken.group)
                 askRiders()
             } else {
                 linkState = "the board took another setup than ${sent.name}'s: $line"
@@ -114,15 +115,14 @@ class ConvoyService : Service() {
             return
         }
         val now = System.currentTimeMillis()
-        BoardLines.rider(line, now, group)?.let { boardRiders.take(it, now) }
+        BoardLines.rider(line, now, group)?.let { boardRiders.take(it, BoardLines.groupOf(line)) }
     }
 
     /**
      * This phone's group to the board, whole, once per link and again when the group changes: the
      * board keeps its riders for the key it has (firmware node_set_key). Its riders are asked once
-     * it has taken the group. A RIDER line the board made before the new key and sent after it
-     * brings a rider of the group before back, however late it comes: until a status that names
-     * whom the board knows, some 10 s, and BoardRiders.GRACE_MS more.
+     * it has taken the group. A RIDER line names the group it was heard in, so one the board made
+     * before the new key is not taken, however late it comes.
      */
     private fun setUp() {
         val l = link ?: return
@@ -141,7 +141,6 @@ class ConvoyService : Service() {
         val l = link ?: return
         askedRiders = true
         l.send("RIDERS")
-        l.send("STATUS")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {

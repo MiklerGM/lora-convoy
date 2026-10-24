@@ -26,9 +26,9 @@ class InvitationTest {
     }
 
     @Test
-    fun `the group tag is the firmware's`() {
-        // firmware/test/test_core.c, and openssl: the key 00 01 .. 0f has the tag 86
-        assertEquals(0x86, Invitation.groupTag(key))
+    fun `the group id is the firmware's`() {
+        // firmware/test/test_core.c, and openssl: the key 00 01 .. 0f has the id 86c91c92, its tag 86 first
+        assertEquals(0x86c91c92L, Invitation.groupId(key))
     }
 
     @Test

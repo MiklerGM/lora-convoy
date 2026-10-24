@@ -13,10 +13,10 @@
  *   phone -> board                 board -> phone
  *   STATUS                         STATUS proto=5 board=... kept=<0|1> (also sent unasked)
  *   RIDERS                         RIDER ... for each rider known, then RIDERS <n>
- *   GROUP <key> <slot> <slots> <ms> OK group=<tag> slot= slots= interval=: a group's whole setup,
+ *   GROUP <key> <slot> <slots> <ms> OK group=<id> slot= slots= interval=: a group's whole setup,
  *                                  taken whole or not at all, from the invitation
  *   LEDGER                         LEDGER ...: transmit time a minute at a time, over the hour
- *   KEY <32 hex digits>            OK keyed group=<tag>: the group's key, from the invitation
+ *   KEY <32 hex digits>            OK keyed group=<id>: the group's key, from the invitation
  *   HELP <0|1>                     OK help=<0|1>: our rider's call for help, off or on
  *   SLOT <0-31>, SLOTS <1-32>,     OK <key>=<value>, or ERR <why>
  *   INTERVAL <ms>, POWER <0-3>

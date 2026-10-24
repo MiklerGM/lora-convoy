@@ -36,7 +36,7 @@ Both boards answer the phone API's commands typed on the console ([PROTOCOL](PRO
 On the consoles, or later from the app:
 
 ```
-GROUP 000102030405060708090a0b0c0d0e0f 0 2 2000     on one: the test vector's key; group=86
+GROUP 000102030405060708090a0b0c0d0e0f 0 2 2000     on one: the test vector's key; group=86c91c92
 GROUP 000102030405060708090a0b0c0d0e0f 1 2 2000     on the other
 ```
 
@@ -56,7 +56,7 @@ the RIDER lines stop, and their `rssi=` and `snr=` before that. `MODE 7 250` goe
 
 - Find boards, tap one, accept Android's pairing dialog: the main screen shows `Board: …`.
 - Group, Create with the riders' names, then send each other rider their invitation; on each
-  other phone, Join with it. Each board's `group=` tag is the same.
+  other phone, Join with it. Each board's `group=` is the same.
 - OsmAnd, Plugins, LoRa Convoy on: the other riders on the map, ageing grey when not heard.
 - Forget this board, or the board's button held 3 s: the phone can pair again.
 

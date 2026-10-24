@@ -209,7 +209,7 @@ class MainActivity : Activity() {
         }
         ConvoyService.board?.let {
             val mine = GroupActivity.Group.load(this)
-            val tag = "%02x".format(it.group)
+            val tag = "%08x".format(it.group)
             // in this phone's group once the board has said it took it, not by the tag: two keys can share one
             val inMine = mine != null && it.keyed && ConvoyService.confirmed == mine
             val group = when {

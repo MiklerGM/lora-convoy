@@ -183,11 +183,12 @@ The key `00 01 … 0f`, slot 2 of 5, every 2 s, "Alps ride", riders Ann, Bob, Ci
 
 The app sends it to the board as one `GROUP` once per connection, and again when the phone joins
 another group; a board takes it whole or not at all, and keeps its riders when the key is the one
-it has. Once the board says it took the group, the app asks for its riders and its status. The
-status names whom the board knows (`known=`), and riders it does not know leave the app's map: of
-the group before, or forgotten, whatever lines were lost on the way. The app keeps the group it
-wants, and shows the board in it only once the board has said so, never by the tag, which two keys
-can share.
+it has. Once the board says it took the group, the app asks for its riders. Each `RIDER` line names
+the group it was heard in (`group=`), and the app keeps only the riders of the group the board says
+it is in: those of the group before go at once, whatever lines were lost on the way, a slot of
+theirs taken again or not, and a late line of theirs is not taken. A rider the board no longer
+hears stays, ageing. The app keeps the group it wants, and shows the board in it only once the
+board has said so, never by the tag, which two keys can share.
 
 ## The phone API
 
@@ -204,11 +205,11 @@ on three transports:
 
 | Phone to board | Board to phone |
 |---|---|
-| `STATUS` | `STATUS proto=5 board=… reset=… up=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … riders=… known=… … power=… dbm=… kept=…` |
+| `STATUS` | `STATUS proto=5 board=… reset=… up=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … riders=… … power=… dbm=… kept=…` |
 | `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>` |
-| `GROUP <32 hex digits> <slot> <slots> <interval>` | `OK group=<tag> slot=… slots=… interval=…`: a group's whole setup, from the invitation, checked whole and taken whole; or `ERR group: …`, and nothing changes |
+| `GROUP <32 hex digits> <slot> <slots> <interval>` | `OK group=<id> slot=… slots=… interval=…`: a group's whole setup, from the invitation, checked whole and taken whole; or `ERR group: …`, and nothing changes |
 | `LEDGER` | `LEDGER minutes=60 limit_ms=… used_ms=… positions_ms=…`: the duty ledger, transmit time a minute at a time over the last hour, oldest first, by category |
-| `KEY <32 hex digits>` | `OK keyed group=<tag>`; riders heard under another key are forgotten, and the answers to our call |
+| `KEY <32 hex digits>` | `OK keyed group=<id>`; riders heard under another key are forgotten, and the answers to our call |
 | `HELP <0–1>` | `OK help=<0–1>`: our rider's call for help, off or on; each time on is a new call, and who answers starts afresh |
 | `SLOT <0–31>`, `SLOTS <1–32>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |
 | `MODE <SF 7–12> <kHz 62, 125, 250, 500>` | `OK mode=<SF>/<kHz>`: another radio mode on the same frequency, for trying range (E2); kept over a restart. Every board of a group needs the same |
@@ -216,11 +217,11 @@ on three transports:
 | `REBOOT`, and `BOOTLOADER` on the L1 Pro (its UF2 drive) | — |
 
 The board keeps its key, slots, interval and mode across restarts; `kept=0` says it could not save
-them, and would come back without them. `known=` is the riders it knows, a bit a slot, in hex:
-`0000000c` for slots 2 and 3. A reply over Bluetooth stops at a line the board could not send,
-never its end after a gap. `KEY`, `SLOT`, `SLOTS` and `INTERVAL` set one each, for a
+them, and would come back without them. A reply over Bluetooth stops at a line the board could
+not send, never its end after a gap. `KEY`, `SLOT`, `SLOTS` and `INTERVAL` set one each, for a
 person at the console. No command reads the key back: the
-status shows `keyed=` and the group's tag in hex, `00` without a key, and counts the packets
+status shows `keyed=` and the group's id, `00000000` without a key: the first four bytes of the
+block the tag comes from, so the tag first, `86c91c92` for the key `00 01 … 0f`. It counts the packets
 refused as `foreign=`, `forged=`, `replay=` and `clash=`. Of its time it shows where it comes from
 (`time=none`, `nmea` or `pps`), how far off it may be and the budget, in ms (`err=`, `budget=`),
 and the slots passed over (`late=`, `unsure=`). A board with both PPS and NMEA measures E0's number
@@ -232,7 +233,7 @@ a phone is connected. The app sends `STATUS` every 10 s, which keeps the link fr
 as silent. Commands are case-blind.
 
 ```
-RIDER slot=2 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 answered=- rssi=-71 snr=8.25 rx=13/14
+RIDER slot=2 group=86c91c92 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 answered=- rssi=-71 snr=8.25 rx=13/14
 ```
 
 `fix_age` is in whole seconds and can be negative (the sender's clock is wrong) or `?` (this board

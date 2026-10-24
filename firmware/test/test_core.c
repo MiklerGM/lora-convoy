@@ -102,7 +102,8 @@ static void test_codec(void) {
                                                    0x6D, 0x23, 0x0D, 0x03, 0x40, 0x86, 0x0F};
     group_key_t g;
     group_key_init(&g, KEY);
-    assert(g.tag == 0x86);
+    /* the group's id, which the phone tells groups apart by, its tag first: from OpenSSL */
+    assert(g.tag == 0x86 && g.id == 0x86c91c92u);
     const position_t p = {.slot = 3, .session = 0x01020304, .counter = 5, .fix_time = 64197,
                           .lat_e7 = 471410000, .lon_e7 = 95215000, .speed_kmh = 40,
                           .course2 = 135, .status = ST_GPS_OK | ST_HELP, .call = 5, .help_heard = 7,
@@ -515,9 +516,7 @@ static void test_node_hears(void) {
     node_format_rider(&blind, 2, 0, line, sizeof(line));
     assert(strstr(line, "fix_age=? "));
     node_format_status(&n, 9 * SEC, line, sizeof(line));
-    assert(strncmp(line, "slot=1 slots=4 keyed=1 group=86 mode=7/250 fix=0 ", 49) == 0);
-    /* whom it knows, by slot: what the app keeps on its map, whatever lines it missed */
-    assert(strstr(line, " riders=3 known=0000001c "));
+    assert(starts(line, "slot=1 slots=4 keyed=1 group=86c91c92 mode=7/250 fix=0 ") && strstr(line, " riders=3 "));
     assert(strstr(line, " time=nmea err=1.") && strstr(line, " budget=183.5 lag=? "));
     assert(strstr(line, " foreign=1 forged=1 replay=2 clash=1"));
     printf("node: ages honest, the delivered share, and forgeries, replays and strangers kept out\n");
@@ -684,16 +683,17 @@ static void test_api(void) {
     api_t api = {.node = &n, .board = "test", .reset = "poweron", .power = 3, .tx_dbm = dbm};
 
     ask(&api, "STATUS");
-    assert(n_replies == 1 && starts(replies[0], "STATUS proto=5 board=test reset=poweron up=10 slot=1 slots=4 keyed=1 group=86 "));
-    assert(strstr(replies[0], " stopped=0 help=0 heard=0 ") && strstr(replies[0], " riders=1 known=00000004 "));
+    assert(n_replies == 1 && starts(replies[0], "STATUS proto=5 board=test reset=poweron up=10 slot=1 slots=4 keyed=1 group=86c91c92 "));
+    assert(strstr(replies[0], " stopped=0 help=0 heard=0 "));
     assert(strstr(replies[0], " power=3 dbm=16"));
     ask(&api, "riders"); /* the console types it in lower case */
-    assert(n_replies == 2 && starts(replies[0], "RIDER slot=2 ") && strcmp(replies[1], "RIDERS 1") == 0);
+    /* each rider line names the group it was heard in: one from before a new key is told apart */
+    assert(n_replies == 2 && starts(replies[0], "RIDER slot=2 group=86c91c92 ") && strcmp(replies[1], "RIDERS 1") == 0);
     assert(strstr(replies[0], " gps=1 help=0 stopped=0 "));
 
     /* The key it has, sent again by a phone that reconnects: the riders stay. */
     ask(&api, "KEY 000102030405060708090a0b0c0d0e0f");
-    assert(strcmp(replies[0], "OK keyed group=86") == 0);
+    assert(strcmp(replies[0], "OK keyed group=86c91c92") == 0);
     ask(&api, "RIDERS");
     assert(n_replies == 2);
     /* A new key: another group, so the riders heard under the old one go. */
@@ -758,7 +758,7 @@ static void test_api(void) {
         assert(n.cfg.slot == 5 && n.cfg.slots == 5 && n.cfg.interval_ms == 2000 && n.cfg.key[15] == 0x0e);
     }
     ask(&api, "GROUP 000102030405060708090a0b0c0d0e0f 2 6 3000");
-    assert(n_replies == 1 && strcmp(replies[0], "OK group=86 slot=2 slots=6 interval=3000") == 0);
+    assert(n_replies == 1 && strcmp(replies[0], "OK group=86c91c92 slot=2 slots=6 interval=3000") == 0);
     assert(n.cfg.slot == 2 && n.cfg.slots == 6 && n.cfg.interval_ms == 3000 && n.cfg.key[15] == 0x0f);
     assert(api.setup_changed);
     /* A setup the board could not keep over a restart, its status says so. */

@@ -18,8 +18,8 @@ object BoardLines {
         val slots: Int?,
         /** Without a group key a board sends nothing, and hears nobody. */
         val keyed: Boolean,
-        /** The group's tag, the second byte of its packets; 0 without a key. */
-        val group: Int,
+        /** The group's id, from its key, its tag first (Invitation.groupId); 0 without a key. */
+        val group: Long,
         val fix: Boolean,
         val stopped: Boolean,
         /** Our rider's call for help is on, and so many others' boards say they hear it. */
@@ -36,20 +36,18 @@ object BoardLines {
         val reset: String,
         /** False when the board could not save its setup: switched off, it would forget it. */
         val kept: Boolean,
-        /** The slots of the riders the board knows: the others are no longer on its map. */
-        val known: Set<Int>?,
     )
 
     /** What a board took from a GROUP: the group's tag, and its slot, slots and interval. */
-    data class Setup(val group: Int, val slot: Int, val slots: Int, val intervalMs: Int) {
-        fun of(g: Invitation) = group == g.groupTag() && slot == g.slot && slots == g.riders && intervalMs == g.intervalMs
+    data class Setup(val group: Long, val slot: Int, val slots: Int, val intervalMs: Int) {
+        fun of(g: Invitation) = group == g.groupId() && slot == g.slot && slots == g.riders && intervalMs == g.intervalMs
     }
 
     fun setup(line: String): Setup? {
         if (!line.startsWith("OK group=")) return null
         val t = tokens(line)
         return Setup(
-            group = t["group"]?.toIntOrNull(16) ?: return null,
+            group = t["group"]?.toLongOrNull(16) ?: return null,
             slot = t["slot"]?.toIntOrNull() ?: return null,
             slots = t["slots"]?.toIntOrNull() ?: return null,
             intervalMs = t["interval"]?.toIntOrNull() ?: return null,
@@ -63,6 +61,9 @@ object BoardLines {
             if (eq > 0) t.substring(0, eq) to t.substring(eq + 1) else null
         }.toMap()
 
+    /** The group a line names (group=): which group's a RIDER line is, as its board heard it. */
+    fun groupOf(line: String): Long? = tokens(line)["group"]?.toLongOrNull(16)
+
     fun status(line: String): Status? {
         if (!line.startsWith("STATUS ")) return null
         val t = tokens(line)
@@ -72,7 +73,7 @@ object BoardLines {
             slot = t["slot"]?.toIntOrNull() ?: return null,
             slots = t["slots"]?.toIntOrNull(),
             keyed = t["keyed"] == "1",
-            group = t["group"]?.toIntOrNull(16) ?: return null,
+            group = t["group"]?.toLongOrNull(16) ?: return null,
             fix = t["fix"] == "1",
             stopped = t["stopped"] == "1",
             help = t["help"] == "1",
@@ -85,7 +86,6 @@ object BoardLines {
             dbm = t["dbm"]?.toIntOrNull(),
             reset = t["reset"] ?: "?",
             kept = t["kept"] != "0",
-            known = t["known"]?.toLongOrNull(16)?.let { bits -> (0 until 32).filter { bits shr it and 1L == 1L }.toSet() },
         )
     }
 

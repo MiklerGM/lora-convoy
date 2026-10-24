@@ -3,40 +3,34 @@ package io.github.miklergm.convoy
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * A board's riders as this phone knows them: each RIDER line as it comes, and those the board no
- * longer knows dropped when its status names whom it knows (known=). The status comes every 10 s
- * whatever else was lost on the way, the end of a RIDERS reply among it, so a rider of the group
- * before, or one the board has forgotten, leaves the map within that.
+ * A board's riders as this phone knows them: each RIDER line as it comes, with the group its board
+ * heard it in (group=, an id from the key), and only those of the group the board is in now, as
+ * its status and its answer to GROUP say. A rider of the group before goes as soon as the board is
+ * in another, whatever lines were lost on the way, and a line of theirs that comes late is not
+ * taken. A rider the board no longer hears stays, aging, as the last that is known of them.
  *
  * Lines come on the link's thread; [all] is read on another.
  */
 class BoardRiders {
-    private val riders = ConcurrentHashMap<String, Rider>()
-    /** When each rider's last line came, on this phone's clock. */
-    private val takenAtMs = ConcurrentHashMap<String, Long>()
+    private val riders = ConcurrentHashMap<String, Pair<Rider, Long?>>()
+    /** The board's group, once it has said; until then lines are taken as they come. */
+    @Volatile private var group: Long? = null
 
-    val all: List<Rider> get() = riders.values.toList()
+    val all: List<Rider> get() = riders.values.map { it.first }
 
-    fun take(r: Rider, nowMs: Long) {
-        riders[r.id] = r
-        takenAtMs[r.id] = nowMs
+    fun take(r: Rider, inGroup: Long?) {
+        val now = group
+        if (now == null || inGroup == now) riders[r.id] = r to inGroup
     }
 
-    /**
-     * The board's status: the riders it knows, by id. The others go, but for one whose line came
-     * within [GRACE_MS], which a status made just before it does not name yet.
-     */
-    fun known(ids: Set<String>, nowMs: Long) {
-        riders.keys.removeIf { it !in ids && nowMs - (takenAtMs[it] ?: 0L) > GRACE_MS }
-        takenAtMs.keys.retainAll(riders.keys)
+    /** The board's group, from its status or its answer to GROUP: the riders of any other go. */
+    fun group(g: Long) {
+        group = g
+        riders.values.removeIf { it.second != g }
     }
 
     fun clear() {
         riders.clear()
-        takenAtMs.clear()
-    }
-
-    companion object {
-        const val GRACE_MS = 5_000L
+        group = null
     }
 }
