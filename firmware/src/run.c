@@ -53,8 +53,10 @@ static node_t s_node;
 static api_t s_api;
 static port_mutex_t s_lock;
 /* One command at a time, whichever transport it came on, from its taking to its saving: a save
- * then always follows the setup it took, never an older one over a newer. Apart from s_lock, which
- * stays as short as the radio needs. */
+ * then always follows the setup it took, never an older one over a newer. The status pushed to the
+ * phone is made and sent under it too, so one made before a GROUP never reaches the phone after the
+ * GROUP's answer, to be taken for the board's group. Apart from s_lock, which stays as short as the
+ * radio needs. */
 static port_mutex_t s_command_lock;
 static atomic_bool s_reapply = ATOMIC_VAR_INIT(false);
 static atomic_bool s_restart_after_bond_clear = ATOMIC_VAR_INIT(false);
@@ -321,10 +323,12 @@ static void service_task(void *arg) {
         if ((status_ms += 100) >= STATUS_PUSH_MS) {
             status_ms = 0;
             if (ble_nus_connected()) {
+                port_mutex_lock(s_command_lock);
                 port_mutex_lock(s_lock);
                 api_status(&s_api, port_uptime_us(), text, sizeof(text));
                 port_mutex_give(s_lock);
                 ble_nus_send_line(text);
+                port_mutex_give(s_command_lock);
             }
         }
         const bool down = port_button_down();
