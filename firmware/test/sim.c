@@ -425,6 +425,16 @@ static void send_line(void *ctx, const char *line) {
     if (send(b->client, out, (size_t)n, MSG_NOSIGNAL) != n) drop(b, (int)(b - s_boards));
 }
 
+/* One line from a phone to a simulated board, and then what run.c does after a command on a real
+ * board, short of what only Bluetooth can do: a mode asked for its radio takes at once, as a board's
+ * does once radio_apply succeeds, and the node is told (D15). */
+static void serve_line(board_t *b, char *line, int64_t now_us) {
+    api_command(&b->api, line, now_us, send_line, b);
+    if (b->api.forget) send_line(b, "ERR FORGET is for Bluetooth");
+    if (b->api.radio_changed) node_phy_applied(b->api.node, &b->api.node->cfg.phy);
+    b->api.forget = b->api.restart = b->api.bootloader = b->api.radio_changed = false;
+}
+
 static void on_taken(void *ctx, int node, unsigned slot, int64_t t) {
     world_t *w = ctx;
     board_t *b = &s_boards[node];
@@ -499,11 +509,7 @@ static void serve(int n, int port) {
             while (b->client >= 0 && (nl = memchr(b->in, '\n', b->in_len))) {
                 *nl = '\0';
                 if (nl > b->in && nl[-1] == '\r') nl[-1] = '\0';
-                if (b->in[0]) {
-                    api_command(&b->api, b->in, local_us(&w, i, t), send_line, b);
-                    if (b->api.forget) send_line(b, "ERR FORGET is for Bluetooth");
-                    b->api.forget = b->api.restart = b->api.bootloader = b->api.radio_changed = false;
-                }
+                if (b->in[0]) serve_line(b, b->in, local_us(&w, i, t));
                 const size_t used = (size_t)(nl - b->in) + 1;
                 memmove(b->in, nl + 1, b->in_len - used);
                 b->in_len -= used;
@@ -608,6 +614,29 @@ int main(int argc, char **argv) {
            "frame (%d packets); told it is unsure, it keeps quiet (%d silent, %d collisions)\n", wrong_within,
            o.silent, o.within);
     assert(wrong_within > 500 && o.silent == 1 && o.within == 0);
+
+    /* sim serve's boards take MODE as boards do (D15): the phone's command, through the same
+     * handling as serve's, and their radios take the mode, so they go on sending, in it. */
+    {
+        static world_t v;
+        const scenario_t three = {3, 2000, 0, 0, 16, 1, GOOD, 0, false};
+        world_init(&v, &three, 1792670400000ll);
+        int64_t t = 0;
+        for (; t < 20 * SEC; t += STEP_US) world_step(&v, t);
+        const int before = v.sent;
+        for (int i = 0; i < 3; i++) {
+            board_t b = {.client = -1, .api = {.node = &v.node[i], .board = "sim", .reset = "poweron", .power = 3,
+                                               .tx_dbm = sim_dbm}};
+            char mode[] = "MODE 9 250";
+            serve_line(&b, mode, local_us(&v, i, t));
+        }
+        for (const int64_t end = t + 20 * SEC; t < end; t += STEP_US) world_step(&v, t);
+        unsigned long held = 0;
+        for (int i = 0; i < 3; i++) held += v.node[i].tx_held;
+        printf("sim: serve's boards told MODE 9 250 by their phones: %d sent in 20 s before, %d after, %lu slots held\n",
+               before, v.sent - before, held);
+        assert(before > 20 && v.sent - before > 20 && held == 0 && v.node[0].phy.sf == 9);
+    }
 
     /* A mode changed under a group (D15): ten riders on SF11/250, whose 370.688 ms packet is longer
      * than their slots are apart, so silent; then all asked for SF7/250, which their radios take a
