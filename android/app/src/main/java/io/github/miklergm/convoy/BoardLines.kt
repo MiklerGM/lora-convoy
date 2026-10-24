@@ -61,6 +61,9 @@ object BoardLines {
             if (eq > 0) t.substring(0, eq) to t.substring(eq + 1) else null
         }.toMap()
 
+    /** When the board made a line, on its own UTC (at=): null where it had no time yet. */
+    fun madeAt(line: String): Long? = tokens(line)["at"]?.toLongOrNull()
+
     /** The group a line names (group=): which group's a RIDER line is, as its board heard it. */
     fun groupOf(line: String): Long? = tokens(line)["group"]?.toLongOrNull(16)
 
@@ -90,8 +93,8 @@ object BoardLines {
     }
 
     /**
-     * A RIDER line as a [Rider], its ages turned into clock times on this phone's clock at [nowMs],
-     * named from [group]'s invitation. Unknown values ("?") stay unknown; a negative fix age (the
+     * A RIDER line as a [Rider], its ages turned into clock times on this phone's clock from
+     * [nowMs], when the board made the line (BoardClock), named from [group]'s invitation. Unknown values ("?") stay unknown; a negative fix age (the
      * sender's clock is wrong) stays negative, so the fix shows from the future rather than as fresh.
      */
     fun rider(line: String, nowMs: Long, group: Invitation? = null): Rider? {

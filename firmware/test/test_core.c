@@ -740,12 +740,16 @@ static void test_api(void) {
     api_t api = {.node = &n, .board = "test", .reset = "poweron", .power = 3, .tx_dbm = dbm};
 
     ask(&api, "STATUS");
-    assert(n_replies == 1 && starts(replies[0], "STATUS proto=5 board=test reset=poweron up=10 slot=1 slots=4 keyed=1 group=86c91c92 "));
+    /* each line says when it was made, on the board's UTC, for the phone to reckon a wait in a
+     * queue or on the air into the ages it carries: 10 s after the fix of 12:00:05 */
+    assert(n_replies == 1 && starts(replies[0], "STATUS proto=5 board=test reset=poweron up=10 at=1792670415000 slot=1 "
+                                                "slots=4 keyed=1 group=86c91c92 "));
     assert(strstr(replies[0], " stopped=0 help=0 heard=0 "));
     assert(strstr(replies[0], " power=3 dbm=16"));
     ask(&api, "riders"); /* the console types it in lower case */
     /* each rider line names the group it was heard in: one from before a new key is told apart */
-    assert(n_replies == 2 && starts(replies[0], "RIDER slot=2 group=86c91c92 ") && strcmp(replies[1], "RIDERS 1") == 0);
+    assert(n_replies == 2 && starts(replies[0], "RIDER slot=2 group=86c91c92 at=1792670415000 ") &&
+           strcmp(replies[1], "RIDERS 1") == 0);
     assert(strstr(replies[0], " gps=1 help=0 stopped=0 "));
 
     /* The key it has, sent again by a phone that reconnects: the riders stay. */

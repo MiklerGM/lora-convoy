@@ -462,6 +462,16 @@ static const char *deg(char *s, size_t cap, int32_t e7) {
     return s;
 }
 
+const char *node_line_at(const node_t *n, int64_t now_us, char *buf, size_t cap) {
+    int64_t utc;
+    if (node_utc_ms(n, now_us, &utc)) {
+        snprintf(buf, cap, "%lld", (long long)utc);
+    } else {
+        snprintf(buf, cap, "?");
+    }
+    return buf;
+}
+
 int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf, size_t cap) {
     if (slot >= NODE_SLOTS || !n->riders[slot].known) return snprintf(buf, cap, "RIDER slot=%u none", slot);
     const rider_t *r = &n->riders[slot];
@@ -480,11 +490,12 @@ int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf,
     if (r->last.course2 != COURSE_UNKNOWN) snprintf(course, sizeof(course), "%u", r->last.course2 * 2u);
     const long long heard10 = (now_us - r->heard_us) / 100000;
     const int snr = r->snr_db4 < 0 ? -r->snr_db4 : r->snr_db4;
-    char offset[72];
+    char offset[72], at[24];
     return snprintf(buf, cap,
-                    "RIDER slot=%u group=%08lx lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
+                    "RIDER slot=%u group=%08lx at=%s lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
                     "help=%d stopped=%d answered=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu offset=%s",
-                    slot, (unsigned long)n->group.id, deg(lat, sizeof(lat), r->last.lat_e7),
+                    slot, (unsigned long)n->group.id, node_line_at(n, now_us, at, sizeof(at)),
+                    deg(lat, sizeof(lat), r->last.lat_e7),
                     deg(lon, sizeof(lon), r->last.lon_e7),
                     age, heard10 / 10, heard10 % 10, speed, course,
                     (r->last.status & ST_GPS_OK) ? 1 : 0, (r->last.status & ST_HELP) ? 1 : 0,

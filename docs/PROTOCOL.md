@@ -205,7 +205,7 @@ on three transports:
 
 | Phone to board | Board to phone |
 |---|---|
-| `STATUS` | `STATUS proto=5 board=… reset=… up=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … riders=… … power=… dbm=… kept=…` |
+| `STATUS` | `STATUS proto=5 board=… reset=… up=… at=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … riders=… … power=… dbm=… kept=…` |
 | `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>` |
 | `GROUP <32 hex digits> <slot> <slots> <interval>` | `OK group=<id> slot=… slots=… interval=…`: a group's whole setup, from the invitation, checked whole and taken whole; or `ERR group: …`, and nothing changes |
 | `LEDGER` | `LEDGER minutes=60 limit_ms=… used_ms=… positions_ms=…`: the duty ledger, transmit time a minute at a time over the last hour, oldest first, by category |
@@ -236,9 +236,12 @@ a phone is connected. The app sends `STATUS` every 10 s, which keeps the link fr
 as silent. Commands are case-blind.
 
 ```
-RIDER slot=2 group=86c91c92 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 answered=- rssi=-71 snr=8.25 rx=13/14 offset=310/420/980
+RIDER slot=2 group=86c91c92 at=1792670415000 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 answered=- rssi=-71 snr=8.25 rx=13/14 offset=310/420/980
 ```
 
+`at` is when the board made the line, its UTC in ms, `?` before it has a time: the app reckons
+the board's clock against its own from the quickest lines of the last minute, and counts a line's
+ages from when it was made, so a wait in a queue or on the air makes them older, not lost.
 `fix_age` is in whole seconds and can be negative (the sender's clock is wrong) or `?` (this board
 has no time of its own); `heard` is in tenths of a second; `answered` is, while the rider calls for
 help, the slots heard answering that call, as `3,5`, and `-` for none; `rx` is packets taken against the run of counters; `offset` is how late its packets began against their moment, in µs, least/mean/most, from their RxDone on this board's UTC less their airtime (E0, [BENCH](BENCH.md)). On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count

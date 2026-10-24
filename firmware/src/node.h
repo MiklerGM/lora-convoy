@@ -178,6 +178,10 @@ uint32_t node_duty_used_ms(const node_t *n, int64_t now_us);
  * first, by category. Positions are the only category so far. */
 int node_format_ledger(const node_t *n, int64_t now_us, char *buf, size_t cap);
 
+/* When a line is made, on our UTC in ms, as the lines say it (at=), or ? before we have a time:
+ * the phone reckons a line's wait in a queue or on the air into its ages from it. */
+const char *node_line_at(const node_t *n, int64_t now_us, char *buf, size_t cap);
+
 /* One RIDER line, and the node's part of the status line: the phone API's words (api.h). */
 int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf, size_t cap);
 int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap);

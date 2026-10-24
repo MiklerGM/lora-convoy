@@ -29,6 +29,8 @@ class ConvoyService : Service() {
     private var centre: Pair<Double, Double>? = null
     @Volatile private var link: BoardLink? = null
     private val boardRiders = BoardRiders()
+    /** The board's clock against ours, for the ages its lines carry. */
+    private var boardClock = BoardClock()
     private var nextPoll = 0L
     /** What this link's board has been sent: this phone's group, and the question for its riders. */
     @Volatile private var sentGroup: Invitation? = null
@@ -61,6 +63,7 @@ class ConvoyService : Service() {
                 linkState = s
                 // its version first: a board that speaks another protocol is asked nothing more
                 if (s.startsWith("connected")) {
+                    boardClock = BoardClock()
                     sentGroup = null
                     confirmed = null
                     askedRiders = false
@@ -73,6 +76,9 @@ class ConvoyService : Service() {
     }
 
     private fun onLine(line: String) {
+        val received = System.currentTimeMillis()
+        val at = BoardLines.madeAt(line)
+        at?.let { boardClock.observe(it, received) }
         val status = BoardLines.status(line)
         if (status != null) {
             if (status.proto != BoardLines.PROTO) {
@@ -114,8 +120,9 @@ class ConvoyService : Service() {
             stopSelf()
             return
         }
-        val now = System.currentTimeMillis()
-        BoardLines.rider(line, now, group)?.let { boardRiders.take(it, BoardLines.groupOf(line)) }
+        // its ages from when the board made it, a wait in its queue or on the air counted in
+        val made = at?.let(boardClock::madeAt) ?: received
+        BoardLines.rider(line, made, group)?.let { boardRiders.take(it, BoardLines.groupOf(line)) }
     }
 
     /**
