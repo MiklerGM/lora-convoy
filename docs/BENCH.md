@@ -25,11 +25,26 @@ Both boards answer the phone API's commands typed on the console ([PROTOCOL](PRO
 
 - **Heltec:** after a few minutes, `lag=last/min/max` in `STATUS` is how far the L76K's NMEA fix
   lags behind its PPS edge. Note all three. If the most nears a second, the pairing is wrong (T-timing).
-- **L1:** it has no PPS, so it takes the Heltec's numbers: build it with
-  `-DNODE_NMEA_LAG_US=<the lag>` and `-DNODE_NMEA_ERR_US=<half the spread, plus a margin>`.
-  Without them it assumes 0 ± 100 ms, and keeps quiet in groups of more than seven.
+- **L1:** it has no PPS, so it starts from the Heltec's numbers, a first guess only, as each
+  board's UART and processing differ: build it with `-DNODE_NMEA_LAG_US=<the lag>` and
+  `-DNODE_NMEA_ERR_US=<half the spread, plus a margin>`. Without them it assumes 0 ± 100 ms, and
+  keeps quiet in groups of more than seven. The offsets below then measure the L1 itself.
 - **Both:** `late=` and `unsure=` stay at 0 with a fix. `late=` growing means the radio task wakes
   too late for its slot.
+- **When RF begins**, on each board: `txlead=least/mean/most` in `STATUS`, in µs, from a packet's
+  moment in its slot to its RF, which the radio's TxDone gives, as DIO1's interrupt stamps it, less
+  the packet's airtime. Everything is inside: the radio task's wake-up, the packet's making, SPI,
+  and on the Heltec the front end's 1 ms before SetTx. `?` after some packets means DIO1's
+  interrupt stamps nothing: its line or its pin is wrong. The schedule's `TX_ERR_US`, 1 ms, has to
+  cover the most (node.c).
+- **How late each board is heard**: three boards in one group, two Heltecs and the L1, so their
+  slots are 500 ms apart at 2 s and a late packet still lands clear. On each Heltec, whose own time
+  is its PPS's, each `RIDER` line's `offset=least/mean/most` is how late that rider's packets
+  began against their moment, in µs, from their RxDone on its UTC less their airtime; with `?`,
+  the receiver's DIO1 stamps nothing and the poll's 5 ms is all there is. Read `rx=` beside it,
+  the packets taken against the run of counters: the latest packets may be the ones lost. For the
+  L1 the mean is the lag still uncorrected, and the spread the error to build it with; for the
+  other Heltec, both near `txlead=`.
 
 ## 3. Two boards in one group (M5, M6)
 

@@ -113,6 +113,15 @@ static bool wait_busy(uint32_t timeout_ms) {
     return true;
 }
 
+/* When the IRQ flags were last cleared: a DIO1 edge stamped after it is the event that set them;
+ * one stamped before was an earlier one's. */
+static int64_t s_cleared_us;
+
+static int64_t dio1_since_cleared(void) {
+    const int64_t edge = port_radio_irq_us();
+    return edge > s_cleared_us ? edge : 0;
+}
+
 /* Set when the chip reported a command error. Each transfer's status byte tells of the command
  * before it, so a refusal is heard one transfer late. */
 static bool s_cmd_error;
@@ -375,6 +384,7 @@ static bool enter_rx(void) {
     if (!set_packet_params(255)) return false;
     s_cmd_error = false;
     if (!cmd(CMD_CLEAR_IRQ_STATUS, clear, 2)) return false;
+    s_cleared_us = port_uptime_us();
     fem_transmit(false);
     if (!cmd(CMD_SET_RX, rx, 3)) return false;
     /* Listening once the chip says so, not once the bus took the command. */
@@ -398,7 +408,7 @@ void radio_init(void) {
     };
     for (size_t i = 0; i < sizeof(outputs) / sizeof(outputs[0]); i++) port_pin_output(outputs[i]);
     port_pin_input(PIN_SX_BUSY);
-    port_pin_input(PIN_SX_DIO1);
+    port_radio_irq_open(PIN_SX_DIO1);
     fem_power(true);
     fem_transmit(false);
     port_radio_spi_init(PIN_SX_NSS, PIN_SX_SCK, PIN_SX_MOSI, PIN_SX_MISO);
@@ -442,13 +452,15 @@ bool radio_verify(void) {
     return listening;
 }
 
-bool radio_send(const uint8_t *data, size_t len) {
+bool radio_send(const uint8_t *data, size_t len, int64_t *done_us) {
+    *done_us = 0;
     if (len == 0 || len > 255 || !s_applied || !bus_lock()) return false;
     uint8_t clear[2] = {0xFF, 0xFF};
     uint8_t txbase[2] = {0x00, 0x00};
     uint8_t go[3] = {0x00, 0x00, 0x00};   /* no timeout */
     bool ok = set_standby() && set_packet_params((uint8_t)len) && cmd(CMD_SET_BUFFER_BASE, txbase, 2) &&
               buffer_write(data, len) && cmd(CMD_CLEAR_IRQ_STATUS, clear, 2);
+    s_cleared_us = port_uptime_us();
     if (ok) {
         uint8_t noerr[2] = {0x00, 0x00};
         cmd(CMD_CLEAR_DEVICE_ERRORS, noerr, 2);
@@ -461,7 +473,10 @@ bool radio_send(const uint8_t *data, size_t len) {
             uint8_t irq[2] = {0, 0};
             if (!cmd_read(CMD_GET_IRQ_STATUS, irq, 2)) { ok = false; break; }
             const uint16_t flags = (uint16_t)((uint16_t)irq[0] << 8 | irq[1]);
-            if (flags & IRQ_TX_DONE) break;
+            if (flags & IRQ_TX_DONE) {
+                *done_us = dio1_since_cleared();
+                break;
+            }
             if ((flags & IRQ_TIMEOUT) || port_uptime_us() > deadline) { ok = false; break; }
             delay_us(1000);
         }
@@ -474,7 +489,8 @@ bool radio_send(const uint8_t *data, size_t len) {
     return ok;
 }
 
-size_t radio_receive(uint8_t *out, size_t cap, uint32_t wait_ms, int *rssi_dbm, int *snr_db4) {
+size_t radio_receive(uint8_t *out, size_t cap, uint32_t wait_ms, int *rssi_dbm, int *snr_db4, int64_t *at_us) {
+    *at_us = 0;
     if (!s_applied || !bus_lock()) return 0;
     if (!s_in_rx) enter_rx();
     size_t produced = 0;
@@ -510,11 +526,13 @@ size_t radio_receive(uint8_t *out, size_t cap, uint32_t wait_ms, int *rssi_dbm, 
                     /* RSSI in half dBm, less what the front end added; SNR in quarter dB, signed */
                     *rssi_dbm = -(int)ps[0] / 2 - SX_RX_GAIN_DB;
                     *snr_db4 = (int)(int8_t)ps[1];
+                    *at_us = dio1_since_cleared();
                     produced = n;
                 }
             }
         }
         cmd(CMD_CLEAR_IRQ_STATUS, clear, 2);
+        s_cleared_us = port_uptime_us();
         break;
     }
     bus_unlock();

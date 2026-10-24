@@ -57,6 +57,9 @@ int port_console_getc(uint32_t timeout_ms);
 
 void port_gnss_open(void);
 int port_gnss_getc(uint32_t timeout_ms);
+void port_radio_irq_open(int pin);
+int64_t port_radio_irq_us(void);
+
 /* The L1's pin map has no PPS line (ARCHITECTURE D5): its time is NMEA's. */
 static inline int64_t port_pps_us(void) { return 0; }
 

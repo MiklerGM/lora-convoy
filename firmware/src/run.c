@@ -261,12 +261,14 @@ static void radio_task(void *arg) {
         int64_t due = node_next_tx_us(&s_node, port_uptime_us());
         port_mutex_give(s_lock);
         int64_t wait_ms = (due - port_uptime_us()) / 1000 - 1;
+        int64_t rx_at;
         const size_t n = radio_receive(buf, sizeof(buf), wait_ms < 0 ? 0 : wait_ms > 20 ? 20 : (uint32_t)wait_ms,
-                                       &rssi, &snr);
+                                       &rssi, &snr, &rx_at);
         int64_t now = port_uptime_us();
         if (n) {
             port_mutex_lock(s_lock);
-            const bool taken = node_on_packet(&s_node, buf, n, rssi, snr, now);
+            /* at its RxDone where DIO1 stamped it, for E0's offsets; else when the poll found it */
+            const bool taken = node_on_packet(&s_node, buf, n, rssi, snr, rx_at ? rx_at : now);
             if (taken) node_format_rider(&s_node, buf[2], now, text, sizeof(text));
             port_mutex_give(s_lock);
             if (taken) {
@@ -288,7 +290,13 @@ static void radio_task(void *arg) {
         const uint32_t counter = s_node.counter - 1;
         port_mutex_give(s_lock);
         if (len) {
-            const bool sent = radio_send(buf, len);
+            int64_t done;
+            const bool sent = radio_send(buf, len, &done);
+            if (sent && done) {
+                port_mutex_lock(s_lock);
+                node_on_tx_done(&s_node, done, len);
+                port_mutex_give(s_lock);
+            }
             snprintf(text, sizeof(text), "TX counter=%lu len=%u %s", (unsigned long)counter, (unsigned)len,
                      sent ? "ok" : "FAILED");
             console_line(text);

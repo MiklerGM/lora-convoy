@@ -129,6 +129,34 @@ int64_t port_pps_us(void) {
 #endif
 }
 
+/* The radio's DIO1, which rises at its TxDone and RxDone (sx1262.c), stamped the same way: E0's
+ * measure of when a packet left and came, to the interrupt's latency, a few microseconds. */
+static portMUX_TYPE s_dio1_lock = portMUX_INITIALIZER_UNLOCKED;
+static int64_t s_dio1_us;
+
+static void IRAM_ATTR on_dio1(void *arg) {
+    (void)arg;
+    const int64_t now = esp_timer_get_time();
+    portENTER_CRITICAL_ISR(&s_dio1_lock);
+    s_dio1_us = now;
+    portEXIT_CRITICAL_ISR(&s_dio1_lock);
+}
+
+void port_radio_irq_open(int pin) {
+    const gpio_config_t dio1 = {.pin_bit_mask = 1ULL << pin, .mode = GPIO_MODE_INPUT, .intr_type = GPIO_INTR_POSEDGE};
+    ESP_ERROR_CHECK(gpio_config(&dio1));
+    const esp_err_t err = gpio_install_isr_service(0);
+    if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) ESP_ERROR_CHECK(err); /* installed already: fine */
+    ESP_ERROR_CHECK(gpio_isr_handler_add((gpio_num_t)pin, on_dio1, NULL));
+}
+
+int64_t port_radio_irq_us(void) {
+    portENTER_CRITICAL(&s_dio1_lock);
+    const int64_t t = s_dio1_us;
+    portEXIT_CRITICAL(&s_dio1_lock);
+    return t;
+}
+
 /* TX is the board's line towards the GNSS, RX the one from it. PPS, where wired, rises on the
  * second. */
 void port_gnss_open(void) {

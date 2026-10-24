@@ -226,19 +226,20 @@ refused as `foreign=`, `forged=`, `replay=` and `clash=`. Of its time it shows w
 (`time=none`, `nmea` or `pps`), how far off it may be and the budget, in ms (`err=`, `budget=`),
 and the slots passed over (`late=`, `unsure=`). A board with both PPS and NMEA measures E0's number
 for boards without PPS: `lag=` is the NMEA fix's lag behind its PPS edge, last, least and most, in
-ms.
+ms. `txlead=` is how late its own packets' RF began after their moment, least/mean/most in µs, by
+the radio's TxDone less the airtime (E0).
 
 Unasked, the board sends a `RIDER` line for every packet it takes, and its status every 10 s while
 a phone is connected. The app sends `STATUS` every 10 s, which keeps the link from being dropped
 as silent. Commands are case-blind.
 
 ```
-RIDER slot=2 group=86c91c92 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 answered=- rssi=-71 snr=8.25 rx=13/14
+RIDER slot=2 group=86c91c92 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 answered=- rssi=-71 snr=8.25 rx=13/14 offset=310/420/980
 ```
 
 `fix_age` is in whole seconds and can be negative (the sender's clock is wrong) or `?` (this board
 has no time of its own); `heard` is in tenths of a second; `answered` is, while the rider calls for
-help, the slots heard answering that call, as `3,5`, and `-` for none; `rx` is packets taken against the run of counters. On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count
+help, the slots heard answering that call, as `3,5`, and `-` for none; `rx` is packets taken against the run of counters; `offset` is how late its packets began against their moment, in µs, least/mean/most, from their RxDone on this board's UTC less their airtime (E0, [BENCH](BENCH.md)). On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count
 from 0 here; the app shows riders from 1.
 
 ## What comes next

@@ -22,12 +22,15 @@ bool radio_apply(const phy_t *phy, uint8_t power_level);
  * reset itself comes back with its default sync word. */
 bool radio_verify(void);
 
-/* Sends one packet and waits for it to leave; then listens again. */
-bool radio_send(const uint8_t *data, size_t len);
+/* Sends one packet and waits for it to leave; then listens again. *done_us gets its TxDone as
+ * DIO1's interrupt stamped it, or 0 when no edge came after the flags were cleared (E0). */
+bool radio_send(const uint8_t *data, size_t len, int64_t *done_us);
 
 /* Waits at most wait_ms for a packet. Returns its length, with the modem's RSSI at the antenna in
- * dBm and its SNR in quarter dB; 0 when none came or it failed its CRC. */
-size_t radio_receive(uint8_t *out, size_t cap, uint32_t wait_ms, int *rssi_dbm, int *snr_db4);
+ * dBm and its SNR in quarter dB; 0 when none came or it failed its CRC. *at_us gets its RxDone as
+ * DIO1's interrupt stamped it, or 0 when none came: the caller then has only the poll's time,
+ * up to 5 ms after (E0). */
+size_t radio_receive(uint8_t *out, size_t cap, uint32_t wait_ms, int *rssi_dbm, int *snr_db4, int64_t *at_us);
 
 /* What a power level puts out on this board, in dBm. */
 int radio_tx_dbm(uint8_t level);

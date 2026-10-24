@@ -46,6 +46,7 @@ static int gpio_get_level(gpio_num_t pin) { (void)pin; return 0; }   /* BUSY is 
 /* The test's clock moves only when the driver waits, by as long as it waits (a tick is a
  * millisecond here, as in the firmware's build), so a wait that runs long shows. */
 static int64_t s_now_us;
+static int64_t s_dio1_us;   /* DIO1's last rising edge, as the port's interrupt stamps it */
 static void esp_rom_delay_us(uint32_t us) { s_now_us += us; }
 static int64_t esp_timer_get_time(void) { return s_now_us; }
 static void vTaskDelay(int ticks) { s_now_us += (int64_t)ticks * 1000; }
@@ -66,6 +67,9 @@ static int spi_device_polling_transmit(spi_device_handle_t spi, spi_transaction_
 
 #include "../src/sx1262.c"
 
+void port_radio_irq_open(int pin) { (void)pin; }
+int64_t port_radio_irq_us(void) { return s_dio1_us; }
+
 /* ---- the chip ---------------------------------------------------------------- */
 
 #define MODE_STANDBY 2
@@ -80,6 +84,7 @@ static struct {
     uint8_t status;         /* how the last command went, told on the next transfer */
     uint8_t drop;           /* a command the bus fails, once */
     uint8_t refuse;         /* a command the chip refuses, once */
+    bool dio1_dead;         /* its DIO1 never rises, as with the line not wired */
 } chip = {.mode = MODE_STANDBY};
 
 static int spi_device_polling_transmit(spi_device_handle_t spi, spi_transaction_t *t) {
@@ -108,7 +113,8 @@ static int spi_device_polling_transmit(spi_device_handle_t spi, spi_transaction_
         case CMD_SET_MODULATION: memcpy(chip.modulation, &tx[1], 4); break;
         case CMD_SET_TX:
             chip.txmod_at_tx = chip.regs[REG_TX_MODULATION];
-            chip.mode = MODE_STANDBY;   /* a packet goes out at once */
+            chip.mode = MODE_STANDBY;   /* a packet goes out at once, DIO1 rising at its TxDone */
+            if (!chip.dio1_dead) s_dio1_us = s_now_us + 777;
             break;
         case CMD_SET_STANDBY: chip.mode = MODE_STANDBY; break;
         case CMD_SET_RX: chip.mode = MODE_RX; break;
@@ -131,7 +137,8 @@ int main(void) {
     static const uint8_t sf7_250[4] = {7, 0x05, 0x01, 0x00};
     assert(memcmp(chip.frequency, f869525, 4) == 0 && memcmp(chip.modulation, sf7_250, 4) == 0);
     assert(chip.regs[REG_LORA_SYNC_MSB] == 0x64 && chip.regs[REG_LORA_SYNC_MSB + 1] == 0x74);
-    assert(radio_send((const uint8_t *)"0123456789abcdefg", 17) && (chip.txmod_at_tx & 0x04));
+    int64_t done;
+    assert(radio_send((const uint8_t *)"0123456789abcdefg", 17, &done) && (chip.txmod_at_tx & 0x04));
     printf("sx1262: v0's mode reaches the chip's registers\n");
 
     /* Another mode moves everything, LDRO included at 16 ms symbols. */
@@ -160,11 +167,12 @@ int main(void) {
     uint8_t *const back[] = {&chip.drop, &chip.refuse};
     for (size_t i = 0; i < sizeof(back) / sizeof(back[0]); i++) {
         *back[i] = CMD_SET_RX;
-        assert(radio_send((const uint8_t *)"0123456789abcdefg", 17));
+        assert(radio_send((const uint8_t *)"0123456789abcdefg", 17, &done));
         assert(chip.mode != MODE_RX && !radio_verify());
         uint8_t buf[32];
         int rssi, snr;
-        radio_receive(buf, sizeof(buf), 0, &rssi, &snr);   /* tries RX again on its way in */
+        int64_t at;
+        radio_receive(buf, sizeof(buf), 0, &rssi, &snr, &at);   /* tries RX again on its way in */
         assert(chip.mode == MODE_RX && radio_verify());
     }
     printf("sx1262: a receiver that did not come back after sending is not reported healthy\n");
@@ -174,12 +182,21 @@ int main(void) {
     for (uint32_t wait_ms = 0; wait_ms <= 25; wait_ms++) {
         uint8_t buf[32];
         int rssi, snr;
+        int64_t at;
         const int64_t start = s_now_us;
-        assert(radio_receive(buf, sizeof(buf), wait_ms, &rssi, &snr) == 0);
+        assert(radio_receive(buf, sizeof(buf), wait_ms, &rssi, &snr, &at) == 0 && at == 0);
         const int64_t took = s_now_us - start;
         assert(took <= (int64_t)wait_ms * 1000 && took > (int64_t)wait_ms * 1000 - 1000);
     }
     printf("sx1262: listening ends by its deadline\n");
+
+    /* E0: a packet's TxDone is the edge DIO1's interrupt stamped after the flags were cleared; with
+     * no edge, as on a board whose line is not wired, none, never the last packet's. */
+    assert(radio_send((const uint8_t *)"0123456789abcdefg", 17, &done) && done == s_dio1_us && done > 0);
+    chip.dio1_dead = true;
+    assert(radio_send((const uint8_t *)"0123456789abcdefg", 17, &done) && done == 0);
+    chip.dio1_dead = false;
+    printf("sx1262: a packet's TxDone is DIO1's edge after it, or none\n");
 
     /* A chip that reset itself holds its default sync word, not ours. */
     chip.regs[REG_LORA_SYNC_MSB] = 0x14;

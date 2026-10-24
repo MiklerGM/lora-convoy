@@ -129,6 +129,37 @@ void port_pin_input(int pin) { gpio_pin_configure(pin_port(pin), pin % 32, GPIO_
 void port_pin_set(int pin, int level) { gpio_pin_set_raw(pin_port(pin), pin % 32, level); }
 int port_pin_get(int pin) { return gpio_pin_get_raw(pin_port(pin), pin % 32); }
 
+/* The radio's DIO1, which rises at its TxDone and RxDone (sx1262.c), stamped in its interrupt:
+ * E0's measure of when a packet left and came, to the uptime's tick, 31 us at 32768 Hz. */
+static struct gpio_callback s_dio1_cb;
+static struct k_spinlock s_dio1_lock;
+static int64_t s_dio1_us;
+
+static void on_dio1(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+    (void)dev;
+    (void)cb;
+    (void)pins;
+    const int64_t now = port_uptime_us();
+    const k_spinlock_key_t key = k_spin_lock(&s_dio1_lock);
+    s_dio1_us = now;
+    k_spin_unlock(&s_dio1_lock, key);
+}
+
+void port_radio_irq_open(int pin) {
+    const struct device *port = pin_port(pin);
+    gpio_pin_configure(port, pin % 32, GPIO_INPUT);
+    gpio_init_callback(&s_dio1_cb, on_dio1, BIT(pin % 32));
+    gpio_add_callback(port, &s_dio1_cb);
+    gpio_pin_interrupt_configure(port, pin % 32, GPIO_INT_EDGE_RISING);
+}
+
+int64_t port_radio_irq_us(void) {
+    const k_spinlock_key_t key = k_spin_lock(&s_dio1_lock);
+    const int64_t t = s_dio1_us;
+    k_spin_unlock(&s_dio1_lock, key);
+    return t;
+}
+
 /* ---- the setup, in settings beside the bonds ------------------------------------ */
 
 static uint8_t s_setup[64];

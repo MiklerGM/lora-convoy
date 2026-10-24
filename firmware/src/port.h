@@ -33,6 +33,8 @@
  *
  *   void    port_radio_spi_init(int nss, int sck, int mosi, int miso)
  *   bool    port_radio_spi_xfer(const uint8_t *tx, uint8_t *rx, size_t len)
+ *   void    port_radio_irq_open(int pin)        the radio's DIO1, its rising edge stamped in an
+ *   int64_t port_radio_irq_us(void)             interrupt: port_uptime_us at the last one, 0 before
  *
  *   void    port_gnss_open(void)                the GNSS's UART, 9600 8N1, on the board's pins
  *   int     port_gnss_getc(uint32_t timeout_ms) the next byte from the GNSS, or -1
