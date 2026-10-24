@@ -31,6 +31,7 @@ protocol, with OsmAnd as the map.
 | 06 | [**Our own protocol**](docs/06-own-protocol.md) | What a purpose-built design could do better, and at what cost |
 | 07 | [Experiments](docs/07-experiments.md) | What to measure, and the results |
 | 08 | [Regions](docs/08-regions.md) | Which bands, power and access rules apply in which country |
+| 09 | [The protocol's next version](docs/09-protocol-next.md) | What an outside review of v3 found, and the order to settle it in |
 
 ## Building it
 

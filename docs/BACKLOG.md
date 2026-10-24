@@ -23,6 +23,9 @@ to anyone, since Android ties installs and updates to the package.
 
 ## Protocol
 
+An outside review of v3, 2026-10-24, bears on most of these: what it found, checked against the
+code, and the order to settle it in are in [09](09-protocol-next.md).
+
 ### T-phy: radio modes, sync word, preamble
 
 v0 uses SF7/250 at 869.525 MHz, a sync word of our own and an 8-symbol preamble. Open: the default
