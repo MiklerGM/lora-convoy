@@ -40,11 +40,14 @@ Both boards answer the phone API's commands typed on the console ([PROTOCOL](PRO
 - **How late each board is heard**: three boards in one group, two Heltecs and the L1, so their
   slots are 500 ms apart at 2 s and a late packet still lands clear. On each Heltec, whose own time
   is its PPS's, each `RIDER` line's `offset=least/mean/most` is how late that rider's packets
-  began against their moment, in µs, from their RxDone on its UTC less their airtime; with `?`,
-  the receiver's DIO1 stamps nothing and the poll's 5 ms is all there is. Read `rx=` beside it,
+  began against their moment, in µs, from their RxDone on its UTC less their airtime. Only
+  RxDones DIO1's interrupt stamped count; with `?`, the receiver's DIO1 stamps nothing, and a
+  poll's time is not taken for one. Read `rx=` beside it,
   the packets taken against the run of counters: the latest packets may be the ones lost. For the
   L1 the mean is the lag still uncorrected, and the spread the error to build it with; for the
   other Heltec, both near `txlead=`.
+- **What a stamp is worth**: the clock's step, a microsecond on the Heltec and 31 µs on the L1,
+  plus however long the interrupt's handler waits to run, which this E0 does not yet measure.
 
 ## 3. Two boards in one group (M5, M6)
 

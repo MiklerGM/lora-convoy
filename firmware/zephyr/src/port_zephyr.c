@@ -130,7 +130,8 @@ void port_pin_set(int pin, int level) { gpio_pin_set_raw(pin_port(pin), pin % 32
 int port_pin_get(int pin) { return gpio_pin_get_raw(pin_port(pin), pin % 32); }
 
 /* The radio's DIO1, which rises at its TxDone and RxDone (sx1262.c), stamped in its interrupt:
- * E0's measure of when a packet left and came, to the uptime's tick, 31 us at 32768 Hz. */
+ * E0's measure of when a packet left and came. Its error is the uptime's tick, 31 us at 32768 Hz,
+ * plus however long the handler waits to run: to be measured (E0). */
 static struct gpio_callback s_dio1_cb;
 static struct k_spinlock s_dio1_lock;
 static int64_t s_dio1_us;

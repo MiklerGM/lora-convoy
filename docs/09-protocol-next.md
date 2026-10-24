@@ -192,7 +192,8 @@ given as its median over the series and the largest observed.
      platform's UART and processing.
    Its numbers bound the schedule before anything is fixed on it. The boards measure both now:
    `txlead=` in the status and `offset=` in each RIDER line, from DIO1's edges stamped by an
-   interrupt, a few µs on the Heltec and the uptime's tick of 31 µs on the L1; the simulator
+   interrupt, whose error is the clock's step, a microsecond on the Heltec and 31 µs on the L1, plus
+   however long the handler waits to run, which is still to be measured; the simulator
    checks the arithmetic, an L1 told nothing of its 100 ms lag heard 100.5 ms late ([BENCH](BENCH.md),
    E0).
 4. **The fixes without a new layout**, one at a time, as in the review rounds before: a profile

@@ -130,7 +130,8 @@ int64_t port_pps_us(void) {
 }
 
 /* The radio's DIO1, which rises at its TxDone and RxDone (sx1262.c), stamped the same way: E0's
- * measure of when a packet left and came, to the interrupt's latency, a few microseconds. */
+ * measure of when a packet left and came. Its error is the interrupt's latency, a microsecond's
+ * clock plus however long the handler waits to run: to be measured (E0). */
 static portMUX_TYPE s_dio1_lock = portMUX_INITIALIZER_UNLOCKED;
 static int64_t s_dio1_us;
 
