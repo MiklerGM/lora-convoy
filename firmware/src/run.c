@@ -267,8 +267,9 @@ static void radio_task(void *arg) {
         int64_t now = port_uptime_us();
         if (n) {
             port_mutex_lock(s_lock);
-            /* at its RxDone where DIO1 stamped it, for E0's offsets; else when the poll found it */
-            const bool taken = node_on_packet(&s_node, buf, n, rssi, snr, rx_at ? rx_at : now);
+            const bool taken = node_on_packet(&s_node, buf, n, rssi, snr, now);
+            /* E0's offset from its RxDone, where DIO1 stamped it; a poll's time is no measure */
+            if (taken && rx_at) node_on_rx_done(&s_node, rx_at);
             if (taken) node_format_rider(&s_node, buf[2], now, text, sizeof(text));
             port_mutex_give(s_lock);
             if (taken) {

@@ -291,8 +291,13 @@ static void test_node_sends(void) {
      * and its airtime, so it started 100 ms late. */
     node_t rx = n;
     rx.cfg.slot = 2;
-    assert(node_on_packet(&rx, b, PKT_POSITION_LEN, -80, 0, due + air + 100000));
-    node_format_rider(&rx, 1, due + air + 100000, e0, sizeof(e0));
+    /* the packet taken when a poll found it: a poll's time is no measure, and none is said ... */
+    assert(node_on_packet(&rx, b, PKT_POSITION_LEN, -80, 0, due + air + 103000));
+    node_format_rider(&rx, 1, due + air + 103000, e0, sizeof(e0));
+    assert(strstr(e0, " offset=?"));
+    /* ... until its RxDone, as the radio's interrupt stamped it */
+    node_on_rx_done(&rx, due + air + 100000);
+    node_format_rider(&rx, 1, due + air + 103000, e0, sizeof(e0));
     assert(strstr(e0, " offset=100000/100000/100000"));
     t = due;
 

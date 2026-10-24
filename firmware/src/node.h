@@ -96,6 +96,8 @@ typedef struct {
     int64_t slow_since_us;   /* when it last went under 5 km/h; 0 while faster */
     int64_t last_frame;      /* the frame we last sent in, or passed over */
     int64_t tx_due_us;       /* our clock at the moment of the packet last handed over; 0 once done */
+    int rx_slot;             /* the slot of the packet last taken, until its RxDone is told; -1 none */
+    size_t rx_len;
     spread_t tx_lead;        /* E0: from a packet's moment to its RF beginning, by the radio's TxDone */
     int64_t phase_frame;     /* the frame whose phase is in phase_us, for phase_spacing; -1 none */
     int64_t phase_us;
@@ -137,6 +139,11 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
  * Its airtime is booked against the duty cycle when it is handed over, so a send that then fails
  * errs on the safe side. */
 size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap);
+
+/* The radio's RxDone, on our clock, as its interrupt stamped it, for the packet node_on_packet took
+ * last: how late it began goes into its rider's offset= (E0). Without a stamp nothing is said, as
+ * a poll's time is no measure of it. */
+void node_on_rx_done(node_t *n, int64_t done_us);
 
 /* The radio's TxDone, on our clock, for the packet node_poll_tx gave last: how late its RF began
  * after its moment, less the airtime, goes into the status (txlead=, E0). */

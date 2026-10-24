@@ -306,6 +306,7 @@ static void world_step(world_t *w, int64_t t) {
             if (lost || (double)(rnd(&w->rng) % 1000000) / 1e6 < w->sc.loss) continue;
             /* at its end, as a radio's RxDone comes, not at the step that found it ended */
             if (node_on_packet(&w->node[i], x->bytes, x->len, -90, 20, local_us(w, i, x->end))) {
+                node_on_rx_done(&w->node[i], local_us(w, i, x->end));
                 w->taken++;
                 w->taken_from[x->from]++;
                 gap_to(&w->heard_at[i][x->from], &w->gap[i][x->from], t, w->gaps_from);

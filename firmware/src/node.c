@@ -48,6 +48,7 @@ void node_init(node_t *n, const node_config_t *cfg, uint32_t seed) {
     n->help_call = (uint8_t)(n->session % HELP_CALLS);
     if (cfg->keyed) group_key_init(&n->group, cfg->key);
     n->last_frame = n->phase_frame = -1;
+    n->rx_slot = -1;
 }
 
 void node_set_key(node_t *n, const uint8_t key[16]) {
@@ -307,6 +308,22 @@ static void spread_add(spread_t *s, int64_t v) {
     s->n++;
 }
 
+/* How late it began: from its end on our UTC, less the airtime and the moment of its slot in the
+ * frame nearest to it. */
+void node_on_rx_done(node_t *n, int64_t done_us) {
+    int64_t end_utc, end_err;
+    const int slot = n->rx_slot;
+    n->rx_slot = -1;
+    if (slot < 0 || !node_utc_us(n, done_us, &end_utc, &end_err)) return;
+    const int64_t start = end_utc - phy_airtime_us(&n->cfg.phy, n->rx_len), k = start / frame_us(n);
+    int64_t late = INT64_MAX;
+    for (int64_t f = k - 1; f <= k + 1; f++) {
+        const int64_t off = start - slot_utc_us(n, f, phase_us(n, f), (unsigned)slot);
+        if (llabs(off) < llabs(late)) late = off;
+    }
+    spread_add(&n->riders[slot].offset, late);
+}
+
 void node_on_tx_done(node_t *n, int64_t done_us, size_t len) {
     if (!n->tx_due_us) return;
     spread_add(&n->tx_lead, done_us - phy_airtime_us(&n->cfg.phy, len) - n->tx_due_us);
@@ -343,6 +360,7 @@ static void remember_session(rider_t *r, uint32_t session, uint16_t counter) {
 
 bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int snr_db4, int64_t now_us) {
     position_t p;
+    n->rx_slot = -1;
     if (!n->cfg.keyed) {
         n->rx_foreign++;
         return false;
@@ -398,18 +416,8 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
     r->rssi_dbm = (int16_t)rssi_dbm;
     r->snr_db4 = (int16_t)snr_db4;
     r->fix_utc_ms = fix_utc_ms;
-    /* E0: how late it began, from its end on our UTC, less the airtime and the moment of its slot
-     * in the frame nearest to it. */
-    int64_t end_utc, end_err;
-    if (node_utc_us(n, now_us, &end_utc, &end_err)) {
-        const int64_t start = end_utc - phy_airtime_us(&n->cfg.phy, len), k = start / frame_us(n);
-        int64_t late = INT64_MAX;
-        for (int64_t f = k - 1; f <= k + 1; f++) {
-            const int64_t off = start - slot_utc_us(n, f, phase_us(n, f), p.slot);
-            if (llabs(off) < llabs(late)) late = off;
-        }
-        spread_add(&r->offset, late);
-    }
+    n->rx_slot = p.slot;
+    n->rx_len = len;
     /* It hears a call for help: ours, or another rider's, and the call it names, not one before.
      * ponytail: an answer counts for the rest of the call, however long ago it came; the answerer's
      * own heard= tells how long since we heard it at all. */
