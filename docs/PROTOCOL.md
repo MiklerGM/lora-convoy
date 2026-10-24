@@ -252,7 +252,7 @@ the board and no wait on the way in it, and the radio contact's by `heard_at`, w
 its own monotonic clock by `CLOCK` exchanges, run by run: a better reckoning moves a rider kept
 long since, and a board restarted is a new run, its riders of before left where they were.
 `fix_age` is in whole seconds and can be negative (the sender's clock is wrong) or `?` (this board
-has no time of its own); `heard` is in tenths of a second; `answered` is, while the rider calls for
+has no calendar yet, neither GNSS time nor the phone's `TIME`); `heard` is in tenths of a second; `answered` is, while the rider calls for
 help, the slots heard answering that call, as `3,5`, and `-` for none; `rx` is packets taken against the run of counters; `offset` is how late its packets began against their moment, in µs, least/mean/most, from their RxDone on this board's UTC less their airtime (E0, [BENCH](BENCH.md)). On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count
 from 0 here; the app shows riders from 1.
 
