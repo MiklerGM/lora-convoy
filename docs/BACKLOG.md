@@ -87,6 +87,16 @@ ppm, and correct the local-to-UTC mapping so it holds time longer without GNSS. 
 the Heltec. On the L1, assess whether a long series of NMEA marks suffices after E0 bounds their
 lag and jitter; UART and parser delays must not be mistaken for clock drift.
 
+The clocks to calibrate [code]: the Heltec's `esp_timer` counts its 40 MHz crystal, an AT-cut one
+that moves a few ppm over a ride's temperatures; the L1's uptime counts the nRF52840's 32.768 kHz
+crystal (Zephyr's default, `k32src = "xtal"`, declared to 50 ppm), a tuning fork whose frequency
+falls with the square of its distance from about 25 °C, typically by 0.034 ppm/°C²: some 8 ppm
+slow at 10 °C, 21 ppm at 0 °C and 42 ppm at −10 °C, on top of its tolerance [docs: typical of
+such crystals; the board's own to be checked]. So in the cold an L1 may drift past the 50 ppm the
+schedule assumes now, calibrated or not, and a rate taken warm does not hold as the board cools.
+The simulator already gives each board its crystal and takes its GNSS away (the tunnel); a fixed,
+signed drift per board is what the test of the actual C needs.
+
 Only consistent time marks may calibrate it: reject jumps and ambiguous PPS/NMEA pairing. Leave
 monotonic uptime, its interval measurements and the held position's timestamp unchanged. A rate
 correction must not cause duplicate or late transmissions. Keep the slot's time-error gate: the
