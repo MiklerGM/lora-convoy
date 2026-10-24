@@ -822,6 +822,10 @@ static void test_api(void) {
     ask(&api, "CLOCK 123456");
     snprintf(want, sizeof(want), "CLOCK t1=123456 boot=%08lx rx=10000000 tx=10000000", (unsigned long)n.boot);
     assert(n_replies == 1 && strcmp(replies[0], want) == 0);
+    /* a phone up 30 days: its moment, past what a long holds on our boards, comes back whole */
+    ask(&api, "CLOCK 2592000000");
+    snprintf(want, sizeof(want), "CLOCK t1=2592000000 boot=%08lx rx=10000000 tx=10000000", (unsigned long)n.boot);
+    assert(n_replies == 1 && strcmp(replies[0], want) == 0);
     ask(&api, "CLOCK soon");
     assert(starts(replies[0], "ERR "));
     /* ... and gives us its calendar, in our clock's terms, for the riders' ages */

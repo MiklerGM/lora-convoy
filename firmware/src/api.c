@@ -1,6 +1,5 @@
 #include "api.h"
 
-#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -64,6 +63,13 @@ static bool phone_time(const char *s, long long *at_ms, long long *utc_ms, long 
            *err_ms >= 0;
 }
 
+/* A moment of the phone's clock, in ms since it started: a phone up 25 days is past what a long
+ * holds on our boards. */
+static bool phone_ms(const char *s, long long *ms) {
+    char extra;
+    return s && sscanf(s, "%lld%c", ms, &extra) == 1 && *ms >= 0;
+}
+
 /* "SF kHz", into the mode we have with those two changed, if the radio can take it. */
 static bool mode(const char *s, phy_t now, phy_t *out) {
     long sf, khz;
@@ -79,7 +85,7 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
     char out[API_LINE];
     phy_t phy;
     uint8_t key[16];
-    long long at_ms, utc_ms, err_ms;
+    long long at_ms, utc_ms, err_ms, t1_ms;
     char *arg = strchr(line, ' ');
     if (arg) *arg++ = '\0';
     node_config_t *cfg = &api->node->cfg;
@@ -95,9 +101,9 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
             known++;
         }
         snprintf(out, sizeof(out), "RIDERS %d", known);
-    } else if (strcasecmp(line, "clock") == 0 && number(arg, 0, LONG_MAX, &v)) {
+    } else if (strcasecmp(line, "clock") == 0 && phone_ms(arg, &t1_ms)) {
         /* when the request came, and when the answer is made */
-        snprintf(out, sizeof(out), "CLOCK t1=%ld boot=%08lx rx=%lld tx=%lld", v, (unsigned long)api->node->boot,
+        snprintf(out, sizeof(out), "CLOCK t1=%lld boot=%08lx rx=%lld tx=%lld", t1_ms, (unsigned long)api->node->boot,
                  (long long)came_us, (long long)now_us);
     } else if (strcasecmp(line, "time") == 0 && phone_time(arg, &at_ms, &utc_ms, &err_ms)) {
         node_set_phone_time(api->node, at_ms * 1000, utc_ms * 1000, err_ms * 1000);

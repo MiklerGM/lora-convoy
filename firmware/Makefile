@@ -1,6 +1,7 @@
 # The firmware: host tests and the simulator, then the two board images.
 #
-#   make test          the node core, the SX1262 driver on a fake chip, and the simulator's checks
+#   make test          the node core, at 64 bits and at the boards' 32 (gcc-multilib), the SX1262
+#                      driver on a fake chip, and the simulator's checks
 #   make sim ARGS="10 2000 600"   N riders, every MS, for S seconds: what each heard
 #   make esp           the Heltec V4.3 image (PlatformIO, ESP-IDF)
 #   make nrf           the Wio Tracker L1 Pro image (Zephyr): zephyr/build/zephyr/zephyr.uf2
@@ -12,8 +13,9 @@ CFLAGS = -std=c11 -Wall -Wextra -Werror -O2 -Isrc
 CORE = src/phy.c src/crypto.c src/codec.c src/nmea.c src/node.c src/api.c
 HOST = build/host
 
-test: $(HOST)/test_core $(HOST)/test_sx1262 $(HOST)/sim
+test: $(HOST)/test_core $(HOST)/test_core32 $(HOST)/test_sx1262 $(HOST)/sim
 	@$(HOST)/test_core
+	@$(HOST)/test_core32 >/dev/null
 	@$(HOST)/test_sx1262
 	@$(HOST)/sim
 
@@ -22,6 +24,10 @@ sim: $(HOST)/sim
 
 $(HOST)/test_core: test/test_core.c $(CORE) src/*.h | $(HOST)
 	@$(CC) $(CFLAGS) -o $@ test/test_core.c $(CORE)
+
+# Again at 32 bits, as the boards have it: there a long holds no more than 25 days of ms.
+$(HOST)/test_core32: test/test_core.c $(CORE) src/*.h | $(HOST)
+	@$(CC) -m32 $(CFLAGS) -o $@ test/test_core.c $(CORE)
 
 $(HOST)/sim: test/sim.c $(CORE) src/*.h | $(HOST)
 	@$(CC) $(CFLAGS) -o $@ test/sim.c $(CORE) -lm

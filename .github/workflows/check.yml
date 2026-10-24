@@ -53,6 +53,8 @@ jobs:
           restore-keys: pio-${{ runner.os }}-
       # Pinned like the platform in platformio.ini: the CLI is a build input too.
       - run: pip install platformio==6.1.19
+      # The node core's tests run at 32 bits too, as on the boards.
+      - run: sudo apt-get update && sudo apt-get install -y gcc-multilib
       - run: make check-firmware check-tools
 
   nrf:
