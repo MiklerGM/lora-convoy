@@ -1,6 +1,7 @@
 package io.github.miklergm.convoy
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Test
 
 class BoardRidersTest {
@@ -49,6 +50,24 @@ class BoardRidersTest {
         val r = riders.all(clock, now, wall(now)).single()
         assertEquals(5_000L, wall(now) - r.heardAtMs)
         assertEquals(7_000L, wall(now) - r.fixAtMs!!)
+    }
+
+    @Test
+    fun `a phone 9 s behind, its board on GNSS time, the rider dated by the board's time, not from the future`() {
+        val riders = BoardRiders()
+        val clock = BoardClock()
+        // this phone's own calendar runs 9 s behind, and is all there is before the board says its time
+        fun behind(mono: Long) = wall(mono) - 9_000
+        assertEquals(behind(108_000), clock.calendarMs(108_000, behind(108_000)))
+        // the board answered at its 68 021 ms, the phone's 108 021, with its GNSS time then
+        clock.observe(boot = 0xa, t1Ms = 108_000, t2Us = 68_020_000, t3Us = 68_021_000, t4Ms = 108_041, utcMs = wall(108_021))
+        riders.take(BoardLines.rider(heardLine, behind(110_150))!!, BoardLines.groupOf(heardLine), BoardLines.heard(heardLine))
+        val now = 110_500L
+        val calendar = clock.calendarMs(now, behind(now))
+        val r = riders.all(clock, now, calendar).single()
+        assertEquals(2_500L, calendar - r.fixAtMs!!)
+        assertEquals(500L, calendar - r.heardAtMs)
+        assertFalse(r.toPoint(calendar).stale)
     }
 
     @Test

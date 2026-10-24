@@ -770,7 +770,7 @@ static void test_api(void) {
     ask(&api, "STATUS");
     /* each line says when it was made on the board's own clock, in ms: a moment a later GNSS
      * time, or a better reckoning of that clock against the phone's, leaves meaning the same */
-    assert(n_replies == 1 && starts(replies[0], "STATUS proto=6 board=test reset=poweron at=10000 slot=1 "
+    assert(n_replies == 1 && starts(replies[0], "STATUS proto=7 board=test reset=poweron at=10000 slot=1 "
                                                 "slots=4 keyed=1 group=86c91c92 "));
     assert(strstr(replies[0], " stopped=0 help=0 heard=0 "));
     assert(strstr(replies[0], " power=3 dbm=16"));
@@ -795,7 +795,10 @@ static void test_api(void) {
     snprintf(waited, sizeof(waited), "CLOCK 123456");
     n_replies = 0;
     api_command(&api, waited, 9 * SEC, 10 * SEC, collect, NULL);
-    snprintf(want, sizeof(want), "CLOCK t1=123456 boot=%08lx rx=9000000 tx=10000000", (unsigned long)n.boot);
+    int64_t utc10;
+    assert(node_utc_ms(&n, 10 * SEC, &utc10));
+    snprintf(want, sizeof(want), "CLOCK t1=123456 boot=%08lx rx=9000000 tx=10000000 utc=%lld", (unsigned long)n.boot,
+             (long long)utc10);
     assert(n_replies == 1 && strcmp(replies[0], want) == 0);
 
     /* The key it has, sent again by a phone that reconnects: the riders stay. */
@@ -818,13 +821,23 @@ static void test_api(void) {
     ask(&api, "SLOT 32");
     assert(starts(replies[0], "ERR ") && n.cfg.slot == 5);
     /* The phone reckons our clock against its own: its request's moment comes back, with ours
-     * when the request came and when the answer was made, and the run they belong to ... */
+     * when the request came and when the answer was made, the run they belong to, and our GNSS
+     * time then, which the phone tells its riders' ages by rather than its own calendar ... */
     ask(&api, "CLOCK 123456");
-    snprintf(want, sizeof(want), "CLOCK t1=123456 boot=%08lx rx=10000000 tx=10000000", (unsigned long)n.boot);
+    snprintf(want, sizeof(want), "CLOCK t1=123456 boot=%08lx rx=10000000 tx=10000000 utc=%lld", (unsigned long)n.boot,
+             (long long)utc10);
+    assert(n_replies == 1 && strcmp(replies[0], want) == 0);
+    /* ... or ? on a board with no GNSS time yet */
+    node_t bare;
+    node_init(&bare, &CFG, 9);
+    api_t bare_api = {.node = &bare, .board = "test", .reset = "poweron", .power = 3, .tx_dbm = dbm};
+    ask(&bare_api, "CLOCK 1");
+    snprintf(want, sizeof(want), "CLOCK t1=1 boot=%08lx rx=10000000 tx=10000000 utc=?", (unsigned long)bare.boot);
     assert(n_replies == 1 && strcmp(replies[0], want) == 0);
     /* a phone up 30 days: its moment, past what a long holds on our boards, comes back whole */
     ask(&api, "CLOCK 2592000000");
-    snprintf(want, sizeof(want), "CLOCK t1=2592000000 boot=%08lx rx=10000000 tx=10000000", (unsigned long)n.boot);
+    snprintf(want, sizeof(want), "CLOCK t1=2592000000 boot=%08lx rx=10000000 tx=10000000 utc=%lld",
+             (unsigned long)n.boot, (long long)utc10);
     assert(n_replies == 1 && strcmp(replies[0], want) == 0);
     ask(&api, "CLOCK soon");
     assert(starts(replies[0], "ERR "));

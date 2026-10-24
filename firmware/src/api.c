@@ -102,9 +102,13 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
         }
         snprintf(out, sizeof(out), "RIDERS %d", known);
     } else if (strcasecmp(line, "clock") == 0 && phone_ms(arg, &t1_ms)) {
-        /* when the request came, and when the answer is made */
-        snprintf(out, sizeof(out), "CLOCK t1=%lld boot=%08lx rx=%lld tx=%lld", t1_ms, (unsigned long)api->node->boot,
-                 (long long)came_us, (long long)now_us);
+        /* when the request came, and when the answer is made; and our GNSS time then, which the
+         * phone tells its riders' ages by rather than its own calendar, or ? without one */
+        char utc[24] = "?";
+        int64_t utc_ms;
+        if (node_utc_ms(api->node, now_us, &utc_ms)) snprintf(utc, sizeof(utc), "%lld", (long long)utc_ms);
+        snprintf(out, sizeof(out), "CLOCK t1=%lld boot=%08lx rx=%lld tx=%lld utc=%s", t1_ms,
+                 (unsigned long)api->node->boot, (long long)came_us, (long long)now_us, utc);
     } else if (strcasecmp(line, "time") == 0 && phone_time(arg, &at_ms, &utc_ms, &err_ms)) {
         node_set_phone_time(api->node, at_ms * 1000, utc_ms * 1000, err_ms * 1000);
         snprintf(out, sizeof(out), "OK time=phone err=%lld", (long long)err_ms);

@@ -15,24 +15,32 @@ import kotlin.math.roundToLong
  * Each run of the board (its boot) is reckoned apart: a board restarted counts from 0 again, and
  * its new run's reckoning never moves the moments of the run before. Exchanges come on the link's
  * thread, the map asks on another.
+ *
+ * A board with GNSS time says it in its answer, and that is the calendar the riders' ages are told
+ * by, carried on this phone's monotonic clock: a phone's own clock may be seconds off, and a fix
+ * would then look stale, or come from the future.
  */
 class BoardClock {
     /** An exchange's reckoning: the board's clock less the phone's, ms, within errMs, as of phone time atMs. */
     data class Reckoning(val offsetMs: Double, val errMs: Double, val atMs: Long)
 
+    /** The board's GNSS time less this phone's monotonic clock, ms, from its latest answer; null if that had none. */
+    @Volatile private var gnssLessMono: Double? = null
+
     private val runs = object : LinkedHashMap<Long, ArrayDeque<Reckoning>>() {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Long, ArrayDeque<Reckoning>>) = size > RUNS
     }
 
-    /** One exchange: t1 and t4 on this phone's monotonic clock in ms, t2 and t3 on the board's in µs. */
+    /** One exchange: t1 and t4 on this phone's monotonic clock in ms, t2 and t3 on the board's in µs, and its GNSS time at t3. */
     @Synchronized
-    fun observe(boot: Long, t1Ms: Long, t2Us: Long, t3Us: Long, t4Ms: Long): Reckoning {
+    fun observe(boot: Long, t1Ms: Long, t2Us: Long, t3Us: Long, t4Ms: Long, utcMs: Long? = null): Reckoning {
         val t2 = t2Us / 1000.0
         val t3 = t3Us / 1000.0
         val r = Reckoning(((t2 - t1Ms) + (t3 - t4Ms)) / 2, ((t4Ms - t1Ms) - (t3 - t2)).coerceAtLeast(0.0) / 2, t4Ms)
         val kept = runs.getOrPut(boot) { ArrayDeque() }
         kept.addLast(r)
         if (kept.size > EXCHANGES) kept.removeFirst()
+        gnssLessMono = utcMs?.let { it - (t3 - reckoning(boot, t4Ms)!!.offsetMs) }
         return r
     }
 
@@ -44,6 +52,9 @@ class BoardClock {
     /** A moment of a run on the board's clock, in ms, on this phone's monotonic clock; null before that run's first exchange. */
     fun phoneMs(boot: Long, boardMs: Long, nowMs: Long): Long? =
         reckoning(boot, nowMs)?.let { (boardMs - it.offsetMs).roundToLong() }
+
+    /** Our calendar at [nowMono]: the board's GNSS time where it has one, else this phone's own, [nowWall]. */
+    fun calendarMs(nowMono: Long, nowWall: Long): Long = gnssLessMono?.let { nowMono + it.roundToLong() } ?: nowWall
 
     companion object {
         /** Two crystals of 50 ppm each. */

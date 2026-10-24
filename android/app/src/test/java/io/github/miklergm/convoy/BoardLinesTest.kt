@@ -62,11 +62,11 @@ class BoardLinesTest {
 
     @Test
     fun `the status line, and its version`() {
-        val s = BoardLines.status("STATUS proto=6 board=sim reset=poweron up=0 slot=0 slots=3 keyed=1 group=86c91c92 " +
+        val s = BoardLines.status("STATUS proto=7 board=sim reset=poweron up=0 slot=0 slots=3 keyed=1 group=86c91c92 " +
             "fix=1 stopped=0 help=1 heard=2 lat=47.1436949 lon=9.5215000 sats=9 hdop=0.9 time=pps err=0.1 " +
             "budget=233.0 lag=112/98/131 tx=0 late=0 unsure=0 skipped=0 duty=0.43% riders=2 bad=0 foreign=0 " +
             "forged=0 replay=0 clash=0 power=3 dbm=16")!!
-        assertEquals(6, s.proto)
+        assertEquals(7, s.proto)
         assertTrue(s.help && !s.stopped)
         assertEquals(2, s.heard)
         assertEquals(0, s.clash)
@@ -82,12 +82,12 @@ class BoardLinesTest {
         assertEquals("0.43%", s.duty)
         assertEquals(16, s.dbm)
         assertTrue(s.kept)
-        assertFalse(BoardLines.status("STATUS proto=6 slot=0 group=86c91c92 kept=0")!!.kept)
+        assertFalse(BoardLines.status("STATUS proto=7 slot=0 group=86c91c92 kept=0")!!.kept)
         // without a version it is not a status this app can trust
         assertNull(BoardLines.status("STATUS slot=0 keyed=1 group=86c91c92"))
         assertEquals(7, BoardLines.status("STATUS proto=7 slot=0 group=00000007")!!.proto)
         // a board without a key, nor a time yet
-        val bare = BoardLines.status("STATUS proto=6 slot=4 keyed=0 group=00000000 time=none err=?")!!
+        val bare = BoardLines.status("STATUS proto=7 slot=4 keyed=0 group=00000000 time=none err=?")!!
         assertFalse(bare.keyed)
         assertNull(bare.timeErrMs)
     }
@@ -105,8 +105,10 @@ class BoardLinesTest {
 
     @Test
     fun `a board's answer to CLOCK, for reckoning its clock against ours`() {
-        assertEquals(BoardLines.ClockReply(t1Ms = 123_456, boot = 0xa, rxUs = 10_000_000, txUs = 10_000_100),
-            BoardLines.clock("CLOCK t1=123456 boot=0000000a rx=10000000 tx=10000100"))
+        assertEquals(BoardLines.ClockReply(t1Ms = 123_456, boot = 0xa, rxUs = 10_000_000, txUs = 10_000_100, utcMs = 1_792_670_415_000),
+            BoardLines.clock("CLOCK t1=123456 boot=0000000a rx=10000000 tx=10000100 utc=1792670415000"))
+        // a board with no GNSS time yet
+        assertNull(BoardLines.clock("CLOCK t1=123456 boot=0000000a rx=10000000 tx=10000100 utc=?")!!.utcMs)
         assertNull(BoardLines.clock("CLOCK t1=123456 boot=0000000a rx=10000000"))
         assertNull(BoardLines.clock("ERR commands: ..."))
     }

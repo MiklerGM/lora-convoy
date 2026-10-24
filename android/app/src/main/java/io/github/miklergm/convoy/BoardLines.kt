@@ -7,7 +7,7 @@ package io.github.miklergm.convoy
 object BoardLines {
 
     /** The version of the phone API this app speaks. A board with another is refused (D3). */
-    const val PROTO = 6
+    const val PROTO = 7
 
     /** The board's own state, from its STATUS line. */
     data class Status(
@@ -70,14 +70,17 @@ object BoardLines {
         return Heard(t["boot"]?.toLongOrNull(16) ?: return null, t["heard_at"]?.toLongOrNull() ?: return null, t["fix"]?.toIntOrNull())
     }
 
-    /** A board's answer to CLOCK: this phone's moment echoed, the board's run, and its clock in µs when the request came and when it answered. */
-    data class ClockReply(val t1Ms: Long, val boot: Long, val rxUs: Long, val txUs: Long)
+    /**
+     * A board's answer to CLOCK: this phone's moment echoed, the board's run, its clock in µs when the
+     * request came and when it answered, and its GNSS time then, in ms; null without one.
+     */
+    data class ClockReply(val t1Ms: Long, val boot: Long, val rxUs: Long, val txUs: Long, val utcMs: Long? = null)
 
     fun clock(line: String): ClockReply? {
         if (!line.startsWith("CLOCK ")) return null
         val t = tokens(line)
         return ClockReply(t["t1"]?.toLongOrNull() ?: return null, t["boot"]?.toLongOrNull(16) ?: return null,
-            t["rx"]?.toLongOrNull() ?: return null, t["tx"]?.toLongOrNull() ?: return null)
+            t["rx"]?.toLongOrNull() ?: return null, t["tx"]?.toLongOrNull() ?: return null, t["utc"]?.toLongOrNull())
     }
 
     /** A fix's time, UTC seconds modulo 65 536 as the packet carries it, unwrapped to the nearest second of [aroundMs], as the firmware does. */

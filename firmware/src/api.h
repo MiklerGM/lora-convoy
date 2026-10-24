@@ -11,10 +11,11 @@
  * app that does not know it refuses the board (D3).
  *
  *   phone -> board                 board -> phone
- *   STATUS                         STATUS proto=6 board=... kept=<0|1> (also sent unasked)
- *   CLOCK <t1>                     CLOCK t1=<t1> boot=<run> rx=<us> tx=<us>: our clock when the
- *                                  request came and when the answer was made, for the phone to
- *                                  reckon our clock against its own
+ *   STATUS                         STATUS proto=7 board=... kept=<0|1> (also sent unasked)
+ *   CLOCK <t1>                     CLOCK t1=<t1> boot=<run> rx=<us> tx=<us> utc=<ms|?>: our clock
+ *                                  when the request came and when the answer was made, for the
+ *                                  phone to reckon our clock against its own, and our GNSS time
+ *                                  then, which it tells the riders' ages by
  *   TIME <ms> <utc ms> <err ms>    OK time=phone err=<ms>: the phone's UTC at our clock's <ms>, a
  *                                  calendar for the riders' ages, never for the slots
  *   RIDERS                         RIDER ... for each rider known, then RIDERS <n>
@@ -32,7 +33,7 @@
  *
  * Commands are case-blind, so the console takes them as typed.
  */
-#define API_PROTO 6
+#define API_PROTO 7
 
 /* A buffer for the longest line either way, its NUL in and the newline aside: up to 511
  * characters, as the app takes up to 512 and Zephyr's queue 512 bytes (ble_nus.c). */

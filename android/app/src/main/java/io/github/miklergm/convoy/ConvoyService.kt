@@ -84,7 +84,7 @@ class ConvoyService : Service() {
         val receivedMono = SystemClock.elapsedRealtime()
         val received = System.currentTimeMillis()
         BoardLines.clock(line)?.let { c ->
-            boardClock.observe(c.boot, c.t1Ms, c.rxUs, c.txUs, receivedMono)
+            boardClock.observe(c.boot, c.t1Ms, c.rxUs, c.txUs, receivedMono, c.utcMs)
             // the board's calendar: our UTC at a moment of its clock, give or take the reckoning and
             // our own clock's error, for the riders' ages it tells while it has no GNSS time
             boardClock.reckoning(c.boot, receivedMono)?.let { r ->
@@ -177,13 +177,14 @@ class ConvoyService : Service() {
     private fun tick() {
         try {
             if (osmand.state == OsmAnd.State.MISSING) osmand.connect() // installed meanwhile?
-            val now = System.currentTimeMillis()
+            // every wait on our monotonic clock, which a change of the phone's date leaves alone; the
+            // riders' ages on the board's GNSS time where it has one, else on this phone's calendar
+            val mono = SystemClock.elapsedRealtime()
+            val now = boardClock.calendarMs(mono, System.currentTimeMillis())
             val riders = if (source is Source.Mock) {
                 val c = centre ?: osmand.mapCentre()?.also { centre = it }
                 c?.let { MockRiders.at(it.first, it.second, startMs, now) }
             } else {
-                // every wait on our monotonic clock, which a change of the phone's date leaves alone
-                val mono = SystemClock.elapsedRealtime()
                 // a live board says what it knows every 10 s, and this keeps its link from going quiet
                 if (mono >= nextPoll) {
                     link?.send("STATUS")
@@ -194,7 +195,7 @@ class ConvoyService : Service() {
                     clocksAsked++
                     nextClock = mono + 10_000
                 }
-                boardRiders.all(boardClock, SystemClock.elapsedRealtime(), now)
+                boardRiders.all(boardClock, mono, now)
             }
             if (riders != null) osmand.show(riders.map { it.toPoint(now) })
             state = osmand.state

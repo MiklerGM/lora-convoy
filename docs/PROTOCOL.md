@@ -201,13 +201,13 @@ on three transports:
 | TCP | a simulated board and the app | `make -C firmware sim ARGS="serve 3"` serves board *i* on 127.0.0.1:4403+*i*, without a key, like a board fresh from flashing; an Android emulator reaches it at 10.0.2.2 |
 | USB console | a board and a person | the same commands, typed; `FORGET` there is a hand on the board, like the button |
 
-**Version.** `proto=` in the status line: 6 since the board's clock is reckoned against the phone's. An app refuses a board with another (D3).
+**Version.** `proto=` in the status line: 7 since a board's answer to `CLOCK` carries its GNSS time. An app refuses a board with another (D3).
 
 | Phone to board | Board to phone |
 |---|---|
-| `STATUS` | `STATUS proto=6 board=… reset=… at=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … riders=… … power=… dbm=… kept=…` |
+| `STATUS` | `STATUS proto=7 board=… reset=… at=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … riders=… … power=… dbm=… kept=…` |
 | `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>` |
-| `CLOCK <t1>` | `CLOCK t1=<t1> boot=<run> rx=<µs> tx=<µs>`: the phone's moment back, with the board's clock when the request came and when it made the answer. Exchanged three times as a link begins and every 10 s after; each gives the board's clock less the phone's, ((rx − t1) + (tx − t4)) / 2, to within half its round trip, and the quickest is believed, its error growing by 100 ppm of drift as it ages |
+| `CLOCK <t1>` | `CLOCK t1=<t1> boot=<run> rx=<µs> tx=<µs> utc=<ms>`: the phone's moment back, with the board's clock when the request came and when it made the answer, and its GNSS time then, `?` without one, which the app tells its riders' ages by rather than its own calendar. Exchanged three times as a link begins and every 10 s after; each gives the board's clock less the phone's, ((rx − t1) + (tx − t4)) / 2, to within half its round trip, and the quickest is believed, its error growing by 100 ppm of drift as it ages |
 | `TIME <ms> <utc ms> <err ms>` | `OK time=phone err=<ms>`: the phone's UTC at the board's `<ms>`, give or take `<err ms>`: a calendar for the riders' ages while the board has no GNSS time, kept apart from GNSS time and below it, and never opening a slot |
 | `GROUP <32 hex digits> <slot> <slots> <interval>` | `OK group=<id> slot=… slots=… interval=…`: a group's whole setup, from the invitation, checked whole and taken whole; or `ERR group: …`, and nothing changes |
 | `LEDGER` | `LEDGER minutes=60 limit_ms=… used_ms=… positions_ms=…`: the duty ledger, transmit time a minute at a time over the last hour, oldest first, by category |
@@ -247,8 +247,8 @@ RIDER slot=2 group=86c91c92 boot=1a2b3c4d at=70100 heard_at=69700 fix=64200 lat=
 `boot` is the board's run, drawn as it starts; `at` and `heard_at`, when the board made the line
 and when it heard the rider, on its own clock in ms since it started, which a later GNSS time
 does not change the meaning of; `fix` is the rider's fix time as its packet gave it, UTC seconds
-modulo 65 536. The app tells the fix's age by that time on its own calendar, with no GNSS time on
-the board and no wait on the way in it, and the radio contact's by `heard_at`, which it places on
+modulo 65 536. The app tells the fix's age by that time on the board's GNSS time where the board
+has it (`CLOCK`'s `utc`), else on its own calendar, either way with no wait on the way in it, and the radio contact's by `heard_at`, which it places on
 its own monotonic clock by `CLOCK` exchanges, run by run: a better reckoning moves a rider kept
 long since, and a board restarted is a new run, its riders of before left where they were.
 `fix_age` is in whole seconds and can be negative (the sender's clock is wrong) or `?` (this board
