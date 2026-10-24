@@ -528,12 +528,22 @@ static void test_node_hears(void) {
     assert(!node_on_packet(&n, b, 5, -80, 0, 0) && n.rx_bad == 1);
     assert(!n.riders[5].known && !n.riders[1].known);
 
-    /* Without a time of our own, an age cannot be told: it says so. */
+    /* Without a time of our own, an age cannot be told: it says so ... */
     node_t blind;
     node_init(&blind, &CFG, 7);
     node_on_packet(&blind, b, packet(b, &g, 2, 1, 0, 64192), -71, 33, 0);
     node_format_rider(&blind, 2, 0, line, sizeof(line));
     assert(strstr(line, "fix_age=? "));
+    /* ... until the phone gives it a calendar: its UTC at our clock's 0, 12:00:05, give or take
+     * 250 ms. The fix of 12:00:00 heard at 0 is 5 s old then, with no new packet; the calendar is
+     * the phone's, apart from any GNSS time, and no slot opens on it. */
+    node_set_phone_time(&blind, 0, 1792670405000000ll, 250000);
+    node_format_rider(&blind, 2, 0, line, sizeof(line));
+    assert(strstr(line, " fix_age=5 "));
+    node_format_status(&blind, 0, line, sizeof(line));
+    assert(strstr(line, " time=none ") && strstr(line, " cal=phone/250 "));
+    uint8_t out[PKT_POSITION_LEN];
+    assert(node_next_tx_us(&blind, 0) == INT64_MAX && node_poll_tx(&blind, 3 * SEC, out, sizeof(out)) == 0);
     node_format_status(&n, 9 * SEC, line, sizeof(line));
     assert(starts(line, "slot=1 slots=4 keyed=1 group=86c91c92 mode=7/250 fix=0 ") && strstr(line, " riders=3 "));
     assert(strstr(line, " time=nmea err=1.") && strstr(line, " budget=183.5 lag=? "));
@@ -749,16 +759,21 @@ static void test_api(void) {
     api_t api = {.node = &n, .board = "test", .reset = "poweron", .power = 3, .tx_dbm = dbm};
 
     ask(&api, "STATUS");
-    /* each line says when it was made, on the board's UTC, for the phone to reckon a wait in a
-     * queue or on the air into the ages it carries: 10 s after the fix of 12:00:05 */
-    assert(n_replies == 1 && starts(replies[0], "STATUS proto=5 board=test reset=poweron up=10 at=1792670415000 slot=1 "
+    /* each line says when it was made on the board's own clock, in ms: a moment a later GNSS
+     * time, or a better reckoning of that clock against the phone's, leaves meaning the same */
+    assert(n_replies == 1 && starts(replies[0], "STATUS proto=6 board=test reset=poweron at=10000 slot=1 "
                                                 "slots=4 keyed=1 group=86c91c92 "));
     assert(strstr(replies[0], " stopped=0 help=0 heard=0 "));
     assert(strstr(replies[0], " power=3 dbm=16"));
     ask(&api, "riders"); /* the console types it in lower case */
     /* each rider line names the group it was heard in: one from before a new key is told apart */
-    assert(n_replies == 2 && starts(replies[0], "RIDER slot=2 group=86c91c92 at=1792670415000 ") &&
-           strcmp(replies[1], "RIDERS 1") == 0);
+    /* and a rider's line, the run it belongs to, the moment it was heard, and its fix's time as
+     * the packet gave it: what the phone reckons the rider's ages from, again whenever it knows
+     * the clocks better */
+    char want[160];
+    snprintf(want, sizeof(want), "RIDER slot=2 group=86c91c92 boot=%08lx at=10000 heard_at=3000 fix=64192 ",
+             (unsigned long)n.boot);
+    assert(n_replies == 2 && starts(replies[0], want) && strcmp(replies[1], "RIDERS 1") == 0);
     assert(strstr(replies[0], " gps=1 help=0 stopped=0 "));
 
     /* The key it has, sent again by a phone that reconnects: the riders stay. */
@@ -780,6 +795,18 @@ static void test_api(void) {
     assert(strcmp(replies[0], "OK slot=5") == 0 && n.cfg.slot == 5);
     ask(&api, "SLOT 32");
     assert(starts(replies[0], "ERR ") && n.cfg.slot == 5);
+    /* The phone reckons our clock against its own: its request's moment comes back, with ours
+     * when the request came and when the answer was made, and the run they belong to ... */
+    ask(&api, "CLOCK 123456");
+    snprintf(want, sizeof(want), "CLOCK t1=123456 boot=%08lx rx=10000000 tx=10000000", (unsigned long)n.boot);
+    assert(n_replies == 1 && strcmp(replies[0], want) == 0);
+    ask(&api, "CLOCK soon");
+    assert(starts(replies[0], "ERR "));
+    /* ... and gives us its calendar, in our clock's terms, for the riders' ages */
+    ask(&api, "TIME 10000 1792670415000 250");
+    assert(strcmp(replies[0], "OK time=phone err=250") == 0 && n.phone_time && n.phone_at_us == 10 * SEC);
+    ask(&api, "TIME 10000 1792670415000");
+    assert(starts(replies[0], "ERR "));
     ask(&api, "LEDGER");
     assert(n_replies == 1 && starts(replies[0], "LEDGER minutes=60 limit_ms=360000 used_ms=0 positions_ms=0,"));
     ask(&api, "HELP 1");

@@ -88,6 +88,12 @@ typedef struct {
     int64_t mark_utc_us;
     int64_t mark_err_us;
     int64_t pps_us;          /* the last PPS edge; 0 before one */
+    /* A calendar from the phone, for the riders' ages only, and below any GNSS time: at phone_at_us
+     * on our clock the phone's UTC was phone_utc_us, give or take phone_err_us. No slot opens on
+     * it: the schedule wants GNSS time. */
+    bool phone_time;
+    int64_t phone_at_us, phone_utc_us, phone_err_us;
+    uint32_t boot;           /* drawn at start: our clock's times belong to this run, for the phone */
     /* From a PPS edge to the NMEA fix of its second, where a board has both: E0's number. */
     int64_t lag_us, lag_min_us, lag_max_us;
     bool help;               /* our rider asks for help (the app's HELP) ... */
@@ -136,6 +142,10 @@ void node_on_pps(node_t *n, int64_t edge_us);
  * answers to our call for help. */
 void node_set_key(node_t *n, const uint8_t key[16]);
 
+/* The phone's UTC at at_us on our clock, give or take err_us (the phone API's TIME): the calendar
+ * the riders' ages are told by while we have no GNSS time. It opens no slot. */
+void node_set_phone_time(node_t *n, int64_t at_us, int64_t utc_us, int64_t err_us);
+
 /* Our rider's call for help, on or off. Each time it goes on it is a new call, with a number of its
  * own, and who has heard it starts afresh. */
 void node_set_help(node_t *n, bool on);
@@ -181,10 +191,6 @@ uint32_t node_duty_used_ms(const node_t *n, int64_t now_us);
 /* The duty ledger (01, requirements): transmit time a minute at a time over the last hour, oldest
  * first, by category. Positions are the only category so far. */
 int node_format_ledger(const node_t *n, int64_t now_us, char *buf, size_t cap);
-
-/* When a line is made, on our UTC in ms, as the lines say it (at=), or ? before we have a time:
- * the phone reckons a line's wait in a queue or on the air into its ages from it. */
-const char *node_line_at(const node_t *n, int64_t now_us, char *buf, size_t cap);
 
 /* One RIDER line, and the node's part of the status line: the phone API's words (api.h). */
 int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf, size_t cap);

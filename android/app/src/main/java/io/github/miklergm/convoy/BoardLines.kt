@@ -7,7 +7,7 @@ package io.github.miklergm.convoy
 object BoardLines {
 
     /** The version of the phone API this app speaks. A board with another is refused (D3). */
-    const val PROTO = 5
+    const val PROTO = 6
 
     /** The board's own state, from its STATUS line. */
     data class Status(
@@ -61,8 +61,31 @@ object BoardLines {
             if (eq > 0) t.substring(0, eq) to t.substring(eq + 1) else null
         }.toMap()
 
-    /** When the board made a line, on its own UTC (at=): null where it had no time yet. */
-    fun madeAt(line: String): Long? = tokens(line)["at"]?.toLongOrNull()
+    /** Where a RIDER line's rider was heard: the board's run, the moment on its clock, and the fix's time as the packet gave it. */
+    data class Heard(val boot: Long, val rxMs: Long, val fix: Int?)
+
+    fun heard(line: String): Heard? {
+        if (!line.startsWith("RIDER ")) return null
+        val t = tokens(line)
+        return Heard(t["boot"]?.toLongOrNull(16) ?: return null, t["heard_at"]?.toLongOrNull() ?: return null, t["fix"]?.toIntOrNull())
+    }
+
+    /** A board's answer to CLOCK: this phone's moment echoed, the board's run, and its clock in µs when the request came and when it answered. */
+    data class ClockReply(val t1Ms: Long, val boot: Long, val rxUs: Long, val txUs: Long)
+
+    fun clock(line: String): ClockReply? {
+        if (!line.startsWith("CLOCK ")) return null
+        val t = tokens(line)
+        return ClockReply(t["t1"]?.toLongOrNull() ?: return null, t["boot"]?.toLongOrNull(16) ?: return null,
+            t["rx"]?.toLongOrNull() ?: return null, t["tx"]?.toLongOrNull() ?: return null)
+    }
+
+    /** A fix's time, UTC seconds modulo 65 536 as the packet carries it, unwrapped to the nearest second of [aroundMs], as the firmware does. */
+    fun fixUtcMs(fix: Int, aroundMs: Long): Long {
+        val nowS = Math.floorDiv(aroundMs, 1000L)
+        val behind = (nowS - fix) and 0xFFFF
+        return (if (behind < 0x8000) nowS - behind else nowS + (0x10000 - behind)) * 1000
+    }
 
     /** The group a line names (group=): which group's a RIDER line is, as its board heard it. */
     fun groupOf(line: String): Long? = tokens(line)["group"]?.toLongOrNull(16)
@@ -116,7 +139,9 @@ object BoardLines {
             color = PALETTE[slot % PALETTE.size],
             lat = lat,
             lon = lon,
-            fixAtMs = t["fix_age"]?.toLongOrNull()?.let { nowMs - it * 1000 },
+            // the fix by its own time, as the packet gave it, on this phone's calendar, which needs no
+            // GNSS time on the board and no wait on the way counted; else by the board's age of it
+            fixAtMs = t["fix"]?.toIntOrNull()?.let { fixUtcMs(it, nowMs) } ?: t["fix_age"]?.toLongOrNull()?.let { nowMs - it * 1000 },
             heardAtMs = nowMs - (heardS * 1000).toLong(),
             speedKmh = t["speed"]?.toIntOrNull(),
             courseDeg = t["course"]?.toIntOrNull(),

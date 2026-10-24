@@ -1,16 +1,18 @@
 #include "api.h"
 
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>
 
 int api_status(const api_t *api, int64_t now_us, char *buf, size_t cap) {
-    char node[API_LINE], at[24];   /* the node's part never takes more than a whole line */
+    char node[API_LINE];   /* the node's part never takes more than a whole line */
     node_format_status(api->node, now_us, node, sizeof(node));
-    return snprintf(buf, cap, "STATUS proto=%d board=%s reset=%s up=%lld at=%s %s power=%u dbm=%d kept=%d",
-                    API_PROTO, api->board, api->reset, (long long)(now_us / 1000000),
-                    node_line_at(api->node, now_us, at, sizeof(at)), node, api->power,
+    /* at: when it was made, on our clock in ms, which a later GNSS time or a better reckoning
+     * of it against the phone's leaves meaning the same */
+    return snprintf(buf, cap, "STATUS proto=%d board=%s reset=%s at=%lld %s power=%u dbm=%d kept=%d",
+                    API_PROTO, api->board, api->reset, (long long)(now_us / 1000), node, api->power,
                     api->tx_dbm(api->power), !api->save_failed);
 }
 
@@ -55,6 +57,13 @@ static bool group_setup(char *s, uint8_t key[16], long *slot, long *slots, long 
            number(c, 500, 60000, interval) && !word(&s);
 }
 
+/* "<our clock, ms> <the phone's UTC then, ms> <its error, ms>": TIME's three, whole. */
+static bool phone_time(const char *s, long long *at_ms, long long *utc_ms, long long *err_ms) {
+    char extra;
+    return s && sscanf(s, "%lld %lld %lld%c", at_ms, utc_ms, err_ms, &extra) == 3 && *at_ms >= 0 && *utc_ms > 0 &&
+           *err_ms >= 0;
+}
+
 /* "SF kHz", into the mode we have with those two changed, if the radio can take it. */
 static bool mode(const char *s, phy_t now, phy_t *out) {
     long sf, khz;
@@ -70,6 +79,7 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
     char out[API_LINE];
     phy_t phy;
     uint8_t key[16];
+    long long at_ms, utc_ms, err_ms;
     char *arg = strchr(line, ' ');
     if (arg) *arg++ = '\0';
     node_config_t *cfg = &api->node->cfg;
@@ -85,6 +95,14 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
             known++;
         }
         snprintf(out, sizeof(out), "RIDERS %d", known);
+    } else if (strcasecmp(line, "clock") == 0 && number(arg, 0, LONG_MAX, &v)) {
+        /* when the request came, the command's time, and when the answer is made */
+        const int64_t made = api->clock_us ? api->clock_us() : now_us;
+        snprintf(out, sizeof(out), "CLOCK t1=%ld boot=%08lx rx=%lld tx=%lld", v, (unsigned long)api->node->boot,
+                 (long long)now_us, (long long)made);
+    } else if (strcasecmp(line, "time") == 0 && phone_time(arg, &at_ms, &utc_ms, &err_ms)) {
+        node_set_phone_time(api->node, at_ms * 1000, utc_ms * 1000, err_ms * 1000);
+        snprintf(out, sizeof(out), "OK time=phone err=%lld", (long long)err_ms);
     } else if (strcasecmp(line, "ledger") == 0 && !arg) {
         node_format_ledger(api->node, now_us, out, sizeof(out));
     } else if (strcasecmp(line, "key") == 0 && hex_key(arg, key)) {
@@ -140,7 +158,7 @@ void api_command(api_t *api, char *line, int64_t now_us, api_reply_fn reply, voi
         api->bootloader = true;
         return;
     } else {
-        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, LEDGER, GROUP <32 hex> <slot> <slots> <ms>, KEY <32 hex>, HELP 0-1, SLOT 0-%d, SLOTS 1-%d, "
+        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, CLOCK <t1>, TIME <ms> <utc ms> <err ms>, LEDGER, GROUP <32 hex> <slot> <slots> <ms>, KEY <32 hex>, HELP 0-1, SLOT 0-%d, SLOTS 1-%d, "
                  "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
                  NODE_SLOTS);
     }

@@ -12,7 +12,7 @@ class BoardLinesTest {
 
     @Test
     fun `a rider line as the firmware prints it`() {
-        val line = "RIDER slot=2 group=86c91c92 lat=47.1415722 lon=9.5280433 fix_age=3 heard=1.5 speed=40 course=172 " +
+        val line = "RIDER slot=2 group=86c91c92 boot=0000000a at=70100 heard_at=68600 fix=53757 lat=47.1415722 lon=9.5280433 fix_age=3 heard=1.5 speed=40 course=172 " +
             "gps=1 help=0 stopped=0 answered=- rssi=-90 snr=5.00 rx=12/14"
         val r = BoardLines.rider(line, now)!!
         assertEquals("slot2", r.id)
@@ -27,6 +27,8 @@ class BoardLinesTest {
         assertFalse(r.help || r.stopped)
         assertEquals(emptyList<String>(), r.answeredBy)
         assertEquals(0x86c91c92L, BoardLines.groupOf(line))
+        // where it was heard, read past the packets' rx= at the end of the line
+        assertEquals(BoardLines.Heard(boot = 0xa, rxMs = 68_600, fix = 53_757), BoardLines.heard(line))
         // named from the invitation, the map's label too
         val group = Invitation(ByteArray(16), 0, 3, 2000, "Bench", listOf("Ann", "Bob", "Christopher"))
         val named = BoardLines.rider(line, now, group)!!
@@ -60,11 +62,11 @@ class BoardLinesTest {
 
     @Test
     fun `the status line, and its version`() {
-        val s = BoardLines.status("STATUS proto=5 board=sim reset=poweron up=0 slot=0 slots=3 keyed=1 group=86c91c92 " +
+        val s = BoardLines.status("STATUS proto=6 board=sim reset=poweron up=0 slot=0 slots=3 keyed=1 group=86c91c92 " +
             "fix=1 stopped=0 help=1 heard=2 lat=47.1436949 lon=9.5215000 sats=9 hdop=0.9 time=pps err=0.1 " +
             "budget=233.0 lag=112/98/131 tx=0 late=0 unsure=0 skipped=0 duty=0.43% riders=2 bad=0 foreign=0 " +
             "forged=0 replay=0 clash=0 power=3 dbm=16")!!
-        assertEquals(5, s.proto)
+        assertEquals(6, s.proto)
         assertTrue(s.help && !s.stopped)
         assertEquals(2, s.heard)
         assertEquals(0, s.clash)
@@ -80,12 +82,12 @@ class BoardLinesTest {
         assertEquals("0.43%", s.duty)
         assertEquals(16, s.dbm)
         assertTrue(s.kept)
-        assertFalse(BoardLines.status("STATUS proto=5 slot=0 group=86c91c92 kept=0")!!.kept)
+        assertFalse(BoardLines.status("STATUS proto=6 slot=0 group=86c91c92 kept=0")!!.kept)
         // without a version it is not a status this app can trust
         assertNull(BoardLines.status("STATUS slot=0 keyed=1 group=86c91c92"))
-        assertEquals(6, BoardLines.status("STATUS proto=6 slot=0 group=00000007")!!.proto)
+        assertEquals(7, BoardLines.status("STATUS proto=7 slot=0 group=00000007")!!.proto)
         // a board without a key, nor a time yet
-        val bare = BoardLines.status("STATUS proto=5 slot=4 keyed=0 group=00000000 time=none err=?")!!
+        val bare = BoardLines.status("STATUS proto=6 slot=4 keyed=0 group=00000000 time=none err=?")!!
         assertFalse(bare.keyed)
         assertNull(bare.timeErrMs)
     }
@@ -99,6 +101,14 @@ class BoardLinesTest {
         assertFalse(taken.of(sent.copy(key = ByteArray(16))))
         assertNull(BoardLines.setup("OK keyed group=86c91c92"))
         assertNull(BoardLines.setup("OK group=86c91c92 slot=2"))
+    }
+
+    @Test
+    fun `a board's answer to CLOCK, for reckoning its clock against ours`() {
+        assertEquals(BoardLines.ClockReply(t1Ms = 123_456, boot = 0xa, rxUs = 10_000_000, txUs = 10_000_100),
+            BoardLines.clock("CLOCK t1=123456 boot=0000000a rx=10000000 tx=10000100"))
+        assertNull(BoardLines.clock("CLOCK t1=123456 boot=0000000a rx=10000000"))
+        assertNull(BoardLines.clock("ERR commands: ..."))
     }
 
     @Test

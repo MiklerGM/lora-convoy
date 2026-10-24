@@ -11,7 +11,12 @@
  * app that does not know it refuses the board (D3).
  *
  *   phone -> board                 board -> phone
- *   STATUS                         STATUS proto=5 board=... kept=<0|1> (also sent unasked)
+ *   STATUS                         STATUS proto=6 board=... kept=<0|1> (also sent unasked)
+ *   CLOCK <t1>                     CLOCK t1=<t1> boot=<run> rx=<us> tx=<us>: our clock when the
+ *                                  request came and when the answer was made, for the phone to
+ *                                  reckon our clock against its own
+ *   TIME <ms> <utc ms> <err ms>    OK time=phone err=<ms>: the phone's UTC at our clock's <ms>, a
+ *                                  calendar for the riders' ages, never for the slots
  *   RIDERS                         RIDER ... for each rider known, then RIDERS <n>
  *   GROUP <key> <slot> <slots> <ms> OK group=<id> slot= slots= interval=: a group's whole setup,
  *                                  taken whole or not at all, from the invitation
@@ -27,7 +32,7 @@
  *
  * Commands are case-blind, so the console takes them as typed.
  */
-#define API_PROTO 5
+#define API_PROTO 6
 
 /* A buffer for the longest line either way, its NUL in and the newline aside: up to 511
  * characters, as the app takes up to 512 and Zephyr's queue 512 bytes (ble_nus.c). */
@@ -41,6 +46,7 @@ typedef struct {
     const char *reset;              /* why the board last started */
     uint8_t power;                  /* the level the radio is to hold, 0 the strongest */
     int (*tx_dbm)(uint8_t level);   /* what a level puts out on this board */
+    int64_t (*clock_us)(void);      /* our clock now, for CLOCK's answer; none: the command's time */
     /* Set by a command for the caller to carry out, outside the node's lock. */
     bool radio_changed;             /* power or mode: the caller applies the radio again */
     bool setup_changed;             /* key, slots, interval or mode: the caller keeps them over a restart */

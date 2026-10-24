@@ -201,12 +201,14 @@ on three transports:
 | TCP | a simulated board and the app | `make -C firmware sim ARGS="serve 3"` serves board *i* on 127.0.0.1:4403+*i*, without a key, like a board fresh from flashing; an Android emulator reaches it at 10.0.2.2 |
 | USB console | a board and a person | the same commands, typed; `FORGET` there is a hand on the board, like the button |
 
-**Version.** `proto=` in the status line: 5 since answers name the call. An app refuses a board with another (D3).
+**Version.** `proto=` in the status line: 6 since the board's clock is reckoned against the phone's. An app refuses a board with another (D3).
 
 | Phone to board | Board to phone |
 |---|---|
-| `STATUS` | `STATUS proto=5 board=… reset=… up=… at=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … riders=… … power=… dbm=… kept=…` |
+| `STATUS` | `STATUS proto=6 board=… reset=… at=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … riders=… … power=… dbm=… kept=…` |
 | `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>` |
+| `CLOCK <t1>` | `CLOCK t1=<t1> boot=<run> rx=<µs> tx=<µs>`: the phone's moment back, with the board's clock when the request came and when it made the answer. Exchanged three times as a link begins and every 10 s after; each gives the board's clock less the phone's, ((rx − t1) + (tx − t4)) / 2, to within half its round trip, and the quickest is believed, its error growing by 100 ppm of drift as it ages |
+| `TIME <ms> <utc ms> <err ms>` | `OK time=phone err=<ms>`: the phone's UTC at the board's `<ms>`, give or take `<err ms>`: a calendar for the riders' ages while the board has no GNSS time, kept apart from GNSS time and below it, and never opening a slot |
 | `GROUP <32 hex digits> <slot> <slots> <interval>` | `OK group=<id> slot=… slots=… interval=…`: a group's whole setup, from the invitation, checked whole and taken whole; or `ERR group: …`, and nothing changes |
 | `LEDGER` | `LEDGER minutes=60 limit_ms=… used_ms=… positions_ms=…`: the duty ledger, transmit time a minute at a time over the last hour, oldest first, by category |
 | `KEY <32 hex digits>` | `OK keyed group=<id>`; riders heard under another key are forgotten, and the answers to our call |
@@ -224,6 +226,8 @@ status shows `keyed=` and the group's id, `00000000` without a key: the first fo
 block the tag comes from, so the tag first, `86c91c92` for the key `00 01 … 0f`. It counts the packets
 refused as `foreign=`, `forged=`, `replay=` and `clash=`. Of its time it shows where it comes from
 (`time=none`, `nmea` or `pps`), how far off it may be and the budget, in ms (`err=`, `budget=`),
+the calendar the riders' ages are told by and its error in ms (`cal=pps/0`, or `cal=phone/1020`
+on the phone's word alone),
 and the slots passed over (`late=`, `unsure=`, and `held=` while the radio has yet to take a mode
 asked for: `mode=` is the mode asked for, and until the radio has taken it the board sends nothing,
 ARCHITECTURE D15). A board with both PPS and NMEA measures E0's number
@@ -237,12 +241,16 @@ caller's `RIDER` line with its answerers, or its own status when the call is its
 as silent. Commands are case-blind.
 
 ```
-RIDER slot=2 group=86c91c92 at=1792670415000 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 answered=- rssi=-71 snr=8.25 rx=13/14 offset=310/420/980
+RIDER slot=2 group=86c91c92 boot=1a2b3c4d at=70100 heard_at=69700 fix=64200 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 answered=- rssi=-71 snr=8.25 rx=13/14 offset=310/420/980
 ```
 
-`at` is when the board made the line, its UTC in ms, `?` before it has a time: the app reckons
-the board's clock against its own from the quickest lines of the last minute, and counts a line's
-ages from when it was made, so a wait in a queue or on the air makes them older, not lost.
+`boot` is the board's run, drawn as it starts; `at` and `heard_at`, when the board made the line
+and when it heard the rider, on its own clock in ms since it started, which a later GNSS time
+does not change the meaning of; `fix` is the rider's fix time as its packet gave it, UTC seconds
+modulo 65 536. The app tells the fix's age by that time on its own calendar, with no GNSS time on
+the board and no wait on the way in it, and the radio contact's by `heard_at`, which it places on
+its own monotonic clock by `CLOCK` exchanges, run by run: a better reckoning moves a rider kept
+long since, and a board restarted is a new run, its riders of before left where they were.
 `fix_age` is in whole seconds and can be negative (the sender's clock is wrong) or `?` (this board
 has no time of its own); `heard` is in tenths of a second; `answered` is, while the rider calls for
 help, the slots heard answering that call, as `3,5`, and `-` for none; `rx` is packets taken against the run of counters; `offset` is how late its packets began against their moment, in µs, least/mean/most, from their RxDone on this board's UTC less their airtime (E0, [BENCH](BENCH.md)). On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count

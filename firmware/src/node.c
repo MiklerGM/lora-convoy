@@ -44,6 +44,7 @@ void node_init(node_t *n, const node_config_t *cfg, uint32_t seed) {
     n->rng = seed ? seed : 0x9E3779B9u;
     /* The platform's seed is from the chip's own generator, so every start draws a new session. */
     n->session = next_random(n);
+    n->boot = n->session;
     /* Calls are numbered on from where the session puts them, so a call after a restart seldom
      * takes the number of the one before it, which others may still be answering. */
     n->help_call = (uint8_t)(n->session % HELP_CALLS);
@@ -62,6 +63,13 @@ void node_set_key(node_t *n, const uint8_t key[16]) {
     n->phase_frame = -1;
     memset(n->riders, 0, sizeof(n->riders));
     n->help_heard_by = 0;
+}
+
+void node_set_phone_time(node_t *n, int64_t at_us, int64_t utc_us, int64_t err_us) {
+    n->phone_time = true;
+    n->phone_at_us = at_us;
+    n->phone_utc_us = utc_us;
+    n->phone_err_us = err_us;
 }
 
 void node_set_help(node_t *n, bool on) {
@@ -87,6 +95,31 @@ bool node_utc_ms(const node_t *n, int64_t now_us, int64_t *utc_ms) {
     if (!node_utc_us(n, now_us, &utc, &err)) return false;
     *utc_ms = utc / 1000;
     return true;
+}
+
+/* The calendar the riders' ages are told by: our GNSS time where we have it, else the phone's,
+ * its error grown by our crystal's drift since; false with neither. */
+static bool calendar_us(const node_t *n, int64_t at_us, int64_t *utc_us, int64_t *err_us, const char **source) {
+    static const char *const SOURCE[] = {"none", "nmea", "pps"};
+    if (node_utc_us(n, at_us, utc_us, err_us)) {
+        *source = SOURCE[n->time];
+        return true;
+    }
+    *source = "none";
+    if (!n->phone_time) return false;
+    const int64_t since = at_us - n->phone_at_us;
+    *utc_us = n->phone_utc_us + since;
+    *err_us = n->phone_err_us + (since < 0 ? -since : since) * DRIFT_PPM / 1000000;
+    *source = "phone";
+    return true;
+}
+
+/* A fix time, UTC seconds modulo 65536, unwrapped to the nearest second of utc_ms, past or future:
+ * a future one is a clock gone wrong, kept as such rather than read as fresh. */
+static int64_t fix_utc_ms_of(uint16_t fix_time, int64_t utc_ms) {
+    const int64_t now_s = utc_ms / 1000;
+    const uint16_t behind = (uint16_t)((uint16_t)now_s - fix_time);
+    return (behind < 0x8000 ? now_s - behind : now_s + (0x10000 - behind)) * 1000;
 }
 
 /* A new mark for our clock, taken unless the one we have, carried to now, is still better. */
@@ -390,15 +423,10 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
         n->rx_clash++;
         return false;
     }
+    /* the fix in UTC on our GNSS time, for telling a replay; 0 without one */
     int64_t fix_utc_ms = 0;
     int64_t utc;
-    if (node_utc_ms(n, now_us, &utc)) {
-        /* The fix time is UTC seconds modulo 65536: unwrapped to the nearest, past or future. A
-         * future one is a clock gone wrong, kept as such rather than read as fresh. */
-        const int64_t now_s = utc / 1000;
-        const uint16_t behind = (uint16_t)((uint16_t)now_s - p.fix_time);
-        fix_utc_ms = (behind < 0x8000 ? now_s - behind : now_s + (0x10000 - behind)) * 1000;
-    }
+    if (node_utc_ms(n, now_us, &utc)) fix_utc_ms = fix_utc_ms_of(p.fix_time, utc);
     rider_t *r = &n->riders[p.slot];
     if (r->known) {
         /* A repeat or a replay: in each of its latest sessions the counter only grows, whichever
@@ -468,25 +496,16 @@ static const char *deg(char *s, size_t cap, int32_t e7) {
     return s;
 }
 
-const char *node_line_at(const node_t *n, int64_t now_us, char *buf, size_t cap) {
-    int64_t utc;
-    if (node_utc_ms(n, now_us, &utc)) {
-        snprintf(buf, cap, "%lld", (long long)utc);
-    } else {
-        snprintf(buf, cap, "?");
-    }
-    return buf;
-}
-
 int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf, size_t cap) {
     if (slot >= NODE_SLOTS || !n->riders[slot].known) return snprintf(buf, cap, "RIDER slot=%u none", slot);
     const rider_t *r = &n->riders[slot];
-    char lat[16], lon[16], age[24];
-    int64_t utc;
-    if (r->fix_utc_ms && node_utc_ms(n, now_us, &utc)) {
-        snprintf(age, sizeof(age), "%lld", (long long)((utc - r->fix_utc_ms) / 1000));
-    } else {
-        snprintf(age, sizeof(age), "?");
+    /* Its fix's age on the calendar we have now, its fix time unwrapped at the moment we heard it:
+     * so a stored rider's age comes, and grows truer, as our calendar does, with no new packet. */
+    char lat[16], lon[16], age[24] = "?";
+    int64_t heard_utc, now_utc, err;
+    const char *source;
+    if (calendar_us(n, r->heard_us, &heard_utc, &err, &source) && calendar_us(n, now_us, &now_utc, &err, &source)) {
+        snprintf(age, sizeof(age), "%lld", (long long)((now_utc / 1000 - fix_utc_ms_of(r->last.fix_time, heard_utc / 1000)) / 1000));
     }
     char speed[8] = "?", course[8] = "?", answered[96] = "-";
     for (int s = 0, at = 0; s < NODE_SLOTS; s++) {
@@ -496,12 +515,12 @@ int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf,
     if (r->last.course2 != COURSE_UNKNOWN) snprintf(course, sizeof(course), "%u", r->last.course2 * 2u);
     const long long heard10 = (now_us - r->heard_us) / 100000;
     const int snr = r->snr_db4 < 0 ? -r->snr_db4 : r->snr_db4;
-    char offset[72], at[24];
+    char offset[72];
     return snprintf(buf, cap,
-                    "RIDER slot=%u group=%08lx at=%s lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
+                    "RIDER slot=%u group=%08lx boot=%08lx at=%lld heard_at=%lld fix=%u lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
                     "help=%d stopped=%d answered=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu offset=%s",
-                    slot, (unsigned long)n->group.id, node_line_at(n, now_us, at, sizeof(at)),
-                    deg(lat, sizeof(lat), r->last.lat_e7),
+                    slot, (unsigned long)n->group.id, (unsigned long)n->boot, (long long)(now_us / 1000),
+                    (long long)(r->heard_us / 1000), r->last.fix_time, deg(lat, sizeof(lat), r->last.lat_e7),
                     deg(lon, sizeof(lon), r->last.lon_e7),
                     age, heard10 / 10, heard10 % 10, speed, course,
                     (r->last.status & ST_GPS_OK) ? 1 : 0, (r->last.status & ST_HELP) ? 1 : 0,
@@ -522,6 +541,14 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     if (node_utc_us(n, now_us, &utc, &err)) {
         snprintf(err_ms, sizeof(err_ms), "%lld.%lld", (long long)(err / 1000), (long long)(err % 1000 / 100));
     }
+    /* the calendar the riders' ages are told by, and how far off it may be, in ms */
+    char cal[48];
+    const char *source;
+    if (calendar_us(n, now_us, &utc, &err, &source)) {
+        snprintf(cal, sizeof(cal), "%s/%lld", source, (long long)(err / 1000));
+    } else {
+        snprintf(cal, sizeof(cal), "none");
+    }
     if (n->lag_us) {
         /* under PPS_PAIR_US, all three */
         snprintf(lag, sizeof(lag), "%d/%d/%d", (int)(n->lag_us / 1000), (int)(n->lag_min_us / 1000),
@@ -530,7 +557,7 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     const int64_t budget = node_time_budget_us(n);
     return snprintf(buf, cap,
                     "slot=%u slots=%u keyed=%d group=%08lx mode=%u/%lu fix=%d stopped=%d help=%d heard=%d lat=%s lon=%s sats=%u "
-                    "hdop=%u.%u time=%s err=%s "
+                    "hdop=%u.%u time=%s err=%s cal=%s "
                     "budget=%lld.%lld lag=%s txlead=%s tx=%lu late=%lu unsure=%lu skipped=%lu held=%lu duty=%lu.%02lu%% riders=%d "
                     "bad=%lu foreign=%lu forged=%lu replay=%lu clash=%lu",
                     n->cfg.slot, n->cfg.slots, n->cfg.keyed ? 1 : 0, (unsigned long)(n->cfg.keyed ? n->group.id : 0), n->cfg.phy.sf,
@@ -538,7 +565,7 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
                     current ? 1 : 0, n->stopped ? 1 : 0, n->help ? 1 : 0, __builtin_popcount(n->help_heard_by),
                     deg(lat, sizeof(lat), n->held.lat_e7),
                     deg(lon, sizeof(lon), n->held.lon_e7), n->fix.sats, n->fix.hdop10 / 10,
-                    n->fix.hdop10 % 10, SOURCE[n->time], err_ms, (long long)(budget / 1000),
+                    n->fix.hdop10 % 10, SOURCE[n->time], err_ms, cal, (long long)(budget / 1000),
                     (long long)(budget % 1000 / 100), lag, spread_text(txlead, sizeof(txlead), &n->tx_lead),
                     (unsigned long)n->sent, (unsigned long)n->tx_late,
                     (unsigned long)n->tx_unsure, (unsigned long)n->tx_skipped, (unsigned long)n->tx_held,

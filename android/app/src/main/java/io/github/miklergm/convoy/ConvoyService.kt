@@ -8,8 +8,10 @@ import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.os.SystemClock
 import android.util.Log
 import java.util.concurrent.Executors
+import kotlin.math.roundToLong
 import java.util.concurrent.TimeUnit
 
 /**
@@ -29,9 +31,12 @@ class ConvoyService : Service() {
     private var centre: Pair<Double, Double>? = null
     @Volatile private var link: BoardLink? = null
     private val boardRiders = BoardRiders()
-    /** The board's clock against ours, for the ages its lines carry. */
-    private var boardClock = BoardClock()
+    /** The board's clock against ours, run by run, from CLOCK exchanges: for when it heard each rider. */
+    private val boardClock = BoardClock()
     private var nextPoll = 0L
+    /** The exchanges asked on this link, and when the next is due, on our monotonic clock. */
+    @Volatile private var clocksAsked = 0
+    private var nextClock = 0L
     /** What this link's board has been sent: this phone's group, and the question for its riders. */
     @Volatile private var sentGroup: Invitation? = null
     @Volatile private var askedRiders = false
@@ -63,7 +68,7 @@ class ConvoyService : Service() {
                 linkState = s
                 // its version first: a board that speaks another protocol is asked nothing more
                 if (s.startsWith("connected")) {
-                    boardClock = BoardClock()
+                    clocksAsked = 0
                     sentGroup = null
                     confirmed = null
                     askedRiders = false
@@ -76,9 +81,19 @@ class ConvoyService : Service() {
     }
 
     private fun onLine(line: String) {
+        val receivedMono = SystemClock.elapsedRealtime()
         val received = System.currentTimeMillis()
-        val at = BoardLines.madeAt(line)
-        at?.let { boardClock.observe(it, received) }
+        BoardLines.clock(line)?.let { c ->
+            boardClock.observe(c.boot, c.t1Ms, c.rxUs, c.txUs, receivedMono)
+            // the board's calendar: our UTC at a moment of its clock, give or take the reckoning and
+            // our own clock's error, for the riders' ages it tells while it has no GNSS time
+            boardClock.reckoning(c.boot, receivedMono)?.let { r ->
+                val boardMs = c.txUs / 1000
+                val utc = received - (receivedMono - (boardMs - r.offsetMs).roundToLong())
+                link?.send("TIME $boardMs $utc ${(r.errMs + PHONE_UTC_ERR_MS).roundToLong()}")
+            }
+            return
+        }
         val status = BoardLines.status(line)
         if (status != null) {
             if (status.proto != BoardLines.PROTO) {
@@ -120,9 +135,10 @@ class ConvoyService : Service() {
             stopSelf()
             return
         }
-        // its ages from when the board made it, a wait in its queue or on the air counted in
-        val made = at?.let(boardClock::madeAt) ?: received
-        BoardLines.rider(line, made, group)?.let { boardRiders.take(it, BoardLines.groupOf(line)) }
+        // kept with the moment its board heard it, which the reckoned clocks place anew each tick
+        BoardLines.rider(line, received, group)?.let {
+            boardRiders.take(it, BoardLines.groupOf(line), BoardLines.heard(line))
+        }
     }
 
     /**
@@ -171,7 +187,13 @@ class ConvoyService : Service() {
                     link?.send("STATUS")
                     nextPoll = now + 10_000
                 }
-                boardRiders.all
+                // the clocks: three exchanges as a link begins, then one every 10 s
+                val mono = SystemClock.elapsedRealtime()
+                if ((clocksAsked < 3 || mono >= nextClock) && link?.send("CLOCK $mono") == true) {
+                    clocksAsked++
+                    nextClock = mono + 10_000
+                }
+                boardRiders.all(boardClock, SystemClock.elapsedRealtime(), now)
             }
             if (riders != null) osmand.show(riders.map { it.toPoint(now) })
             state = osmand.state
@@ -240,6 +262,8 @@ class ConvoyService : Service() {
 
     companion object {
         private const val TAG = "ConvoyService"
+        /** How far this phone's clock, set from the network, is taken to be from UTC: not measured. */
+        private const val PHONE_UTC_ERR_MS = 1_000.0
         /** Asks the board to forget this phone; FORGOTTEN then ends the link on both sides. */
         const val ACTION_FORGET = "io.github.miklergm.convoy.FORGET"
         /** Our rider's call for help, on or off (EXTRA_ON), through the board. */
