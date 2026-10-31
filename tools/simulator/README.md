@@ -10,6 +10,7 @@ From the repository root:
 python3 tools/simulate.py --scenario bridge-handover --seeds 17,29,43 --output /tmp/convoy-bridge-des
 python3 tools/simulate.py --suite --shuffle-slots --action-phase-s 2 --output /tmp/convoy-des-suite
 python3 tools/simulate.py --generate neighbours --size 20 --seeds 17 --output /tmp/convoy-two-groups
+python3 tools/simulate.py --scenario hidden-terminals --candidates v3,v3-cad,relay,relay-cad --assumptions tools/simulation/assumptions/radio.json --output /tmp/convoy-sensitivity
 make -C firmware simulator ARGS="--generate chain --size 10 --seeds 17 --output /tmp/convoy-chain"
 make -C firmware test-simulator
 ```
@@ -24,6 +25,12 @@ The generators are `dense`, `chain`, `bridge` and `neighbours`, with 2–32 part
 Independent groups reuse slot numbers without reusing identity; a world can contain more than
 32 boards. Each seed produces separate environment, layout and private protocol randomness.
 Group keys vary by layout seed; slot permutation and action phase variation are explicit options.
+`--assumptions` evaluates explicitly named radio/platform cases against the same exogenous
+worlds and private candidate seeds. Its JSON schema is `{"schema":1,"cases":[{"name":"label",
+"radio":{...}}]}`. Receiver models, thresholds, timing or CAD errors may vary; a seed override
+is rejected. Reports retain per-world differences and mark sign reversals across the selected
+assumptions. No overall winner or statistical confidence is inferred from a few worlds.
+The checked-in cases are synthetic hypotheses, not measured capture thresholds.
 
 ## What actually runs
 
@@ -31,6 +38,7 @@ Group keys vary by layout seed; slot permutation and action phase variation are 
 |---|---|
 | `v3` | The production node/codec with its existing help acknowledgements; explicit header and CRC only |
 | `relay` | Research C adapter using the same node/codec, adding a four-byte `SR`/version/count envelope and up to eight intact foreign v3 packets |
+| `v3-cad`, `relay-cad` | The corresponding payload/forwarding logic with a research C policy that senses before its own scheduled transmission |
 
 `relay` forwards the locally cached sources least recently forwarded, expires cache entries by
 time since their **new authenticated packet** was accepted, preserves the original source packet,
@@ -45,13 +53,20 @@ RF sender; that knowledge is not given to the candidate. This adapter inherits v
 help behaviour and cannot transmit before its first position fix. It does not implement the
 agreed future five-state interface or establish a security claim for a relay protocol.
 
+The CAD policies prepare their real packet in the nominal slot, then use only local CAD results.
+They make at most three attempts, with a private seeded 1–20 ms backoff after a busy channel or
+refused CAD request. CAD and preparation consume the remaining symmetric timing guard; an
+expired or MODE-cancelled packet is dropped. A refused request is not a successful scan.
+Booked-but-dropped native cost remains separate from actual RF cost. These are experiments in
+sensing before one's own slot, not unslotted CSMA, Meshtastic, or evidence of regulatory LBT.
+
 The Python adapter passes only local time, GNSS/PPS, commands and radio observations into C.
 Evaluator provenance is derived from actual source packet identities and retained separately.
 Record authors, RF senders, groups and slots are distinct in observations and metrics.
 
 ## Models and input
 
-JSON schema version 1 is validated by `world.py`. Six checked-in examples are in
+JSON schema version 1 is validated by `world.py`. Nine checked-in examples are in
 [`tools/simulation`](../simulation). Inputs reject unknown properties and duplicate JSON keys.
 Identifiers use letters, digits, underscore, dot and dash; `all` is reserved as an outage target.
 
@@ -79,7 +94,8 @@ The numbers above are synthetic inputs, not measurements or prescribed radio set
 
 - Trajectories are piecewise-linear metric XYZ keyframes. GNSS has separate measured coordinates,
   UTC, validity, production and delivery time, noise and serial jitter. The native geographic
-  conversion currently uses a local approximation anchored at 47.1410 N, 9.5215 E.
+  conversion uses a declared local approximation at `origin: {lat_deg, lon_deg}` (default
+  47.1410 N, 9.5215 E). It is not a geodesic or long-distance projection.
 - PPS is produced independently at whole UTC seconds. It precedes same-time NMEA processing;
   changing GNSS measurement cadence cannot change PPS frequency.
 - Clocks have offset, resolution and drift, optionally a piecewise `profile` of
@@ -94,6 +110,14 @@ The numbers above are synthetic inputs, not measurements or prescribed radio set
   a line, receiver or the world. Its grid and correlation parameters are explicit synthetic inputs.
 - External noise bursts can affect selected receivers. Multiple active powers are summed linearly.
   Reactive neighbouring groups execute real node instances and are not substituted by noise.
+- `noise.processes` adds reproducible alternating exponential OFF/ON sources. Each entry specifies
+  `id`, `from_s`, `until_s`, `mean_on_s`, `mean_off_s`, `power_dbm` and optional `receivers`.
+  It starts OFF; omitted receivers mean one shared global process. All transitions are generated
+  from the environment seed and process identity before any candidate runs, with waits rounded
+  up to nanoseconds and clipped at the window end. Other traffic and query order cannot redraw
+  it. The initial OFF condition is explicit; short windows need not have the stationary ON fraction
+  `mean_on_s / (mean_on_s + mean_off_s)`. Zero means, duplicate IDs and excessive transition budgets
+  are rejected.
 - Reception models are conservative erasure, threshold capture and integrated-energy hypotheses.
   Power models require an explicit threshold and known powers. These are not calibrated LoRaSim,
   ns-3 or SX1262 models. With the conservative model, power variation affects reception only if
@@ -115,6 +139,13 @@ clock errors remain separate; the displayed calendar is piecewise affine between
 with the node's tick-resolution error bound reported. Unknown provenance is not repaired by
 choosing a convenient truth record. A reboot clears the receiver view and cannot retain a
 positive fork-information result from its previous boot.
+
+Position error uses the actual observed XY coordinates, including sensor and codec error. With
+piecewise-linear truth, its squared-distance integral is exact across trajectory corners and view
+changes; reports include conditional mean squared error, RMS, maximum and unavailable duration.
+Missing positions are not counted as zero error. This metric neither assumes known provenance
+for AoI nor invents altitude that the wire format does not carry. Position-error quantiles are
+not computed.
 
 Radio, new-source-record and new-fix gaps are distinct and retain censored ends. State correctness
 does not itself prove receipt of a particular cancellation. Per-node RF cost uses actual occupied

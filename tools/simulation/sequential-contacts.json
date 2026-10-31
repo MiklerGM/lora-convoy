@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "name": "sequential-contacts",
+  "description": "A carrier meets the source and later the leader. There is no simultaneous end-to-end path. Contacts are directed and the forwarding cache must survive the gap.",
+  "duration_s": 120,
+  "warmup_s": 10,
+  "nodes": [
+    {"id": "source", "group": "ride", "slot": 0, "relay_ttl_s": 90,
+     "trajectory": [{"t_s": 0, "x_m": 0, "y_m": 0}, {"t_s": 120, "x_m": 120, "y_m": 0}]},
+    {"id": "carrier", "group": "ride", "slot": 1, "relay_ttl_s": 90,
+     "trajectory": [{"t_s": 0, "x_m": 100, "y_m": 0}, {"t_s": 30, "x_m": 30, "y_m": 0},
+                    {"t_s": 80, "x_m": 800, "y_m": 0}, {"t_s": 120, "x_m": 1200, "y_m": 0}]},
+    {"id": "leader", "group": "ride", "slot": 2, "relay_ttl_s": 90, "roles": ["leader"],
+     "trajectory": [{"t_s": 0, "x_m": 800, "y_m": 0}, {"t_s": 120, "x_m": 1200, "y_m": 0}]}
+  ],
+  "links": [
+    {"from": "source", "to": "carrier", "from_s": 20, "until_s": 35, "power_dbm": -90},
+    {"from": "carrier", "to": "source", "from_s": 20, "until_s": 35, "power_dbm": -90},
+    {"from": "carrier", "to": "leader", "from_s": 80, "until_s": 100, "power_dbm": -90},
+    {"from": "leader", "to": "carrier", "from_s": 80, "until_s": 100, "power_dbm": -90}
+  ],
+  "actions": [{"id": "request", "node": "source", "t_s": 25, "kind": "state", "state": "help"}]
+}

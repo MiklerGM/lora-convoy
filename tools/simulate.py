@@ -7,6 +7,7 @@ import hashlib
 import json
 from pathlib import Path
 import random
+import re
 import statistics
 import subprocess
 import sys
@@ -95,10 +96,68 @@ def prepare(config, candidate, layout_seed, shuffle_slots, action_phase_s, inter
 
 def world_manifest(world):
     result = copy.deepcopy(world.config)
+    # Radio/platform hypotheses share the exogenous world; each run records them separately.
+    result.pop("radio", None)
     for node in result["nodes"]:
         for name in ("candidate","interval_ms","duty_permille","listen_one_in","relay_records","relay_ttl_s", "phy", "tx_power_dbm"):
             node.pop(name,None)
     return {"environment_seed":world.env_seed,"layout_seed":world.layout_seed,"world":result}
+
+
+def assumptions(path):
+    if path is None:
+        return [{"name":"base","radio":{}}]
+    data=load(path)
+    if (not isinstance(data,dict) or set(data)!={"schema","cases"} or type(data["schema"]) is not int or
+            data["schema"]!=1 or not isinstance(data["cases"],list) or not 1<=len(data["cases"])<=64):
+        raise ValueError("assumptions require schema 1 and 1..64 named radio cases")
+    names=set()
+    for case in data["cases"]:
+        if (not isinstance(case,dict) or set(case)!={"name","radio"} or
+                not isinstance(case["name"],str) or not re.fullmatch(r"[A-Za-z0-9_.-]+",case["name"]) or
+                len(case["name"])>64 or
+                case["name"] in names or not isinstance(case["radio"],dict) or "seed" in case["radio"]):
+            raise ValueError("each assumption needs a distinct safe name and radio settings, without a seed override")
+        names.add(case["name"])
+    return data["cases"]
+
+
+def difference_summary(values):
+    return {"n":len(values),"mean":statistics.mean(values) if values else None,
+            "minimum":min(values) if values else None,"maximum":max(values) if values else None,
+            "negative":sum(v<0 for v in values),"zero":sum(v==0 for v in values),
+            "positive":sum(v>0 for v in values)}
+
+
+def paired_results(runs, candidates, seeds):
+    paired=[]
+    for assumption,name in sorted({(r["assumption"],r["scenario"]) for r in runs}):
+        for candidate in candidates[1:]:
+            coverage,ages=[],[]
+            for seed in seeds:
+                row={r["candidate"]:r["summary"]["metrics"]["overall"] for r in runs
+                     if r["scenario"]==name and r["assumption"]==assumption and r["seed"]==seed}
+                a,b=row[candidates[0]],row[candidate]
+                if a["coverage_fraction"] is not None and b["coverage_fraction"] is not None:
+                    coverage.append(b["coverage_fraction"]-a["coverage_fraction"])
+                if a["true_age"]["p95_ns"] is not None and b["true_age"]["p95_ns"] is not None:
+                    ages.append((b["true_age"]["p95_ns"]-a["true_age"]["p95_ns"])/1e9)
+            paired.append({"assumption":assumption,"scenario":name,"baseline":candidates[0],"candidate":candidate,
+                           "worlds":len(seeds),"coverage_differences":coverage,"true_p95_differences_s":ages,
+                           "coverage_summary":difference_summary(coverage),"true_p95_summary_s":difference_summary(ages)})
+    return paired
+
+
+def sensitivity_results(paired):
+    results=[]
+    for scenario,candidate in sorted({(r["scenario"],r["candidate"]) for r in paired}):
+        rows=[r for r in paired if r["scenario"]==scenario and r["candidate"]==candidate]
+        for metric in ("coverage_summary","true_p95_summary_s"):
+            means={r["assumption"]:r[metric]["mean"] for r in rows if r[metric]["mean"] is not None}
+            results.append({"scenario":scenario,"candidate":candidate,"baseline":rows[0]["baseline"],
+                            "metric":metric,"mean_differences":means,
+                            "sign_reversal":any(v<0 for v in means.values()) and any(v>0 for v in means.values())})
+    return results
 
 
 def git(*args):
@@ -107,33 +166,46 @@ def git(*args):
 
 def markdown(data):
     lines=["# DES protocol comparison", "", "Evidence: actual C node and codec with a synthetic Python DES world. No physical-radio or phone claim.",
-           "The relay candidate is a research framing/forwarding implementation, not the proposed v4 format or sdk firmware.", "",
-           "| Scenario | Candidate | Seed | True age p95, s | Known pair-time | Busiest node RF, % | Violations |",
-           "|---|---|---:|---:|---:|---:|---:|"]
+           "The relay/CAD candidates are research policies, not the proposed v4 format, sdk or Meshtastic firmware.", "",
+           "| Assumption | Scenario | Candidate | Seed | True age p95, s | Known pair-time | Position RMS, m | Busiest node RF, % | Violations |",
+           "|---|---|---|---:|---:|---:|---:|---:|---:|"]
     for run in data["runs"]:
         summary=run["summary"]
         age=summary["metrics"]["overall"]["true_age"]["p95_ns"]
         coverage=summary["metrics"]["overall"]["coverage_fraction"]
+        position=summary["metrics"]["overall"]["position_error"]["rms_m"]
         air=max((row["airtime_ns"] for row in summary["airtime"]),default=0)/summary["metrics"]["duration_ns"]*100
-        lines.append(f"| {run['scenario']} | {run['candidate']} | {run['seed']} | "
-                     f"{'—' if age is None else f'{age/1e9:.4f}'} | {'—' if coverage is None else f'{coverage:.2%}'} | {air:.3f} | {len(summary['contract_failures'])} |")
+        lines.append(f"| {run['assumption']} | {run['scenario']} | {run['candidate']} | {run['seed']} | "
+                     f"{'—' if age is None else f'{age/1e9:.4f}'} | {'—' if coverage is None else f'{coverage:.2%}'} | "
+                     f"{'—' if position is None else f'{position:.3f}'} | {air:.3f} | {len(summary['contract_failures'])} |")
     lines += ["", "True ages are weighted by elapsed time. Coverage includes unknown pairs; a good conditional percentile alone does not establish group coverage.",
               "RF fraction is over this observation window; compliance checks use each node's actual rolling-hour cost and stated budget.",
               "Violations count only declared runtime checks: native source identity, transmission time availability and actual rolling-hour RF cost. Zero is not a pass of the entire architecture or hardware model.",
               "Native minute-bucket booked cost is reported separately. The decoder treats failed reception as erasure; bit corruption and recapture are unsupported.",
               "Reported clock ages use a piecewise affine calendar between observations, with the declared native tick-resolution error bound.", "",
+              "Position RMS is conditional on having observed XY coordinates; unknown time remains separately reported in each summary.", "",
               "## Paired differences", "", "Each pair uses the same environment and layout realization. These are descriptive independent-run differences, not packet-level confidence intervals."]
     for row in data["paired"]:
         differences=row["coverage_differences"]
         age=row["true_p95_differences_s"]
-        lines += [f"- {row['scenario']}: {row['candidate']} minus {row['baseline']}, {row['worlds']} paired worlds; "
+        lines += [f"- {row['assumption']} / {row['scenario']}: {row['candidate']} minus {row['baseline']}, {row['worlds']} paired worlds; "
                   f"mean coverage difference {'—' if not differences else f'{statistics.mean(differences):+.2%}'}; "
                   f"mean known-age p95 difference {'—' if not age else f'{statistics.mean(age):+.4f} s'}. "
+                  f"Age difference sign by world: {sum(v<0 for v in age)} negative, {sum(v==0 for v in age)} zero, {sum(v>0 for v in age)} positive. "
                   "Coverage and age must be assessed together."]
+    if len(data["assumptions"])>1:
+        lines += ["", "## Model sensitivity", "",
+                  "Each named case changes only radio/platform assumptions; exogenous world hashes remain equal. "
+                  "A sign reversal means the mean paired difference changes sign across these cases. "
+                  "Absence of reversal only describes the selected cases, not all plausible models."]
+        for row in data["sensitivity"]:
+            values=", ".join(f"{name}={value:+.5g}" for name,value in row["mean_differences"].items()) or "unavailable"
+            lines.append(f"- {row['scenario']}, {row['candidate']} − {row['baseline']}, {row['metric']}: {values}; "
+                         f"sign reversal: {'yes' if row['sign_reversal'] else 'no'}.")
     lines += ["", "## Individual traces", ""]
     for run in data["runs"]:
         folder=run["directory"]
-        lines.append(f"- {run['scenario']} / {run['candidate']} / {run['seed']}: "
+        lines.append(f"- {run['assumption']} / {run['scenario']} / {run['candidate']} / {run['seed']}: "
                      f"[summary]({folder}/summary.json), [events]({folder}/events.jsonl)"+
                      (f", [replay]({folder}/replay.html)" if run["replay"] else "")+".")
     lines += ["", "## Evidence boundaries", "", "Parameters are synthetic unless a scenario identifies measured provenance. "
@@ -148,7 +220,8 @@ def main(argv=None):
     parser.add_argument("--suite",action="store_true",help="run all checked-in scenarios")
     parser.add_argument("--generate",choices=("dense","chain","bridge","neighbours"))
     parser.add_argument("--size",type=int,default=10)
-    parser.add_argument("--candidates",default="v3,relay",help="comma-separated v3 and/or relay")
+    parser.add_argument("--candidates",default="v3,relay",help="comma-separated v3, relay, v3-cad and/or relay-cad")
+    parser.add_argument("--assumptions",type=Path,help="JSON named radio-model cases, paired against one exogenous world")
     parser.add_argument("--seeds",type=numbers,default=[17,29,43])
     parser.add_argument("--shuffle-slots",action="store_true")
     parser.add_argument("--action-phase-s",type=float,default=0)
@@ -159,14 +232,15 @@ def main(argv=None):
     parser.add_argument("--output",type=Path)
     args=parser.parse_args(argv)
     candidates=args.candidates.split(",")
-    if not candidates or len(set(candidates))!=len(candidates) or any(c not in ("v3","relay") for c in candidates):
-        parser.error("candidates must be distinct v3 and/or relay")
+    if not candidates or len(set(candidates))!=len(candidates) or any(c not in ("v3","relay","v3-cad","relay-cad") for c in candidates):
+        parser.error("candidates must be distinct v3, relay, v3-cad and/or relay-cad")
     if not 0<=args.action_phase_s<1e6:
         parser.error("action phase must be finite and nonnegative")
     if args.output is not None and args.output.exists() and (not args.output.is_dir() or any(args.output.iterdir())):
         parser.error("output must be new or empty; previous evidence is not overwritten")
     if sum((bool(args.scenario),args.suite,bool(args.generate)))>1:
         parser.error("choose --scenario, --suite or --generate")
+    cases=assumptions(args.assumptions)
     if args.generate:
         scenarios=[generated(args.generate,args.size)]
     else:
@@ -185,52 +259,44 @@ def main(argv=None):
         for seed in args.seeds:
             env=int.from_bytes(keyed(seed,"environment")[:8],"big")
             layout=int.from_bytes(keyed(seed,"layout")[:8],"big")
-            for candidate in candidates:
-                prepared=prepare(scenario,candidate,layout,args.shuffle_slots,args.action_phase_s,args.interval_ms)
-                protocol=int.from_bytes(keyed(seed,"protocol",candidate)[:8],"big")
-                sim=Simulation(prepared,environment_seed=env,layout_seed=layout,
-                               protocol_seed=protocol,
-                               reverse_ties=args.reverse_ties,library=library)
-                try:
-                    name=sim.world.config["name"]
-                    folder=output/f"{name}-{candidate}-{seed}"
-                    folder.mkdir()
-                    world_hash=digest(world_manifest(sim.world))
-                    pair=(name,seed)
-                    if pair in hashes and hashes[pair]!=world_hash:
-                        raise ValueError("paired candidates did not receive the same world")
-                    hashes[pair]=world_hash
-                    summary=sim.run(args.reference)
-                    summary["run"]={"candidate":candidate,"seed":seed,"environment_seed":env,"layout_seed":layout,
-                                    "protocol_seed":protocol,"reverse_ties":args.reverse_ties,
-                                    "world_sha256":world_hash,"scenario_sha256":digest(sim.world.config),"source":source}
-                    (folder/"scenario.json").write_text(json.dumps(sim.world.config,indent=2,allow_nan=False)+"\n")
-                    (folder/"summary.json").write_text(json.dumps(summary,indent=2,allow_nan=False)+"\n")
-                    with (folder/"events.jsonl").open("w") as stream:
-                        stream.write(json.dumps({"event":"run","t_ns":0,**summary["run"]},allow_nan=False)+"\n")
-                        for event in sim.events:
-                            stream.write(json.dumps(event,allow_nan=False)+"\n")
-                    if not args.no_replay:
-                        write_replay(sim.events,folder/"replay.html",sim.world.config)
-                    runs.append({"scenario":name,"candidate":candidate,"seed":seed,"directory":folder.name,
-                                 "replay":not args.no_replay,"summary":summary})
-                finally:
-                    sim.close()
-    paired=[]
-    for name in sorted({run["scenario"] for run in runs}):
-        for candidate in candidates[1:]:
-            coverage,ages=[],[]
-            for seed in args.seeds:
-                row={r["candidate"]:r["summary"]["metrics"]["overall"] for r in runs if r["scenario"]==name and r["seed"]==seed}
-                a,b=row[candidates[0]],row[candidate]
-                if a["coverage_fraction"] is not None and b["coverage_fraction"] is not None:
-                    coverage.append(b["coverage_fraction"]-a["coverage_fraction"])
-                if a["true_age"]["p95_ns"] is not None and b["true_age"]["p95_ns"] is not None:
-                    ages.append((b["true_age"]["p95_ns"]-a["true_age"]["p95_ns"])/1e9)
-            paired.append({"scenario":name,"baseline":candidates[0],"candidate":candidate,
-                           "worlds":len(args.seeds),
-                           "coverage_differences":coverage,"true_p95_differences_s":ages})
-    data={"schema":1,"runs":runs,"paired":paired,"source":source}
+            for case in cases:
+                for candidate in candidates:
+                    prepared=prepare(scenario,candidate,layout,args.shuffle_slots,args.action_phase_s,args.interval_ms)
+                    prepared["radio"]=prepared.get("radio",{})|case["radio"]
+                    protocol=int.from_bytes(keyed(seed,"protocol",candidate)[:8],"big")
+                    sim=Simulation(prepared,environment_seed=env,layout_seed=layout,
+                                   protocol_seed=protocol,
+                                   reverse_ties=args.reverse_ties,library=library)
+                    try:
+                        name=sim.world.config["name"]
+                        prefix="" if args.assumptions is None else case["name"]+"-"
+                        folder=output/f"{prefix}{name}-{candidate}-{seed}"
+                        folder.mkdir()
+                        world_hash=digest(world_manifest(sim.world))
+                        pair=(name,seed)
+                        if pair in hashes and hashes[pair]!=world_hash:
+                            raise ValueError("paired candidates/models did not receive the same world")
+                        hashes[pair]=world_hash
+                        summary=sim.run(args.reference)
+                        summary["run"]={"assumption":case["name"],"candidate":candidate,"seed":seed,
+                                        "environment_seed":env,"layout_seed":layout,
+                                        "protocol_seed":protocol,"reverse_ties":args.reverse_ties,
+                                        "world_sha256":world_hash,"scenario_sha256":digest(sim.world.config),"source":source}
+                        (folder/"scenario.json").write_text(json.dumps(sim.world.config,indent=2,allow_nan=False)+"\n")
+                        (folder/"summary.json").write_text(json.dumps(summary,indent=2,allow_nan=False)+"\n")
+                        with (folder/"events.jsonl").open("w") as stream:
+                            stream.write(json.dumps({"event":"run","t_ns":0,**summary["run"]},allow_nan=False)+"\n")
+                            for event in sim.events:
+                                stream.write(json.dumps(event,allow_nan=False)+"\n")
+                        if not args.no_replay:
+                            write_replay(sim.events,folder/"replay.html",sim.world.config)
+                        runs.append({"assumption":case["name"],"scenario":name,"candidate":candidate,"seed":seed,
+                                     "directory":folder.name,"replay":not args.no_replay,"summary":summary})
+                    finally:
+                        sim.close()
+    paired=paired_results(runs,candidates,args.seeds)
+    data={"schema":1,"runs":runs,"paired":paired,"assumptions":cases,
+          "sensitivity":sensitivity_results(paired),"source":source}
     (output/"results.json").write_text(json.dumps(data,indent=2,allow_nan=False)+"\n")
     (output/"report.md").write_text(markdown(data))
     print(f"DES comparison: {len(runs)} runs; {output/'report.md'}")

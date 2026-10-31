@@ -8,7 +8,8 @@ The full simulator target, DES/channel contracts, validation and calibration sta
 [11](11-simulation-model.md). Its planned capabilities must not be confused with the runnable
 baseline described here.
 The newer DES implementation is available through [`tools/simulate.py`](../tools/simulate.py).
-It runs v3 and an explicitly experimental C forwarding adapter. Its [implementation notes](../tools/simulator/README.md)
+It runs v3, an experimental C forwarding adapter and local-CAD variants, with paired
+radio-model assumptions and exact time-weighted age/position metrics. Its [implementation notes](../tools/simulator/README.md)
 separate implemented models from the remaining full-design work. The commands and sampled metrics
 below continue to describe the original baseline; do not pool their numbers with DES results.
 

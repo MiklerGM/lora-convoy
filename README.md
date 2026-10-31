@@ -64,7 +64,7 @@ All standard-library Python, but for the bench's Bluetooth boards (Bumble, in a 
 | `tools/route_size.py` | route sizes: a GPX in, simplified binary sizes and LoRa packets out | `python3 -I tools/route_size.py route.gpx --tolerances 2,5,100` |
 | `tools/cross_check.py` | re-derives airtime independently, from Semtech's driver, and checks the other two tools against it | `python3 -I tools/cross_check.py` |
 | `tools/compare.py` | runs controlled topologies and timing/loss environments; reports missing data, freshness and air use | `python3 tools/compare.py --output /tmp/convoy-comparison`; `--suite sensitivity` varies the environment |
-| `tools/simulate.py` | DES worlds, real C v3/experimental-relay candidates, time-weighted metrics and offline replay | `python3 tools/simulate.py --scenario chain-5 --output /tmp/convoy-des`; [models and limits](tools/simulator/README.md) |
+| `tools/simulate.py` | DES worlds, real C v3/research relay/CAD policies, exact time-weighted metrics, model sensitivity and offline replay | `python3 tools/simulate.py --scenario chain-5 --output /tmp/convoy-des`; [models and limits](tools/simulator/README.md) |
 
 ## Conventions
 

@@ -6,6 +6,8 @@
 
 #define FRAME_HEADER 4
 #define MAX_FORWARD 8
+#define ACCESS_ATTEMPTS 3
+#define ACCESS_NEW_RECORD 256u
 
 typedef struct {
     uint32_t version, slot, slots, interval_ms, duty_permille, listen_one_in;
@@ -30,7 +32,23 @@ typedef struct {
     bool cached[NODE_SLOTS];
     bool mode_pending;
     int64_t cached_at[NODE_SLOTS], forwarded_at[NODE_SLOTS];
+    bool access_enabled;
+    unsigned access_state, access_attempts;
+    uint32_t access_rng, access_cost_ms;
+    uint8_t access_bytes[255];
+    size_t access_length;
+    int64_t access_target_utc, access_retry_us, access_prepare_us;
+    uint64_t access_stats[9];
 } sim_node_t;
+
+static void access_drop(sim_node_t *s,unsigned reason) {
+    if (s->access_length) {
+        s->access_stats[reason]++;
+        s->access_stats[8]+=s->access_cost_ms;
+    }
+    s->access_length=0;
+    s->access_state=0;
+}
 
 uint32_t sim_abi_version(void) { return 1; }
 size_t sim_config_size(void) { return sizeof(sim_config_t); }
@@ -95,6 +113,7 @@ void sim_node_mode(void *p,const sim_config_t *c,int applied) {
     sim_node_t *s=p;
     phy_t phy=mode(c);
     if (!phy_supported(&phy)) return;
+    if (!applied) access_drop(s,5);
     if (applied) {
         s->config.implicit_header=c->implicit_header;
         s->config.crc=c->crc;
@@ -232,4 +251,94 @@ int64_t sim_node_target_utc(void *p) {
     const node_t *n=&((sim_node_t*)p)->node;
     const int64_t frame=(int64_t)n->cfg.interval_ms*1000;
     return n->last_frame*frame+n->phase_us+n->cfg.slot*(frame/(n->cfg.slots+1));
+}
+
+/* Research access policy: real local CAD, at most three attempts, no extension into the next slot. */
+int sim_access_enable(void *p,int64_t preparation_us) {
+    sim_node_t *s=p;
+    if (preparation_us<0 || preparation_us>INT64_MAX/4) return 0;
+    s->access_enabled=true;
+    s->access_prepare_us=preparation_us;
+    s->access_rng=s->config.seed^0x9e3779b9u;
+    if (!s->access_rng) s->access_rng=1;
+    return 1;
+}
+
+static bool access_fits(const sim_node_t *s,int64_t at) {
+    int64_t utc,err,end_utc,end_err;
+    const int64_t spacing=(int64_t)s->node.cfg.interval_ms*1000/(s->node.cfg.slots+1);
+    const size_t maximum=s->config.experimental_relay
+        ? FRAME_HEADER+(1+s->config.relay_records)*PKT_POSITION_LEN : PKT_POSITION_LEN;
+    const int64_t guard=(spacing-(int64_t)airtime(s,maximum)-2000)/2;
+    const int64_t duration=s->access_prepare_us+(int64_t)airtime(s,s->access_length);
+    if (!s->access_length || s->mode_pending || guard<0 || duration>spacing ||
+        at>INT64_MAX-duration || !node_utc_us(&s->node,at,&utc,&err) || utc<s->access_target_utc ||
+        !node_utc_us(&s->node,at+duration,&end_utc,&end_err)) return false;
+    /* The peer may use the other half of the same allocation for its clock error. */
+    return utc-s->access_target_utc+s->access_prepare_us+end_err+1000<=guard;
+}
+
+int64_t sim_access_next(void *p,int64_t now) {
+    sim_node_t *s=p;
+    if (!s->access_enabled || !s->access_length) return node_next_tx_us(&s->node,now);
+    return s->access_state==1 ? INT64_MAX : s->access_retry_us;
+}
+
+uint32_t sim_access_poll(void *p,int64_t at,uint8_t *out,size_t capacity,size_t *length) {
+    sim_node_t *s=p;
+    if (!length) return 0;
+    *length=0;
+    if (!s->access_enabled) return 0;
+    uint32_t action=0;
+    if (!s->access_length) {
+        s->access_length=sim_node_poll(s,at,s->access_bytes,sizeof(s->access_bytes));
+        if (!s->access_length) return 0;
+        s->access_target_utc=sim_node_target_utc(s);
+        s->access_retry_us=at;
+        s->access_attempts=0;
+        s->access_state=0;
+        s->access_cost_ms=(airtime(s,s->access_length)+999)/1000;
+        s->access_stats[7]+=s->access_cost_ms;
+        if (s->access_length>capacity) { access_drop(s,4); return 0; }
+        memcpy(out,s->access_bytes,s->access_length);
+        *length=s->access_length;
+        action=ACCESS_NEW_RECORD;
+    }
+    if (!access_fits(s,at)) { access_drop(s,4); return action; }
+    if (s->access_state==1 || at<s->access_retry_us) return action;
+    if (s->access_state==2) {
+        if (s->access_length>capacity) { access_drop(s,4); return action; }
+        memcpy(out,s->access_bytes,s->access_length);
+        *length=s->access_length;
+        s->access_length=0;
+        s->access_state=0;
+        s->access_stats[3]++;
+        return action|2u;
+    }
+    s->access_attempts++;
+    s->access_stats[0]++;
+    s->access_state=1;
+    return action|1u;
+}
+
+void sim_access_result(void *p,int64_t at,int outcome) {
+    sim_node_t *s=p;
+    if (!s->access_length || s->access_state!=1) return;
+    if (!access_fits(s,at)) { access_drop(s,4); return; }
+    if (outcome>0) {
+        s->access_state=2;
+        s->access_retry_us=at;
+        return;
+    }
+    s->access_stats[outcome<0 ? 2 : 1]++;
+    if (s->access_attempts>=ACCESS_ATTEMPTS) { access_drop(s,6); return; }
+    uint32_t x=s->access_rng;
+    x^=x<<13; x^=x>>17; x^=x<<5;
+    s->access_rng=x;
+    s->access_retry_us=at+1000+(x%19001u);
+    s->access_state=0;
+}
+
+uint64_t sim_access_stat(void *p,unsigned index) {
+    return index<9 ? ((sim_node_t*)p)->access_stats[index] : 0;
 }

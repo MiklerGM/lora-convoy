@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "name": "local-bursts",
+  "description": "A slowly moving mixed group; two receivers share intermittent local noise and a separate weak source affects the whole group. The burst realization is independent of transmitted traffic.",
+  "duration_s": 120,
+  "warmup_s": 10,
+  "default_link": {"decode": true, "sense": true, "interfere": true, "power_dbm": -90},
+  "nodes": [
+    {"id": "leader", "group": "walk", "slot": 0, "roles": ["leader"],
+     "trajectory": [{"t_s": 0, "x_m": 0, "y_m": 0}, {"t_s": 60, "x_m": 80, "y_m": 0},
+                    {"t_s": 90, "x_m": 80, "y_m": 0}, {"t_s": 120, "x_m": 120, "y_m": 0}]},
+    {"id": "middle", "group": "walk", "slot": 1,
+     "trajectory": [{"t_s": 0, "x_m": -20, "y_m": 0}, {"t_s": 120, "x_m": 100, "y_m": 0}]},
+    {"id": "catcher", "group": "walk", "slot": 2, "roles": ["catcher"],
+     "trajectory": [{"t_s": 0, "x_m": -50, "y_m": 0}, {"t_s": 120, "x_m": 90, "y_m": 0}]}
+  ],
+  "noise": {
+    "background_dbm": -120,
+    "processes": [
+      {"id": "local", "from_s": 0, "until_s": 120, "mean_on_s": 2, "mean_off_s": 5,
+       "power_dbm": -70, "receivers": ["middle", "catcher"]},
+      {"id": "global", "from_s": 0, "until_s": 120, "mean_on_s": 0.1, "mean_off_s": 3, "power_dbm": -108}
+    ]
+  },
+  "radio": {"noise_threshold_dbm": -100, "cad_noise_threshold_dbm": -100},
+  "actions": [{"id": "request", "node": "catcher", "t_s": 40, "kind": "state", "state": "help"}]
+}

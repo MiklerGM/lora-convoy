@@ -1,6 +1,7 @@
 """Independent analytic examples for observed ages, provenance and causal replay."""
 from html.parser import HTMLParser
 import json
+import math
 from pathlib import Path
 import tempfile
 import unittest
@@ -11,6 +12,48 @@ from .types import NS, Record
 
 
 class MetricsTest(unittest.TestCase):
+    def test_position_error_integrates_turns_and_actual_noisy_view_without_inventing_fix_age(self):
+        def truth(author, at_ns):
+            t = at_ns / NS
+            if t <= 2:
+                return (t, 0, 100)
+            if t <= 4:
+                return (2, t - 2, 100)
+            if t <= 8:
+                return (2, 2, 100)
+            return (10 - t, 2, 100)
+
+        def knots(author, begin, end):
+            return [at for at in (2 * NS, 4 * NS, 8 * NS) if begin < at < end]
+
+        e = Evaluator({"A": "g", "B": "g"}, 10 * NS,
+                      truth_position=truth, truth_breakpoints=knots)
+        e.measurement("fix", "A", 0, (0, 0, 0))
+        e.source_record(Record("r", "A", 0, 0, "fix", None, (0, 0, 0), "normal"))
+        e.applied("B", "r", 0, position=(1, 1, 0), state="normal")
+        e.forget("B", 6 * NS)
+        e.applied("B", "r", 8 * NS, position=(0, 2, 0), state="normal")
+        result = e.finish()
+        pair = next(p for p in result["pairs"] if p["receiver"] == "B")
+        error = pair["position_error"]
+        # XY integral: (8/3 + 8/3 + 4) over 0..6 s, then 8/3 over 8..10 s = 12 m² s.
+        # Truth altitude 100 m is deliberately absent from the reported coordinates.
+        self.assertEqual(error["available_ns"], 8 * NS)
+        self.assertEqual(error["unavailable_ns"], 2 * NS)
+        self.assertAlmostEqual(error["mean_squared_m2"], 1.5)
+        self.assertAlmostEqual(error["rms_m"], math.sqrt(1.5))
+        self.assertEqual(error["max_m"], 2)
+        self.assertEqual(pair["true_age"]["known_ns"], 0)
+        self.assertEqual(pair["unknown_provenance_ns"], 8 * NS)
+        self.assertEqual(result["overall"]["position_error"]["coverage_fraction"], .4)
+        self.assertEqual(result["overall"]["position_error"]["unavailable_ns"], 12 * NS)
+        self.assertAlmostEqual(result["groups"][0]["position_error"]["mean_squared_m2"], 1.5)
+        unsupported = Evaluator({"A": "g", "B": "g"}, NS, truth_position=truth)
+        unsupported.applied("B", "unknown", 0, author="A", position=(0, 0, 0))
+        missing = unsupported.finish()["overall"]["position_error"]
+        self.assertEqual(missing["available_ns"], 0)
+        self.assertIsNone(missing["rms_m"])
+
     def test_exact_duration_weighted_age_coverage_and_three_different_gaps(self):
         epoch = 1_000_000 * NS
         e = Evaluator({"A": "ride", "B": "ride", "X": "other"}, 10 * NS, utc0_ns=epoch)

@@ -94,6 +94,50 @@ class WorldTest(unittest.TestCase):
         self.assertAlmostEqual(world.noise_dbm("b", NS), -79.99956572723137)
         self.assertEqual(world.noise_dbm("a", NS), -120)
         self.assertEqual(world.noise_dbm("b", 2 * NS), -120)
+        stochastic = scenario()
+        process = {"id": "local-source", "from_s": 1, "until_s": 9, "mean_on_s": .3,
+                   "mean_off_s": .7, "power_dbm": -80, "receivers": ["b"]}
+        stochastic["noise"] = {"background_dbm": -120, "processes": [process]}
+        local = World(stochastic, env_seed=17)
+        switches = [t for t in local.boundaries() if NS < t < 9 * NS]
+        self.assertGreater(len(switches), 3)
+        self.assertGreater(len(set(b - a for a, b in zip(switches, switches[1:]))), 1)
+        on, off = switches[:2]
+        self.assertEqual(local.noise_dbm("b", NS), -120)
+        self.assertEqual(local.noise_dbm("b", on - 1), -120)
+        self.assertAlmostEqual(local.noise_dbm("b", on), -79.99956572723137)
+        self.assertAlmostEqual(local.noise_dbm("b", off - 1), -79.99956572723137)
+        self.assertEqual(local.noise_dbm("b", off), -120)
+        self.assertEqual(local.noise_dbm("b", 9 * NS), -120)
+        self.assertEqual(local.noise_dbm("a", on), -120)
+        queries = sorted({0, NS, 9 * NS, 10 * NS, *switches, *(t - 1 for t in switches)})
+        expected_noise = {t: local.noise_dbm("b", t) for t in queries}
+        other_candidate = copy.deepcopy(stochastic)
+        for node in other_candidate["nodes"]:
+            node["candidate"] = "relay-cad"
+        other_candidate["nodes"].reverse()
+        repeated = World(other_candidate, env_seed=17)
+        for t in reversed(queries):
+            repeated.noise_dbm("a", t)
+            self.assertEqual(repeated.noise_dbm("b", t), expected_noise[t])
+        global_config = copy.deepcopy(stochastic)
+        global_config["noise"]["processes"][0].pop("receivers")
+        global_noise = World(global_config, env_seed=17)
+        self.assertEqual(global_noise.boundaries(), local.boundaries())
+        for t in queries:
+            self.assertEqual(global_noise.noise_dbm("a", t), expected_noise[t])
+            self.assertEqual(global_noise.noise_dbm("c", t), expected_noise[t])
+        summed_config = copy.deepcopy(stochastic)
+        summed_config["noise"]["bursts"] = [{"from_s": 1, "until_s": 9, "receivers": ["b"], "power_dbm": -80}]
+        summed = World(summed_config, env_seed=17)
+        self.assertAlmostEqual(summed.noise_dbm("b", on), -76.98948290154773)
+        unrelated = copy.deepcopy(stochastic)
+        unrelated["noise"]["processes"].insert(0, {**process, "id": "other-source", "receivers": ["a"]})
+        with_extra = World(unrelated, env_seed=17)
+        for t in queries:
+            self.assertEqual(with_extra.noise_dbm("b", t), expected_noise[t])
+        other_seed = World(stochastic, env_seed=29)
+        self.assertNotEqual([t for t in other_seed.boundaries() if NS < t < 9 * NS][0], on)
         fading = scenario()
         fading["fading"] = {"grid_s": .25, "std_db": 3, "correlation_s": 2, "scope": "receiver"}
         first, second = World(fading, env_seed=17), World(fading, env_seed=17)
@@ -150,10 +194,17 @@ class WorldTest(unittest.TestCase):
         value = scenario(); value["actions"] = [{"t_s": 1, "node": "a", "kind": "state", "state": "fuel"}]; invalid.append(value)
         value = scenario(); value["schema"] = True; invalid.append(value)
         value = scenario(); value["name"] = "../../overwritten"; invalid.append(value)
+        for origin in ({"lat_deg": 90, "lon_deg": 0}, {"lat_deg": 35}, {"lat_deg": True, "lon_deg": 139}):
+            value = scenario(); value["origin"] = origin; invalid.append(value)
         value = scenario(); value["nodes"][0]["id"] = "all"; invalid.append(value)
         value = scenario(); value["nodes"][0]["clock"] = {"profile": [{"from_s": 1, "drift_ppm": 0}]}; invalid.append(value)
         value = scenario(); value["nodes"][0]["clock"] = {"profile": [{"from_s": 0, "drift_ppm": 0}, {"from_s": 0, "drift_ppm": 1}]}; invalid.append(value)
         value = scenario(); value["fading"] = {"grid_s": 1, "std_db": 3, "correlation_s": 2, "scope": "global"}; value["default_link"].pop("power_dbm"); invalid.append(value)
+        process = {"id": "p", "from_s": 1, "until_s": 9, "mean_on_s": .3, "mean_off_s": .7, "power_dbm": -80}
+        value = scenario(); value["noise"] = {"processes": [process, process]}; invalid.append(value)
+        value = scenario(); value["noise"] = {"processes": [{**process, "mean_on_s": 0}]}; invalid.append(value)
+        value = scenario(); value["noise"] = {"processes": [{**process, "receivers": ["unknown"]}]}; invalid.append(value)
+        value = scenario(); value["noise"] = {"processes": [{**process, "mean_on_s": 1e-9, "mean_off_s": 1e-9}]}; invalid.append(value)
         for case in invalid:
             with self.subTest(case=case):
                 with self.assertRaises(ValueError):

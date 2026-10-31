@@ -1,0 +1,9 @@
+{
+  "schema": 1,
+  "cases": [
+    {"name": "erase-overlap", "radio": {"reception_model": "conservative"}},
+    {"name": "capture-3db", "radio": {"reception_model": "capture", "capture_threshold_db": 3}},
+    {"name": "capture-9db", "radio": {"reception_model": "capture", "capture_threshold_db": 9}},
+    {"name": "energy-6db", "radio": {"reception_model": "energy", "capture_threshold_db": 6}}
+  ]
+}

@@ -120,6 +120,7 @@ class RuntimeTest(unittest.TestCase):
         finally:
             reset.close()
         role={"schema":1,"name":"forgotten-fork","duration_s":32,"warmup_s":5,
+              "origin":{"lat_deg":35,"lon_deg":139},
               "nodes":[{"id":node,"group":"g","slot":slot,"listen_one_in":0,
                         "trajectory":[{"t_s":0,"x_m":slot*100,"y_m":0}]}
                        for slot,node in enumerate(("a","b"))],
@@ -132,6 +133,16 @@ class RuntimeTest(unittest.TestCase):
             summary=observer.run()
             self.assertTrue(summary["role_decisions"][0]["information_available"])
             self.assertFalse(summary["role_decisions"][1]["information_available"])
+            a_position=next(e["record"]["position"] for e in observer.events
+                            if e["event"]=="source_record" and e["record"]["author"]=="a")
+            self.assertLess(abs(a_position[0]),3)
+            self.assertLess(abs(a_position[1]),3)
+            own_tx=next(e for e in observer.events if e["event"]=="tx" and e["sender"]=="a")
+            own_wire=observer.nodes["a"].records(bytes.fromhex(own_tx["payload_hex"]))[0]
+            # Half a 24-bit coordinate step: 90/2^23 latitude, 180/2^23 longitude, in e7 units.
+            self.assertAlmostEqual(own_wire["lat_e7"],350000000,delta=55)
+            self.assertAlmostEqual(own_wire["lon_e7"],1390000000,delta=109)
+            self.assertEqual(summary["numerical_assumptions"]["geographic_projection"]["origin"],role["origin"])
         finally:
             observer.close()
         clock_world={"schema":1,"name":"pps-cadence","duration_s":12,"warmup_s":2,
@@ -154,6 +165,101 @@ class RuntimeTest(unittest.TestCase):
                     clock.close()
             self.assertTrue(signatures[0])
             self.assertEqual(signatures[0],signatures[1])
+
+    def test_cad_defers_for_local_noise_and_stays_inside_symmetric_guard(self):
+        scene={"schema":1,"name":"cad-local","duration_s":6,"warmup_s":0,
+               "radio":{"cad_noise_threshold_dbm":-100,"noise_threshold_dbm":-100,
+                        "irq_delay_ns":300000,"tx_prepare_ns":2000000},
+               "default_link":{"decode":True,"sense":True,"interfere":True,"power_dbm":-90},
+               "nodes":[{"id":node,"group":"g","slot":slot,"candidate":"v3-cad",
+                         "interval_ms":1000,"listen_one_in":0,
+                         "clock":{"drift_ppm":20 if slot==0 else -20},
+                         "gnss":{"nmea_only":bool(slot),"nmea_told_lag_ms":100,"nmea_error_ms":120},
+                         "trajectory":[{"t_s":0,"x_m":slot*100,"y_m":0}]}
+                        for slot,node in enumerate(("a","b"))]}
+        probe=Simulation(scene,library=self.library)
+        try:
+            probe.engine.run(NS//5)
+            due=probe.nodes["a"].next(probe.world.local_us("a",NS//5))
+            nominal=probe.world.world_deadline("a",due)
+        finally:
+            probe.close()
+        scene["noise"]={"bursts":[{"from_s":(nominal-1000000)/NS,
+                                     "until_s":(nominal+2000000)/NS,
+                                     "receivers":["a"],"power_dbm":-60}]}
+        simulation=Simulation(scene,library=self.library)
+        try:
+            summary=simulation.run()
+            cad=[e for e in simulation.events if e["event"]=="cad" and e["node"]=="a"]
+            self.assertTrue(cad[0]["busy"])
+            self.assertFalse(cad[1]["busy"])
+            tx=[e for e in simulation.events if e["event"]=="tx" and e["sender"]=="a"]
+            self.assertGreater(tx[0]["start_ns"],nominal+2000000)
+            self.assertGreaterEqual(tx[0]["start_ns"],cad[1]["t_ns"]+2300000)
+            for event in (e for e in simulation.events if e["event"]=="tx_clock"):
+                self.assertLessEqual(event["start_offset_ns"]+event["declared_error_ns"]+1000000,
+                                     (NS//3-30848000-2000000)//2)
+            all_tx=[e for e in simulation.events if e["event"]=="tx"]
+            for index,left in enumerate(all_tx):
+                for right in all_tx[index+1:]:
+                    if left["sender"]!=right["sender"]:
+                        self.assertFalse(left["start_ns"]<right["end_ns"] and right["start_ns"]<left["end_ns"])
+            cost=next(row for row in summary["airtime"] if row["node"]=="a")
+            self.assertEqual(cost["access_cad_busy"],1)
+            self.assertGreater(cost["access_released"],0)
+            self.assertEqual(summary["contract_failures"],[])
+        finally:
+            simulation.close()
+
+    def test_cad_does_not_see_hidden_transmissions_or_release_expired_or_cancelled_packets(self):
+        hidden=json.loads((ROOT/"tools/simulation/hidden-terminals.json").read_text())
+        for node in hidden["nodes"]:
+            node.update(candidate="v3-cad",listen_one_in=0)
+        simulation=Simulation(hidden,library=self.library)
+        try:
+            simulation.run()
+            cad=[e for e in simulation.events if e["event"]=="cad" and e["node"] in ("a","c")]
+            self.assertTrue(cad)
+            self.assertTrue(all(not event["busy"] for event in cad))
+            self.assertTrue(any(e["event"]=="rx" and not e["accepted"] and "interference" in e["reason"]
+                                and e["receiver"] in ("b","d") for e in simulation.events))
+        finally:
+            simulation.close()
+        cfg={"slot":0,"candidate":"v3-cad","interval_ms":1000,"listen_one_in":0,
+             "gnss":{"nmea_told_lag_ms":0,"nmea_error_ms":100},"phy":vars(Phy())}
+        for outcome in ("expiry","mode","exhausted"):
+            with self.subTest(outcome=outcome):
+                node=NativeNode(self.library,cfg,2,b"k"*16,17)
+                try:
+                    node.pps(1000000)
+                    node.fix(1100000,1792670400000,True,True,471410000,95215000,100,0)
+                    due=node.next(1100000)
+                    action,created,payload=node.access_poll(due)
+                    self.assertEqual((action,created,len(payload)),(1,True,25))
+                    if outcome=="mode":
+                        node.mode(Phy(sf=8),False)
+                    if outcome=="exhausted":
+                        attempt_at=due
+                        for attempt in range(3):
+                            node.cad_result(attempt_at+1024,False)
+                            if attempt<2:
+                                attempt_at=node.next(attempt_at+1024)
+                                self.assertEqual(node.access_poll(attempt_at),(1,False,b""))
+                        result_at=attempt_at+21024
+                    else:
+                        result_at=due+(1024 if outcome=="mode" else 200000)
+                        node.cad_result(result_at,True)
+                    self.assertEqual(node.access_poll(result_at),(0,False,b""))
+                    stats=node.statistics(result_at)
+                    key={"mode":"access_cancelled","expiry":"access_expired","exhausted":"access_exhausted"}[outcome]
+                    self.assertEqual(stats[key],1)
+                    if outcome=="exhausted":
+                        self.assertEqual(stats["access_cad_requests"],3)
+                    self.assertEqual(stats["access_released"],0)
+                    self.assertEqual(stats["access_booked_ms"],31)
+                    self.assertEqual(stats["access_dropped_booked_ms"],31)
+                finally:
+                    node.close()
 
     def test_cli_pairs_worlds_and_preserves_reproducible_evidence(self):
         with tempfile.TemporaryDirectory() as temporary:

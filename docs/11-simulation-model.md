@@ -15,10 +15,17 @@ unless explicitly described as existing.
 **Implementation progress:** [`tools/simulate.py`](../tools/simulate.py) now composes a standard-library
 Python DES with a small ABI around the actual C node/codec. Implemented parts include causal event
 phases/delta cycles, world and clock models, directed/power channels, local radio state, interval
-reception, time-weighted evaluation, a research C forwarding adapter and offline replay. See the
+reception, exact time-weighted age/XY-error evaluation, research C forwarding and local-CAD
+policies, seeded local/global burst processes, named radio-model sensitivity runs and offline replay. See the
 [implementation notes](../tools/simulator/README.md) for exact supported behaviour and commands.
 The complete target below is not yet achieved: calibrated RF/terrain, actual alternative upstream
 firmware adapters and phone integration remain distinct work.
+
+The current executable catalogue includes dense and neighbouring groups, a chain, a changing
+bridge, a fork, coordinate/time outages, hidden terminals, local burst interference and sequential
+contacts without a simultaneous path. Storage-order and reversed same-time-event probes compare
+normalized transmissions/applied records. This is implementation evidence for these cases, not
+calibration or proof that the entire design target is complete.
 
 ## Purpose and completion
 

@@ -3,7 +3,6 @@ from collections import Counter, defaultdict, deque
 from dataclasses import asdict
 import hashlib
 import json
-import math
 
 from .kernel import Engine, WORLD, SENSOR, OBSERVE, DECIDE, ACQUIRE
 from .metrics import Evaluator, contact_reference
@@ -47,7 +46,10 @@ class Simulation:
         self.members = {group: {cfg["slot"]: node for node, cfg in self.world.nodes.items() if cfg["group"] == group}
                         for group in set(groups.values())}
         self.evaluator = Evaluator(groups, self.world.duration_ns, self.world.warmup_ns,
-                                   self.world.position, utc0_ns=self.world.utc0_ms * 1_000_000)
+                                   self.world.position, utc0_ns=self.world.utc0_ms * 1_000_000,
+                                   truth_breakpoints=lambda author, begin, end:
+                                       [round(p["t_s"] * NS) for p in self.world.nodes[author]["trajectory"]
+                                        if begin < round(p["t_s"] * NS) < end])
         radio_config = self.world.config.get("radio", {}) | {"seed": environment_seed}
         self.radio = RadioNetwork(self.engine, self.world, self._observe, self._trace, radio_config)
         self.radio.tx_started = self._rf_started
@@ -78,7 +80,9 @@ class Simulation:
         cfg = self.world.nodes[node]
         key = keyed(self.layout_seed, "group-key", cfg["group"])[:16]
         seed = int.from_bytes(keyed(self.protocol_seed, "node", node, self.boots[node])[:4], "big") or 1
-        self.nodes[node] = NativeNode(self.library, cfg, len(self.members[cfg["group"]]), key, seed)
+        preparation_us = (self.radio.config["tx_prepare_ns"] + 999) // 1000
+        self.nodes[node] = NativeNode(self.library, cfg, len(self.members[cfg["group"]]), key, seed,
+                                      preparation_us=preparation_us)
 
     def _emit(self, event, **values):
         self.events.append({"event": event, "t_ns": self.engine.now_ns, **values})
@@ -108,9 +112,7 @@ class Simulation:
         return f"{group}/{value['slot']}/{value['session']:08x}/{value['counter']}"
 
     def _position(self, value):
-        lat, lon = value["lat_e7"] / 1e7, value["lon_e7"] / 1e7
-        return ((lon - 9.5215) * 111320 * math.cos(math.radians(47.1410)),
-                (lat - 47.1410) * 111320, 0.0)
+        return self.world.metric(value["lat_e7"] / 1e7, value["lon_e7"] / 1e7)
 
     def _register(self, node, payload):
         cfg = self.world.nodes[node]
@@ -154,11 +156,26 @@ class Simulation:
             return
         self.wake_handles.pop(node, None)
         native = self.nodes[node]
-        payload = native.poll(self.world.local_us(node, self.engine.now_ns))
-        if payload:
-            self._register(node, payload)
-            self.commanded_slot[node] = native.target_utc_us() * 1000
-            self.radio.transmit(node, payload)
+        local = self.world.local_us(node, self.engine.now_ns)
+        if native.cad_enabled:
+            action, created, payload = native.access_poll(local)
+            if created:
+                self._register(node, payload)
+                self.commanded_slot[node] = native.target_utc_us() * 1000
+            if action == 1:
+                self._emit("access_cad_requested", node=node)
+                if not self.radio.cad(node):
+                    native.cad_result(local, None)
+                    self._emit("access_cad_refused", node=node)
+            elif action == 2:
+                self._emit("access_packet_released", node=node, bytes=len(payload))
+                self.radio.transmit(node, payload)
+        else:
+            payload = native.poll(local)
+            if payload:
+                self._register(node, payload)
+                self.commanded_slot[node] = native.target_utc_us() * 1000
+                self.radio.transmit(node, payload)
         self._schedule_wake(node)
 
     def _rf_started(self, node, signal):
@@ -200,9 +217,7 @@ class Simulation:
     def _fix(self, node, reading, boot):
         if self.boots[node] != boot:
             return
-        x, y, _ = reading["position"]
-        lat = round((47.1410 + y / 111320) * 1e7)
-        lon = round((9.5215 + x / (111320 * math.cos(math.radians(47.1410)))) * 1e7)
+        lat, lon = (round(value * 1e7) for value in self.world.geographic(reading["position"]))
         self.nodes[node].fix(self.world.local_us(node, self.engine.now_ns), int(reading["utc_ms"]),
                              reading["valid"], reading["time_valid"], lat, lon,
                              reading["speed_kmh10"], reading["course_deg10"])
@@ -265,6 +280,8 @@ class Simulation:
                            position=position, state=state, display_fix_ns=value["fix_utc_ms"] * 1_000_000 or None)
         elif observation.kind == "TX_DONE":
             self.nodes[node].tx_done(self.world.local_us(node, observation.at_ns))
+        elif observation.kind == "CAD_DONE" and self.nodes[node].cad_enabled:
+            self.nodes[node].cad_result(local, observation.success)
         elif observation.kind == "MODE_APPLIED":
             if observation.success:
                 self.nodes[node].mode(self.radio.radios[node].phy, True)
@@ -335,20 +352,32 @@ class Simulation:
                                          "security_attack_resistance", "phone_map_delivery"],
                 "radio_capabilities": self.radio.capabilities,
                 "radio_parameters": self.radio.config,
+                "access_policy": {"candidates": ["v3-cad", "relay-cad"], "decision_owner": "C host policy",
+                    "max_attempts": 3, "busy_backoff_us": [1000, 20000],
+                    "window": "CAD/backoff/preparation spend the symmetric same-config TDMA guard: "
+                              "RF-start lateness + projected end uncertainty + 1 ms <= "
+                              "(spacing - maximum configured packet airtime - 2 ms) / 2",
+                    "bookkeeping": "the real core books an immutable packet at its nominal slot; "
+                                   "expired/cancelled pending packets are not refunded; released bytes "
+                                   "may still fail or be cancelled by the platform; actual RF is separate",
+                    "scope": "local CAD before the node's own slot, not asynchronous CSMA or Meshtastic"},
                 "candidate_capabilities": {"v3": {"core":"production C node and codec", "states":["normal","help"],
                     "automatic_help_answers":True, "before_first_position":False},
                     "relay":{"core":"research C framing and forwarding around v3", "selection":"least recently forwarded",
                              "cache_expiry":"since acceptance of a new authenticated source packet",
                              "source_authentication":True,"envelope_authentication":False,
                              "wire_relay_peer_identity":False,"states":["normal","help"],
-                             "automatic_help_answers":True,"before_first_position":False}},
+                             "automatic_help_answers":True,"before_first_position":False},
+                    "v3-cad":{"base_candidate":"v3", "access_policy":"access_policy", "framing_unchanged":True},
+                    "relay-cad":{"base_candidate":"relay", "access_policy":"access_policy", "framing_unchanged":True}},
                 "contact_reference": contact_reference(self.events) if contact_diagnostic else
                     {"enabled": False, "reason": "opt in with --reference; unlimited-content diagnostic can be expensive"},
                 "numerical_assumptions": {"world_time_unit": "ns", "native_clock_unit": "us",
                     "displayed_calendar": "piecewise affine between observations",
                     "calendar_quantization_bound_ns": {node:cfg["clock"]["resolution_us"]*1000
                                                        for node,cfg in self.world.nodes.items()},
-                    "geographic_projection": "local tangent approximation at 47.1410 N, 9.5215 E; 111320 m per degree"},
+                    "geographic_projection": {"model": "local tangent approximation; 111320 m per degree",
+                                              "origin": self.world.config["origin"]}},
                 "not_implemented": ["calibrated RF", "DEM propagation", "real phone delivery", "energy model",
                                     "Meshtastic/SDK firmware adapters"]}
 

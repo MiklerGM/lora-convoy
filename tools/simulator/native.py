@@ -56,6 +56,12 @@ class NativeLibrary:
             "sim_node_duty": (C.c_uint32, [C.c_void_p, C.c_int64]),
             "sim_node_unsure": (C.c_uint32, [C.c_void_p]),
             "sim_node_target_utc": (C.c_int64, [C.c_void_p]),
+            "sim_access_enable": (C.c_int, [C.c_void_p, C.c_int64]),
+            "sim_access_next": (C.c_int64, [C.c_void_p, C.c_int64]),
+            "sim_access_poll": (C.c_uint32, [C.c_void_p, C.c_int64, C.c_void_p, C.c_size_t,
+                                            C.POINTER(C.c_size_t)]),
+            "sim_access_result": (None, [C.c_void_p, C.c_int64, C.c_int]),
+            "sim_access_stat": (C.c_uint64, [C.c_void_p, C.c_uint]),
         }
         for name, (result, args) in signatures.items():
             function = getattr(self.lib, name)
@@ -67,9 +73,10 @@ class NativeLibrary:
 
 
 class NativeNode:
-    def __init__(self, library, config, group_size, group_key, seed):
-        if config["candidate"] not in ("v3", "relay"):
+    def __init__(self, library, config, group_size, group_key, seed, preparation_us=0):
+        if config["candidate"] not in ("v3", "relay", "v3-cad", "relay-cad"):
             raise ValueError("unsupported native candidate")
+        self.cad_enabled = config["candidate"].endswith("-cad")
         self.lib = library.lib
         self.config = Config()
         self.config.version = 1
@@ -81,7 +88,7 @@ class NativeNode:
         gnss = config["gnss"]
         self.config.nmea_lag_us = round(gnss["nmea_told_lag_ms"] * 1000)
         self.config.nmea_err_us = round(gnss["nmea_error_ms"] * 1000)
-        self.config.experimental_relay = config["candidate"] == "relay"
+        self.config.experimental_relay = config["candidate"].startswith("relay")
         self.config.relay_records = config.get("relay_records", 2)
         self.config.relay_ttl_us = round(config.get("relay_ttl_s", 30) * 1e6)
         self.config.key[:] = group_key
@@ -89,6 +96,9 @@ class NativeNode:
         self.handle = self.lib.sim_node_create(C.byref(self.config))
         if not self.handle:
             raise ValueError("native node rejected its setup (v3 requires explicit header and CRC)")
+        if self.cad_enabled and not self.lib.sim_access_enable(self.handle, preparation_us):
+            self.close()
+            raise ValueError("invalid declared TX preparation bound for CAD")
 
     def _set_phy(self, phy):
         for name in ("sf", "bandwidth_hz", "coding_rate", "preamble", "frequency_hz", "sync_word",
@@ -122,13 +132,22 @@ class NativeNode:
         return utc.value, error.value
 
     def next(self, local_us):
-        value = self.lib.sim_node_next(self.handle, local_us)
+        function = self.lib.sim_access_next if self.cad_enabled else self.lib.sim_node_next
+        value = function(self.handle, local_us)
         return None if value == (1 << 63) - 1 else value
 
     def poll(self, local_us):
         output = C.create_string_buffer(255)
         size = self.lib.sim_node_poll(self.handle, local_us, output, len(output))
         return output.raw[:size]
+
+    def access_poll(self, local_us):
+        output, length = C.create_string_buffer(255), C.c_size_t()
+        flags = self.lib.sim_access_poll(self.handle, local_us, output, len(output), C.byref(length))
+        return flags & 255, bool(flags & 256), output.raw[:length.value]
+
+    def cad_result(self, local_us, clear):
+        self.lib.sim_access_result(self.handle, local_us, -1 if clear is None else int(clear))
 
     def receive(self, payload, local_us, rssi_dbm=None, snr_db=None, stamp_us=None):
         # The v3 logic does not select records using signal levels. Preserve unknown in the host
@@ -167,5 +186,11 @@ class NativeNode:
         self.lib.sim_node_mode(self.handle, C.byref(self.config), applied)
 
     def statistics(self, local_us):
-        return {"core_duty_used_ms": self.lib.sim_node_duty(self.handle, local_us),
-                "tx_unsure": self.lib.sim_node_unsure(self.handle)}
+        values = {"core_duty_used_ms": self.lib.sim_node_duty(self.handle, local_us),
+                  "tx_unsure": self.lib.sim_node_unsure(self.handle)}
+        if self.cad_enabled:
+            fields = ("access_cad_requests", "access_cad_busy", "access_cad_refused", "access_released",
+                      "access_expired", "access_cancelled", "access_exhausted", "access_booked_ms",
+                      "access_dropped_booked_ms")
+            values.update({name: self.lib.sim_access_stat(self.handle, index) for index, name in enumerate(fields)})
+        return values

@@ -1,0 +1,25 @@
+{
+  "schema": 1,
+  "name": "hidden-terminals",
+  "description": "Two directed pairs in independent groups interfere at the remote receivers, while their transmitters cannot sense one another. Sensing alone must not erase this interference.",
+  "duration_s": 120,
+  "warmup_s": 10,
+  "nodes": [
+    {"id": "a", "group": "left", "slot": 0, "interval_ms": 1000,
+     "trajectory": [{"t_s": 0, "x_m": 0, "y_m": 0}]},
+    {"id": "b", "group": "left", "slot": 1, "interval_ms": 1000,
+     "trajectory": [{"t_s": 0, "x_m": 100, "y_m": 0}]},
+    {"id": "c", "group": "right", "slot": 0, "interval_ms": 1000,
+     "trajectory": [{"t_s": 0, "x_m": 200, "y_m": 0}]},
+    {"id": "d", "group": "right", "slot": 1, "interval_ms": 1000,
+     "trajectory": [{"t_s": 0, "x_m": 100, "y_m": 10}]}
+  ],
+  "links": [
+    {"from": "a", "to": "b", "power_dbm": -90},
+    {"from": "b", "to": "a", "power_dbm": -90},
+    {"from": "c", "to": "d", "power_dbm": -90},
+    {"from": "d", "to": "c", "power_dbm": -90},
+    {"from": "a", "to": "d", "decode": false, "sense": false, "interfere": true, "power_dbm": -85},
+    {"from": "c", "to": "b", "decode": false, "sense": false, "interfere": true, "power_dbm": -85}
+  ]
+}

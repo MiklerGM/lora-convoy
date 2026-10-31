@@ -9,6 +9,9 @@ from fractions import Fraction
 
 from .types import Link, NS, Phy, US
 
+NOISE_PROCESS_LIMIT = 256
+NOISE_TRANSITION_LIMIT = 1_000_000
+
 
 def _keys(value, allowed, where):
     if not isinstance(value, dict):
@@ -90,6 +93,10 @@ class World:
         if duration <= 0 or _ns(duration) <= 0:
             raise ValueError("duration_s must be positive")
         self.duration_ns = _ns(duration)
+        origin = self.config.setdefault("origin", {"lat_deg": 47.1410, "lon_deg": 9.5215})
+        _keys(origin, ("lat_deg", "lon_deg"), "origin")
+        self.origin_lat = _number(origin.get("lat_deg"), "origin.lat_deg", -85, 85)
+        self.origin_lon = _number(origin.get("lon_deg"), "origin.lon_deg", -180, 180)
         warmup = _number(self.config.setdefault("warmup_s", 0), "warmup_s", 0, duration)
         self.warmup_ns = _ns(warmup)
         if self.warmup_ns >= self.duration_ns:
@@ -123,7 +130,7 @@ class World:
             slot = _integer(node.get("slot"), f"{name}.slot", 0, 31)
             groups.setdefault(group, []).append(slot)
             candidate = node.setdefault("candidate", "v3")
-            if candidate not in ("v3", "relay"):
+            if candidate not in ("v3", "relay", "v3-cad", "relay-cad"):
                 raise ValueError(f"{name}: unsupported candidate {candidate}")
             _integer(node.setdefault("interval_ms", 4000), f"{name}.interval_ms", 100, 60000)
             _integer(node.setdefault("duty_permille", 100), f"{name}.duty_permille", 1, 1000)
@@ -215,7 +222,7 @@ class World:
             channel = _link({k: item[k] for k in ("decode", "sense", "interfere", "power_dbm") if k in item}, Link())
             self._links.append((source, target, start, stop, channel))
         noise = self.config.setdefault("noise", {})
-        _keys(noise, ("background_dbm", "bursts"), "noise")
+        _keys(noise, ("background_dbm", "bursts", "processes"), "noise")
         self._background = _number(noise.setdefault("background_dbm", -120), "noise.background_dbm", -300, 100)
         self._bursts = []
         for burst in _list(noise.setdefault("bursts", []), "noise.bursts"):
@@ -224,6 +231,51 @@ class World:
             targets = self._targets(burst.get("receivers", list(self.node_ids)))
             power = _number(burst.get("power_dbm"), "burst.power_dbm", -300, 100)
             self._bursts.append((start, stop, targets, power))
+        processes = _list(noise.setdefault("processes", []), "noise.processes")
+        if len(processes) > NOISE_PROCESS_LIMIT:
+            raise ValueError(f"noise.processes is limited to {NOISE_PROCESS_LIMIT} processes")
+        parsed = []
+        expected_changes = 0
+        for process in processes:
+            _keys(process, ("id", "from_s", "until_s", "mean_on_s", "mean_off_s", "power_dbm", "receivers"), "noise process")
+            ident = _name(process.get("id"), "noise process.id")
+            start, stop = self._interval(process, duration, require=True)
+            mean_on = _number(process.get("mean_on_s"), "noise process.mean_on_s", 1 / NS)
+            mean_off = _number(process.get("mean_off_s"), "noise process.mean_off_s", 1 / NS)
+            power = _number(process.get("power_dbm"), "noise process.power_dbm", -300, 100)
+            targets = self._targets(process.get("receivers", list(self.node_ids)))
+            if not targets:
+                raise ValueError("noise process.receivers must not be empty")
+            expected_changes += 2 * ((stop - start) / NS) / (mean_on + mean_off)
+            parsed.append((ident, start, stop, mean_on, mean_off, targets, power))
+        if len({entry[0] for entry in parsed}) != len(parsed):
+            raise ValueError("noise process ids must be unique")
+        if expected_changes > NOISE_TRANSITION_LIMIT:
+            raise ValueError("expected noise transitions exceed the resource limit")
+        self.noise_process_intervals = {}
+        self._noise_fields = []
+        self._noise_boundaries = set()
+        changes = 0
+        for ident, start, stop, mean_on, mean_off, targets, power in parsed:
+            self._noise_boundaries.update((start, stop))
+            at, on, serial, intervals = start, False, 0, []
+            while at < stop:
+                draw = self._draw(f"noise-process:{ident}", "on" if on else "off", serial)
+                draw = min(max(draw, 2**-64), math.nextafter(1.0, 0.0))
+                wait_s = -math.log1p(-draw) * (mean_on if on else mean_off)
+                end = stop if wait_s >= (stop - at) / NS else min(stop, at + max(1, math.ceil(wait_s * NS)))
+                if on:
+                    intervals.append((at, end))
+                if end == stop:
+                    break
+                changes += 1
+                if changes > NOISE_TRANSITION_LIMIT:
+                    raise ValueError("realized noise transitions exceed the resource limit")
+                self._noise_boundaries.add(end)
+                at, on, serial = end, not on, serial + 1
+            intervals = tuple(intervals)
+            self.noise_process_intervals[ident] = intervals
+            self._noise_fields.append((targets, power, tuple(a for a, _ in intervals), tuple(b for _, b in intervals)))
         self._outages = []
         for outage in _list(self.config.setdefault("outages", []), "outages"):
             _keys(outage, ("node", "kind", "from_s", "until_s"), "outage")
@@ -332,6 +384,15 @@ class World:
 
     def phy(self, node):
         return Phy(**self.nodes[node]["phy"])
+
+    def geographic(self, position):
+        x, y = position[:2]
+        return (self.origin_lat + y / 111320,
+                self.origin_lon + x / (111320 * math.cos(math.radians(self.origin_lat))))
+
+    def metric(self, lat_deg, lon_deg):
+        return ((lon_deg - self.origin_lon) * 111320 * math.cos(math.radians(self.origin_lat)),
+                (lat_deg - self.origin_lat) * 111320, 0.0)
 
     def _segment(self, node, t_ns):
         points = self._paths[node]
@@ -444,11 +505,18 @@ class World:
         self._node(receiver)
         powers = [self._background]
         powers.extend(power for start, stop, targets, power in self._bursts if receiver in targets and start <= t_ns < stop)
+        for targets, power, starts, stops in self._noise_fields:
+            if receiver not in targets:
+                continue
+            index = bisect.bisect_right(starts, t_ns) - 1
+            if index >= 0 and t_ns < stops[index]:
+                powers.append(power)
         maximum = max(powers)
-        return maximum + 10 * math.log10(sum(10 ** ((power - maximum) / 10) for power in powers))
+        return maximum + 10 * math.log10(math.fsum(10 ** ((power - maximum) / 10) for power in powers))
 
     def boundaries(self):
         times = {0, self.duration_ns}
+        times.update(self._noise_boundaries)
         for points in self._paths.values():
             times.update(t for t, _ in points)
         for changes, _, _ in self._clock_profiles.values():

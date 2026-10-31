@@ -128,6 +128,48 @@ class View:
 
 
 @dataclass
+class PositionError:
+    available_ns: int = 0
+    integral_m2_ns: float = 0
+    max_squared_m2: float | None = None
+
+    def add_segment(self, shown, start, end, duration_ns):
+        # The current wire/map view has no measured altitude; compare planar XY only.
+        if any(point is None or len(point) < 2 or not all(math.isfinite(v) for v in point[:2])
+               for point in (shown, start, end)):
+            return
+        a = tuple(p - q for p, q in zip(shown[:2], start[:2]))
+        b = tuple(p - q for p, q in zip(shown[:2], end[:2]))
+        square_a = math.fsum(value * value for value in a)
+        square_b = math.fsum(value * value for value in b)
+        cross = math.fsum(x * y for x, y in zip(a, b))
+        integral = (square_a / 3 + cross / 3 + square_b / 3) * duration_ns
+        if not all(math.isfinite(value) for value in (square_a, square_b, integral)):
+            raise ValueError("position-error integral exceeds finite numeric range")
+        self.available_ns += duration_ns
+        self.integral_m2_ns += integral
+        maximum = max(square_a, square_b)
+        self.max_squared_m2 = maximum if self.max_squared_m2 is None else max(self.max_squared_m2, maximum)
+
+    def extend(self, other):
+        self.available_ns += other.available_ns
+        self.integral_m2_ns += other.integral_m2_ns
+        if other.max_squared_m2 is not None:
+            self.max_squared_m2 = (other.max_squared_m2 if self.max_squared_m2 is None else
+                                   max(self.max_squared_m2, other.max_squared_m2))
+
+    def summary(self, denominator_ns, configured):
+        mean = self.integral_m2_ns / self.available_ns if self.available_ns else None
+        return {"available_ns": self.available_ns, "unavailable_ns": denominator_ns - self.available_ns,
+                "coverage_fraction": self.available_ns / denominator_ns if denominator_ns else None,
+                "mean_squared_m2": mean, "rms_m": math.sqrt(mean) if mean is not None else None,
+                "max_m": math.sqrt(self.max_squared_m2) if self.max_squared_m2 is not None else None,
+                "model": ("exact-piecewise-linear-XY-truth-held-observed-point" if configured else
+                          "unavailable-without-truth-position-and-trajectory-breakpoints"),
+                "quantiles": "not computed"}
+
+
+@dataclass
 class Pair:
     at_ns: int
     view: View | None = None
@@ -139,6 +181,7 @@ class Pair:
     true_age: Distribution = field(default_factory=Distribution)
     displayed_age: Distribution = field(default_factory=Distribution)
     age_error: Distribution = field(default_factory=Distribution)
+    position_error: PositionError = field(default_factory=PositionError)
     seen_records: set = field(default_factory=set)
     seen_fixes: set = field(default_factory=set)
     newest_record_ns: int = -1
@@ -149,12 +192,18 @@ class Pair:
 
 
 class Evaluator:
-    def __init__(self, groups, duration_ns, warmup_ns=0, truth_position=None, emit=None, utc0_ns=0):
+    def __init__(self, groups, duration_ns, warmup_ns=0, truth_position=None, emit=None, utc0_ns=0,
+                 truth_breakpoints=None):
         if not 0 <= warmup_ns < duration_ns:
             raise ValueError("warmup must be shorter than the positive duration")
         self.groups = dict(groups)
         self.duration_ns, self.warmup_ns, self.utc0_ns = duration_ns, warmup_ns, utc0_ns
         self.truth_position, self.emit = truth_position, emit
+        for callback in (truth_position, truth_breakpoints):
+            if callback is not None and not callable(callback):
+                raise ValueError("truth position and trajectory breakpoints must be callable")
+        self.truth_breakpoints = truth_breakpoints
+        self.position_error_configured = truth_position is not None and truth_breakpoints is not None
         self.now = 0
         self.fixes, self.records, self.states = {}, {}, {}
         self.current_states = {}
@@ -195,6 +244,14 @@ class Evaluator:
         duration = until - begin
         view = p.view
         p.view_ns += duration
+        if self.position_error_configured and view.position is not None:
+            knots = list(self.truth_breakpoints(author, begin, until))
+            if any(type(at) is not int or not begin < at < until for at in knots):
+                raise ValueError("trajectory breakpoints must be integer nanoseconds strictly inside the interval")
+            boundaries = [begin, *sorted(set(knots)), until]
+            for start, end in zip(boundaries, boundaries[1:]):
+                p.position_error.add_segment(view.position, self.truth_position(author, start),
+                                             self.truth_position(author, end), end - start)
         measurement = self.fixes.get(view.fix_id)
         if measurement is not None and measurement["author"] == author:
             p.true_age.add(begin - measurement["measured_ns"], 1, duration)
@@ -381,6 +438,7 @@ class Evaluator:
                    "state_correct_unproven_ns": p.state_correct_unproven_ns,
                    "true_age": p.true_age.summary(window), "displayed_age": p.displayed_age.summary(window),
                    "age_error": p.age_error.summary(window),
+                   "position_error": p.position_error.summary(window, self.position_error_configured),
                    "negative_display_age_ns": p.displayed_age.duration_below(-1e-9),
                    "record_rollbacks": p.record_rollbacks, "fix_rollbacks": p.fix_rollbacks,
                    "provenance_mismatches": p.provenance_mismatches,
@@ -402,6 +460,10 @@ class Evaluator:
                     values.extend(getattr(p, name))
                 result[name] = values.summary(denominator)
             result["coverage_fraction"] = result["true_age"]["coverage_fraction"]
+            positions = PositionError()
+            for p, _ in items:
+                positions.extend(p.position_error)
+            result["position_error"] = positions.summary(denominator, self.position_error_configured)
             return result
 
         clocks = []
@@ -416,7 +478,9 @@ class Evaluator:
                        "states": self._state_summary(),
                        "unattributed_applications": self.unattributed_applications,
                        "outside_group_applications": self.outside_group_applications,
-                       "not_measured": ["position error integral", "energy consumption", "phone/map delivery"],
+                       "not_measured": (["position error integral (truth position and trajectory breakpoints required)"]
+                                        if not self.position_error_configured else []) +
+                                       ["position error quantiles", "vertical position error", "energy consumption", "phone/map delivery"],
                        "semantics": "CDF masses are durations; normalize by known_ns for conditional ages or observation_ns for coverage-and-age. Boundary gaps are censored. State correctness does not prove delivery of a same-valued event."}
         return self.result
 
