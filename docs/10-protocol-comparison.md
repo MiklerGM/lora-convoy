@@ -4,6 +4,9 @@
 The current protocol is a draft with host and emulator checks, not a field-proven design. This
 document neither fixes v4's bytes nor chooses a radio profile. [01](01-goals.md) holds the goals,
 [09](09-protocol-next.md) the next-format decisions, and this document the comparison contract.
+The full simulator target, DES/channel contracts, validation and calibration stages are in
+[11](11-simulation-model.md). Its planned capabilities must not be confused with the runnable
+baseline described here.
 
 ## Capability register
 

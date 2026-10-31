@@ -33,6 +33,7 @@ protocol, with OsmAnd as the map.
 | 08 | [Regions](docs/08-regions.md) | Which bands, power and access rules apply in which country |
 | 09 | [The protocol's next version](docs/09-protocol-next.md) | What an outside review of v3 found, and the order to settle it in |
 | 10 | [Capabilities and protocol comparison](docs/10-protocol-comparison.md) | Wanted behaviour, common scenarios, measurements and the runnable draft baseline |
+| 11 | [Simulation model](docs/11-simulation-model.md) | The target DES, world/radio models, candidate boundaries, validation and calibration |
 
 ## Building it
 

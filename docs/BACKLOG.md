@@ -32,6 +32,10 @@ The capability register, common scenarios and evidence rules are in
 [10](10-protocol-comparison.md). Its topology and sensitivity suites run current v3 with ideal and
 non-ideal environments; measurements on boards will calibrate those assumptions. SDK-inspired
 designs and scoped Meshtastic patches remain candidates, not implemented or field-tested results.
+The full simulator design and staged readiness criteria are in [11](11-simulation-model.md):
+independent truth and observations, DES/radio lifecycle, movement/channel models, candidate
+comparisons, calibration and replay. A first successful relay comparison is one milestone;
+it does not complete the model or validate its RF assumptions.
 
 ### T-phy: radio modes, sync word, preamble
 
