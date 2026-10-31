@@ -1,0 +1,3 @@
+# Independent per-packet/per-receiver loss. This is not a field measurement.
+environment random-loss
+loss_permille 100

@@ -1,0 +1,4 @@
+# No position or GNSS time corrections; the boards must use their own clocks.
+environment gnss-holdover
+drift_ppm 40
+gnss_outage 30 90 all

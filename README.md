@@ -32,6 +32,7 @@ protocol, with OsmAnd as the map.
 | 07 | [Experiments](docs/07-experiments.md) | What to measure, and the results |
 | 08 | [Regions](docs/08-regions.md) | Which bands, power and access rules apply in which country |
 | 09 | [The protocol's next version](docs/09-protocol-next.md) | What an outside review of v3 found, and the order to settle it in |
+| 10 | [Capabilities and protocol comparison](docs/10-protocol-comparison.md) | Wanted behaviour, common scenarios, measurements and the runnable draft baseline |
 
 ## Building it
 
@@ -61,6 +62,7 @@ All standard-library Python, but for the bench's Bluetooth boards (Bumble, in a 
 | `tools/airtime.py` | every time-on-air, duty-cycle and capacity figure in the documents | `python3 tools/airtime.py` prints the tables; `python3 tools/airtime.py 56 7 250` prices one packet |
 | `tools/route_size.py` | route sizes: a GPX in, simplified binary sizes and LoRa packets out | `python3 -I tools/route_size.py route.gpx --tolerances 2,5,100` |
 | `tools/cross_check.py` | re-derives airtime independently, from Semtech's driver, and checks the other two tools against it | `python3 -I tools/cross_check.py` |
+| `tools/compare.py` | runs controlled topologies and timing/loss environments; reports missing data, freshness and air use | `python3 tools/compare.py --output /tmp/convoy-comparison`; `--suite sensitivity` varies the environment |
 
 ## Conventions
 

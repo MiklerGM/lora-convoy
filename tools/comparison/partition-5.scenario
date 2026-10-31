@@ -1,0 +1,20 @@
+name partition-5
+nodes 5
+interval_ms 4000
+duration_s 120
+warmup_s 20
+link 0 1
+link 1 0
+link 1 2
+link 2 1
+link 2 3
+link 3 2
+link 3 4
+link 4 3
+cut 60 90 1 2
+cut 60 90 2 1
+help 30 0 1
+help 50 0 0
+# Changes behind the cut must not be turned into a fresh old state after reunion.
+help 70 0 1
+help 80 0 0

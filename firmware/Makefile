@@ -18,9 +18,13 @@ test: $(HOST)/test_core $(HOST)/test_core32 $(HOST)/test_sx1262 $(HOST)/sim
 	@$(HOST)/test_core32 >/dev/null
 	@$(HOST)/test_sx1262
 	@$(HOST)/sim
+	@python3 ../tools/test_compare.py
 
 sim: $(HOST)/sim
 	@$(HOST)/sim $(ARGS)
+
+compare: $(HOST)/sim
+	@python3 ../tools/compare.py $(ARGS)
 
 $(HOST)/test_core: test/test_core.c $(CORE) src/*.h | $(HOST)
 	@$(CC) $(CFLAGS) -o $@ test/test_core.c $(CORE)
@@ -54,4 +58,4 @@ nrf:
 	    -d $(CURDIR)/zephyr/build $(CURDIR)/zephyr
 	@ls -l zephyr/build/zephyr/zephyr.uf2
 
-.PHONY: test sim esp nrf
+.PHONY: test sim compare esp nrf

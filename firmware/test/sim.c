@@ -17,9 +17,11 @@
 #define _DEFAULT_SOURCE
 #include <arpa/inet.h>
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
+#include <limits.h>
 #include <netinet/in.h>
 #include <poll.h>
 #include <stdio.h>
@@ -120,6 +122,13 @@ typedef struct {
     /* told of every packet a node takes, for a phone connected to it */
     void (*on_taken)(void *ctx, int node, unsigned slot, int64_t t);
     void *ctx;
+    /* The comparison runner controls only the environment and observes real node-core events. */
+    bool (*link_at)(void *ctx, int from, int to, int64_t t);
+    bool (*packet_lost)(void *ctx, const transmission_t *x, int receiver);
+    bool (*external_busy)(void *ctx, const transmission_t *x);
+    unsigned (*gnss_mask)(void *ctx, int node, int64_t t); /* bit 0: no GNSS; bit 1: no position */
+    void (*on_tx)(void *ctx, const transmission_t *x);
+    void (*on_rx)(void *ctx, const transmission_t *x, int receiver, bool accepted, const char *reason);
 } world_t;
 
 /* Independent seeds per node. Successive outputs of one xorshift would give each node the same
@@ -242,7 +251,8 @@ static void world_step(world_t *w, int64_t t) {
     const clocks_t *c = &w->sc.clocks;
     for (int i = 0; i < w->sc.nodes; i++) {
         /* the GNSS: on the second a PPS edge, where the board has the line, and later the fix */
-        const bool dark = i >= w->sc.nodes - c->dark && t >= c->dark_from_us && t < c->dark_from_us + c->dark_us;
+        const bool dark = (w->gnss_mask && (w->gnss_mask(w->ctx, i, t) & 1)) ||
+                          (i >= w->sc.nodes - c->dark && t >= c->dark_from_us && t < c->dark_from_us + c->dark_us);
         if (t % SEC == 0 && !dark) {
             if (i >= c->nmea_only) node_on_pps(&w->node[i], local_us(w, i, t));
             const int64_t jitter =
@@ -258,6 +268,7 @@ static void world_step(world_t *w, int64_t t) {
         }
         if (w->clock[i].fix_pending && t >= w->clock[i].fix_due) {
             gnss_fix_t f = where(w, i, w->clock[i].fix_second);
+            if (w->gnss_mask && (w->gnss_mask(w->ctx, i, w->clock[i].fix_second) & 2)) f.valid = false;
             node_on_fix(&w->node[i], &f, local_us(w, i, w->clock[i].fix_due));
             w->clock[i].fix_pending = false;
         }
@@ -275,6 +286,7 @@ static void world_step(world_t *w, int64_t t) {
             w->sent++;
             w->sent_by[i]++;
             w->expected += w->size_of[i] - 1;
+            if (w->on_tx) w->on_tx(w->ctx, x);
         }
     }
     /* deliver what ended now */
@@ -293,19 +305,45 @@ static void world_step(world_t *w, int64_t t) {
         w->collisions += collided;
         w->within += within;
         for (int i = 0; i < w->sc.nodes; i++) {
-            if (i == x->from || !reaches(w, x->from, i)) continue;
+            if (i == x->from) continue;
+            const bool reachable = w->link_at ? (w->link_at(w->ctx, x->from, i, x->start) &&
+                                                 w->link_at(w->ctx, x->from, i, x->end - 1))
+                                             : reaches(w, x->from, i);
+            if (!reachable) {
+                if (w->on_rx) w->on_rx(w->ctx, x, i, false, "unreachable");
+                continue;
+            }
             /* half duplex: a receiver sending during any of it hears none of it; and one that also
              * hears another packet over it hears neither */
             bool lost = false;
             for (int j = 0; j < w->in_air && !lost; j++) {
                 const transmission_t *o = &w->air[j];
                 if (j == k || o->start >= x->end || o->end <= x->start) continue;
-                lost = o->from == i || w->sc.range_m <= 0 ||
-                       distance_m(w, o->from, i) < 1.5 * w->sc.range_m;
+                const int64_t overlap = o->start > x->start ? o->start : x->start;
+                const int64_t overlap_end = (o->end < x->end ? o->end : x->end) - 1;
+                const bool other_heard = w->link_at ? (w->link_at(w->ctx, o->from, i, overlap) ||
+                                                       w->link_at(w->ctx, o->from, i, overlap_end))
+                                                   : (w->sc.range_m <= 0 ||
+                                                      distance_m(w, o->from, i) < 1.5 * w->sc.range_m);
+                lost = o->from == i || other_heard;
             }
-            if (lost || (double)(rnd(&w->rng) % 1000000) / 1e6 < w->sc.loss) continue;
+            if (lost) {
+                if (w->on_rx) w->on_rx(w->ctx, x, i, false, "interference");
+                continue;
+            }
+            if (w->external_busy && w->external_busy(w->ctx, x)) {
+                if (w->on_rx) w->on_rx(w->ctx, x, i, false, "external_interference");
+                continue;
+            }
+            const bool random_loss = w->packet_lost ? w->packet_lost(w->ctx, x, i)
+                                                    : (double)(rnd(&w->rng) % 1000000) / 1e6 < w->sc.loss;
+            if (random_loss) {
+                if (w->on_rx) w->on_rx(w->ctx, x, i, false, "loss");
+                continue;
+            }
             /* at its end, as a radio's RxDone comes, not at the step that found it ended */
-            if (node_on_packet(&w->node[i], x->bytes, x->len, -90, 20, local_us(w, i, x->end))) {
+            const bool accepted = node_on_packet(&w->node[i], x->bytes, x->len, -90, 20, local_us(w, i, x->end));
+            if (accepted) {
                 node_on_rx_done(&w->node[i], local_us(w, i, x->end));
                 w->taken++;
                 w->taken_from[x->from]++;
@@ -314,6 +352,7 @@ static void world_step(world_t *w, int64_t t) {
                 w->heard_at[i][x->from] = w->any_at[i] = t;
                 if (w->on_taken) w->on_taken(w->ctx, i, x->bytes[2], local_us(w, i, t));
             }
+            if (w->on_rx) w->on_rx(w->ctx, x, i, accepted, accepted ? "accepted" : "rejected");
         }
     }
     for (int k = 0; k < w->in_air;) {
@@ -385,6 +424,581 @@ static outcome_t run(const scenario_t *sc, bool print) {
         if (share < out.worst) out.worst = share;
     }
     return out;
+}
+
+/* ---- reproducible comparisons, using the same node core ------------------------------ */
+
+#define COMPARE_EVENTS 128
+
+typedef struct {
+    int64_t at_us;
+    int source;
+    bool help, delivered[MAX_NODES];
+} compare_state_t;
+
+typedef struct {
+    int64_t from_us, until_us;
+    int from, to;
+} compare_cut_t;
+
+typedef struct {
+    int64_t from_us, until_us;
+    int node;                     /* -1: all nodes */
+    unsigned mask;
+} compare_outage_t;
+
+typedef struct {
+    char name[48];
+    clocks_t clocks;
+    int loss_permille;
+    int64_t interference_period_us, interference_busy_us, interference_phase_us;
+    compare_outage_t outages[COMPARE_EVENTS];
+    int n_outages;
+} compare_environment_t;
+
+typedef struct {
+    char name[48];
+    int nodes, interval_ms, duration_s, warmup_s, loss_permille;
+    bool links[MAX_NODES][MAX_NODES];
+    compare_state_t states[COMPARE_EVENTS];
+    compare_cut_t cuts[COMPARE_EVENTS];
+    int n_states, n_cuts;
+} compare_config_t;
+
+typedef struct {
+    compare_config_t cfg;
+    compare_environment_t environment;
+    world_t *world;
+    uint32_t seed;
+    double *ages;
+    size_t n_ages, age_capacity;
+    uint64_t samples, unseen, clock_unknown, path_unavailable;
+    int64_t last_rx[MAX_NODES][MAX_NODES], longest_gap_us;
+    int64_t last_update[MAX_NODES][MAX_NODES], last_fix[MAX_NODES][MAX_NODES];
+    uint64_t air_us[MAX_NODES];
+    double state_delays[COMPARE_EVENTS * MAX_NODES];
+    int n_state_delays, rx_accepted, contract_failures;
+    uint64_t rx_attempts, rx_unreachable, rx_interference, rx_external_interference, rx_loss, rx_rejected;
+    int64_t clock_error_max_us;
+    uint64_t clock_bound_exceeded;
+} comparison_t;
+
+static bool compare_integer(const char *s, int64_t low, int64_t high, int64_t *value) {
+    char *end;
+    errno = 0;
+    const long long n = strtoll(s, &end, 10);
+    if (!s[0] || *end || errno || n < low || n > high) return false;
+    *value = n;
+    return true;
+}
+
+static bool compare_slug(const char *s, size_t capacity) {
+    if (!s[0] || strlen(s) >= capacity) return false;
+    for (; *s; s++) if (!isalnum((unsigned char)*s) && *s != '-' && *s != '_') return false;
+    return true;
+}
+
+static bool compare_environment_read(const char *path, comparison_t *c) {
+    compare_environment_t *e = &c->environment;
+    *e = (compare_environment_t){.name = "ideal", .clocks = GOOD, .loss_permille = c->cfg.loss_permille};
+    if (!path) return true;
+    FILE *f = fopen(path, "r");
+    if (!f) { perror(path); return false; }
+    unsigned seen = 0;
+    int line_no = 0;
+    const char *error = "invalid environment directive, token count, duplicate or integer";
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        line_no++;
+        if (!strchr(line, '\n') && !feof(f)) { error = "line too long"; goto bad; }
+        char *comment = strchr(line, '#');
+        if (comment) *comment = 0;
+        char *tokens[5];
+        int count = 0;
+        for (char *p = strtok(line, " \t\r\n"); p; p = strtok(NULL, " \t\r\n")) {
+            if (count == 5) goto bad;
+            tokens[count++] = p;
+        }
+        if (!count) continue;
+        if (!strcmp(tokens[0], "environment")) {
+            if (count != 2 || seen & 1 || !compare_slug(tokens[1], sizeof(e->name))) goto bad;
+            strcpy(e->name, tokens[1]);
+            seen |= 1;
+            continue;
+        }
+        int64_t a, b, target;
+        if (!strcmp(tokens[0], "gnss_outage") || !strcmp(tokens[0], "fix_outage")) {
+            if (count != 4 || e->n_outages == COMPARE_EVENTS ||
+                !compare_integer(tokens[1], 0, c->cfg.duration_s - 1, &a) ||
+                !compare_integer(tokens[2], 1, c->cfg.duration_s, &b) || a >= b) goto bad;
+            target = -1;
+            if (strcmp(tokens[3], "all") && !compare_integer(tokens[3], 0, c->cfg.nodes - 1, &target)) goto bad;
+            e->outages[e->n_outages++] = (compare_outage_t){a * SEC, b * SEC, (int)target,
+                                                         !strcmp(tokens[0], "gnss_outage") ? 1u : 2u};
+            continue;
+        }
+        if (!strcmp(tokens[0], "interference")) {
+            if (count != 3 || seen & 2 || !compare_integer(tokens[1], 1, 60000, &a) ||
+                !compare_integer(tokens[2], 0, a, &b)) goto bad;
+            e->interference_period_us = a * 1000;
+            e->interference_busy_us = b * 1000;
+            seen |= 2;
+            continue;
+        }
+        const char *names[] = {"loss_permille", "drift_ppm", "nmea_only", "nmea_lag_us", "nmea_jitter_us",
+                               "nmea_told_lag_us", "nmea_error_us"};
+        const int highs[] = {1000, 1000, c->cfg.nodes, 999999, 999999, 999999, 999999};
+        int field;
+        for (field = 0; field < 7 && strcmp(tokens[0], names[field]); field++);
+        if (field == 7 || count != 2 || seen & (4u << field) ||
+            !compare_integer(tokens[1], 0, highs[field], &a)) goto bad;
+        seen |= 4u << field;
+        switch (field) {
+            case 0: e->loss_permille = (int)a; break;
+            case 1: e->clocks.drift_ppm = (double)a; break;
+            case 2: e->clocks.nmea_only = (int)a; break;
+            case 3: e->clocks.lag_us = a; break;
+            case 4: e->clocks.jitter_us = a; break;
+            case 5: e->clocks.told_lag_us = a; break;
+            case 6: e->clocks.told_err_us = a; break;
+        }
+    }
+    if (ferror(f)) { error = "read failed"; goto bad; }
+    if (!(seen & 1)) { error = "environment name is required"; goto bad; }
+    if (e->clocks.lag_us < e->clocks.jitter_us || e->clocks.lag_us + e->clocks.jitter_us >= SEC) {
+        error = "NMEA lag +/- jitter must stay within one second"; goto bad;
+    }
+    if (e->interference_period_us) {
+        e->interference_phase_us = splitmix(c->seed ^ 0x16c3a92bu) % (uint64_t)e->interference_period_us;
+    }
+    fclose(f);
+    return true;
+bad:
+    fprintf(stderr, "%s:%d: %s\n", path, line_no, error);
+    fclose(f);
+    return false;
+}
+
+static unsigned compare_gnss_mask(void *ctx, int node, int64_t t) {
+    const comparison_t *c = ctx;
+    unsigned mask = 0;
+    for (int i = 0; i < c->environment.n_outages; i++) {
+        const compare_outage_t *x = &c->environment.outages[i];
+        if ((x->node == -1 || x->node == node) && t >= x->from_us && t < x->until_us) mask |= x->mask;
+    }
+    return mask;
+}
+
+static bool compare_external_busy(void *ctx, const transmission_t *x) {
+    const compare_environment_t *e = &((comparison_t *)ctx)->environment;
+    if (!e->interference_busy_us) return false;
+    const int64_t period = e->interference_period_us;
+    const int64_t phase = (x->start - e->interference_phase_us + period) % period;
+    return phase < e->interference_busy_us || x->end - x->start > period - phase;
+}
+
+static int compare_state_order(const void *a, const void *b) {
+    const compare_state_t *x = a, *y = b;
+    if (x->at_us != y->at_us) return (x->at_us > y->at_us) - (x->at_us < y->at_us);
+    return x->source - y->source;
+}
+
+static bool compare_read(const char *path, compare_config_t *c) {
+    FILE *f = fopen(path, "r");
+    if (!f) { perror(path); return false; }
+    unsigned seen = 0;
+    int line_no = 0, largest_link_node = -1;
+    const char *error = "invalid directive, token count or integer";
+    char line[512];
+    while (fgets(line, sizeof(line), f)) {
+        line_no++;
+        if (!strchr(line, '\n') && !feof(f)) { error = "line too long"; goto bad; }
+        char *comment = strchr(line, '#');
+        if (comment) *comment = 0;
+        char *tokens[7];
+        int count = 0;
+        for (char *p = strtok(line, " \t\r\n"); p; p = strtok(NULL, " \t\r\n")) {
+            if (count == 7) goto bad;
+            tokens[count++] = p;
+        }
+        if (!count) continue;
+        if (!strcmp(tokens[0], "name")) {
+            if (count != 2 || seen & 1 || strlen(tokens[1]) >= sizeof(c->name)) goto bad;
+            for (const char *p = tokens[1]; *p; p++) {
+                if (!isalnum((unsigned char)*p) && *p != '-' && *p != '_') goto bad;
+            }
+            strcpy(c->name, tokens[1]);
+            seen |= 1;
+            continue;
+        }
+        struct { const char *name; int *field; int low, high; unsigned bit; } fields[] = {
+            {"nodes", &c->nodes, 2, MAX_NODES, 2},
+            {"interval_ms", &c->interval_ms, 100, 60000, 4},
+            {"duration_s", &c->duration_s, 1, 3600, 8},
+            {"warmup_s", &c->warmup_s, 0, 3599, 16},
+            {"loss_permille", &c->loss_permille, 0, 1000, 32},
+        };
+        bool scalar = false;
+        for (size_t i = 0; i < sizeof(fields) / sizeof(fields[0]); i++) {
+            if (strcmp(tokens[0], fields[i].name)) continue;
+            int64_t value;
+            if (count != 2 || seen & fields[i].bit ||
+                !compare_integer(tokens[1], fields[i].low, fields[i].high, &value)) goto bad;
+            *fields[i].field = (int)value;
+            seen |= fields[i].bit;
+            scalar = true;
+            break;
+        }
+        if (scalar) continue;
+        int64_t a, b, d, e;
+        if (!strcmp(tokens[0], "link") || !strcmp(tokens[0], "clique")) {
+            if (count != 3 || !compare_integer(tokens[1], 0, MAX_NODES - 1, &a) ||
+                !compare_integer(tokens[2], 0, MAX_NODES - 1, &b)) goto bad;
+            if (a > largest_link_node) largest_link_node = (int)a;
+            if (b > largest_link_node) largest_link_node = (int)b;
+            if (!strcmp(tokens[0], "link")) {
+                if (a == b) goto bad;
+                c->links[a][b] = true;
+            } else {
+                if (a > b) goto bad;
+                for (int i = (int)a; i <= b; i++)
+                    for (int j = (int)a; j <= b; j++) if (i != j) c->links[i][j] = true;
+            }
+        } else if (!strcmp(tokens[0], "cut")) {
+            if (count != 5 || c->n_cuts == COMPARE_EVENTS ||
+                !compare_integer(tokens[1], 0, 3599, &a) || !compare_integer(tokens[2], 1, 3600, &b) ||
+                !compare_integer(tokens[3], 0, MAX_NODES - 1, &d) ||
+                !compare_integer(tokens[4], 0, MAX_NODES - 1, &e) || a >= b || d == e) goto bad;
+            c->cuts[c->n_cuts++] = (compare_cut_t){a * SEC, b * SEC, (int)d, (int)e};
+        } else if (!strcmp(tokens[0], "help")) {
+            if (count != 4 || c->n_states == COMPARE_EVENTS ||
+                !compare_integer(tokens[1], 0, 3599, &a) ||
+                !compare_integer(tokens[2], 0, MAX_NODES - 1, &b) ||
+                !compare_integer(tokens[3], 0, 1, &d)) goto bad;
+            c->states[c->n_states++] = (compare_state_t){.at_us = a * SEC, .source = (int)b, .help = d != 0};
+        } else goto bad;
+    }
+    if (ferror(f)) { error = "read failed"; goto bad; }
+    if ((seen & 31) != 31 || c->warmup_s >= c->duration_s) {
+        error = "required settings missing or warmup is not shorter than duration"; goto bad;
+    }
+    if (largest_link_node >= c->nodes) { error = "link outside the roster"; goto bad; }
+    for (int i = 0; i < MAX_NODES; i++) {
+        for (int j = 0; j < MAX_NODES; j++) {
+            if (c->links[i][j] && (i >= c->nodes || j >= c->nodes)) {
+                error = "link outside the roster"; goto bad;
+            }
+        }
+    }
+    for (int i = 0; i < c->n_cuts; i++) {
+        const compare_cut_t *x = &c->cuts[i];
+        if (x->from >= c->nodes || x->to >= c->nodes || x->until_us > c->duration_s * SEC ||
+            !c->links[x->from][x->to]) {
+            error = "cut outside the roster, duration or an existing link"; goto bad;
+        }
+    }
+    qsort(c->states, (size_t)c->n_states, sizeof(c->states[0]), compare_state_order);
+    bool state[MAX_NODES] = {false};
+    int64_t last[MAX_NODES];
+    for (int i = 0; i < MAX_NODES; i++) last[i] = -1;
+    for (int i = 0; i < c->n_states; i++) {
+        const compare_state_t *x = &c->states[i];
+        if (x->source >= c->nodes || x->at_us >= c->duration_s * SEC ||
+            x->at_us == last[x->source] || x->help == state[x->source]) {
+            error = "help must change a roster member's state at a distinct time within the run"; goto bad;
+        }
+        state[x->source] = x->help;
+        last[x->source] = x->at_us;
+    }
+    fclose(f);
+    return true;
+bad:
+    fprintf(stderr, "%s:%d: %s\n", path, line_no, error);
+    fclose(f);
+    return false;
+}
+
+static bool compare_link(void *ctx, int from, int to, int64_t t) {
+    const comparison_t *c = ctx;
+    if (!c->cfg.links[from][to]) return false;
+    for (int i = 0; i < c->cfg.n_cuts; i++) {
+        const compare_cut_t *x = &c->cfg.cuts[i];
+        if (x->from == from && x->to == to && t >= x->from_us && t < x->until_us) return false;
+    }
+    return true;
+}
+
+static bool compare_loss(void *ctx, const transmission_t *x, int receiver) {
+    const comparison_t *c = ctx;
+    /* A draw belongs to a time and directed link, not to a candidate's number of RNG calls. */
+    const uint32_t draw = splitmix(c->seed ^ splitmix((uint32_t)x->start) ^
+                                  splitmix((uint32_t)((uint64_t)x->start >> 32)) ^
+                                  splitmix((uint32_t)(x->from * MAX_NODES + receiver + 1)));
+    return draw % 1000000u < (uint32_t)c->environment.loss_permille * 1000u;
+}
+
+static void compare_failure(comparison_t *c, const char *what, int receiver, int source, int64_t t) {
+    c->contract_failures++;
+    printf("{\"event\":\"contract_failure\",\"check\":\"%s\",\"t_us\":%lld,\"receiver\":%d,\"source\":%d}\n",
+           what, (long long)t, receiver, source);
+}
+
+static void compare_tx(void *ctx, const transmission_t *x) {
+    comparison_t *c = ctx;
+    const node_t *n = &c->world->node[x->from];
+    c->air_us[x->from] += (uint64_t)(x->end - x->start);
+    position_t p;
+    if (pkt_open(x->bytes, x->len, &n->group, &p) != PKT_OK || p.slot != x->from) {
+        compare_failure(c, "source_identity", -1, x->from, x->start);
+        return;
+    }
+    int64_t utc, err;
+    const bool clock = node_utc_us(n, local_us(c->world, x->from, x->start), &utc, &err);
+    if (!clock ||
+        err + 1000 > node_time_budget_us(n)) {
+        compare_failure(c, "timing_budget", -1, x->from, x->start);
+    }
+    if (clock) {
+        const int64_t actual = llabs(utc - (c->world->utc0_ms * 1000 + x->start));
+        if (actual > c->clock_error_max_us) c->clock_error_max_us = actual;
+        c->clock_bound_exceeded += actual > err;
+    }
+    printf("{\"event\":\"tx\",\"t_us\":%lld,\"sender\":%d,\"session\":%lu,\"packet\":%u,"
+           "\"bytes\":%zu,\"air_us\":%lld}\n", (long long)x->start, x->from,
+           (unsigned long)p.session, p.counter, x->len, (long long)(x->end - x->start));
+}
+
+static int compare_event_at(const comparison_t *c, int source, int64_t t) {
+    int event = -1;
+    for (int i = 0; i < c->cfg.n_states; i++) {
+        if (c->cfg.states[i].source == source && c->cfg.states[i].at_us <= t) event = i;
+    }
+    return event;
+}
+
+static bool compare_superseded(const comparison_t *c, int event, int64_t t) {
+    for (int i = event + 1; i < c->cfg.n_states; i++) {
+        if (c->cfg.states[i].source == c->cfg.states[event].source && c->cfg.states[i].at_us <= t) return true;
+    }
+    return false;
+}
+
+static void compare_rx(void *ctx, const transmission_t *x, int receiver, bool accepted, const char *reason) {
+    comparison_t *c = ctx;
+    c->rx_attempts++;
+    if (!strcmp(reason, "unreachable")) c->rx_unreachable++;
+    else if (!strcmp(reason, "interference")) c->rx_interference++;
+    else if (!strcmp(reason, "external_interference")) c->rx_external_interference++;
+    else if (!strcmp(reason, "loss")) c->rx_loss++;
+    else if (!strcmp(reason, "rejected")) c->rx_rejected++;
+    printf("{\"event\":\"rx\",\"t_us\":%lld,\"sender\":%d,\"receiver\":%d,\"accepted\":%s,\"reason\":\"%s\"}\n",
+           (long long)x->end, x->from, receiver, accepted ? "true" : "false", reason);
+    if (!accepted) return;
+    c->rx_accepted++;
+    const rider_t *r = &c->world->node[receiver].riders[x->from];
+    position_t p;
+    if (pkt_open(x->bytes, x->len, &c->world->node[receiver].group, &p) != PKT_OK ||
+        r->last.slot != x->from || r->last.session != p.session || r->last.counter != p.counter) {
+        compare_failure(c, "applied_identity", receiver, x->from, x->end);
+        return;
+    }
+    if (x->start < c->last_update[receiver][x->from] || r->fix_utc_ms < c->last_fix[receiver][x->from]) {
+        compare_failure(c, "update_order", receiver, x->from, x->end);
+    }
+    c->last_update[receiver][x->from] = x->start;
+    c->last_fix[receiver][x->from] = r->fix_utc_ms;
+    const int64_t warmup = c->cfg.warmup_s * SEC;
+    const int64_t before = c->last_rx[receiver][x->from] > warmup ? c->last_rx[receiver][x->from] : warmup;
+    if (x->end > before && x->end - before > c->longest_gap_us) c->longest_gap_us = x->end - before;
+    c->last_rx[receiver][x->from] = x->end;
+    const bool help = (r->last.status & ST_HELP) != 0;
+    /* Only this observer knows the originating scenario event; no event id enters a node. */
+    const int event = compare_event_at(c, x->from, x->start);
+    if (event >= 0) {
+        compare_state_t *e = &c->cfg.states[event];
+        if (e->at_us >= warmup && e->help == help && !e->delivered[receiver] &&
+            !compare_superseded(c, event, x->end)) {
+            e->delivered[receiver] = true;
+            c->state_delays[c->n_state_delays++] = (double)(x->end - e->at_us) / 1000;
+        }
+    }
+    printf("{\"event\":\"applied\",\"t_us\":%lld,\"created_us\":%lld,\"receiver\":%d,\"source\":%d,"
+           "\"via\":%d,\"session\":%lu,\"packet\":%u,\"fix_time_us\":%lld,\"help\":%d,\"state\":\"%s\",\"state_event\":",
+           (long long)x->end, (long long)x->start, receiver, x->from, x->from,
+           (unsigned long)p.session, p.counter, (long long)(r->fix_utc_ms * 1000), help, help ? "help" : "normal");
+    if (event >= 0) printf("%d", event); else printf("null");
+    puts("}");
+}
+
+static bool compare_path(comparison_t *c, int source, int receiver, int64_t t) {
+    bool seen[MAX_NODES] = {false};
+    int queue[MAX_NODES], begin = 0, end = 0;
+    queue[end++] = source;
+    seen[source] = true;
+    while (begin < end) {
+        const int at = queue[begin++];
+        for (int next = 0; next < c->cfg.nodes; next++) {
+            if (seen[next] || !compare_link(c, at, next, t)) continue;
+            if (next == receiver) return true;
+            seen[next] = true;
+            queue[end++] = next;
+        }
+    }
+    return false;
+}
+
+static void compare_sample(comparison_t *c, int64_t t) {
+    for (int receiver = 0; receiver < c->cfg.nodes; receiver++) {
+        int64_t utc = 0;
+        const bool clock = node_utc_ms(&c->world->node[receiver], local_us(c->world, receiver, t), &utc);
+        for (int source = 0; source < c->cfg.nodes; source++) {
+            if (source == receiver) continue;
+            const rider_t *r = &c->world->node[receiver].riders[source];
+            const bool known = r->known && r->fix_utc_ms;
+            const bool path = compare_path(c, source, receiver, t);
+            c->samples++;
+            c->unseen += !known;
+            c->clock_unknown += !clock;
+            c->path_unavailable += !path;
+            printf("{\"event\":\"sample\",\"t_us\":%lld,\"receiver\":%d,\"source\":%d,\"known\":%s,"
+                   "\"clock_known\":%s,\"path_available\":%s,\"age_ms\":", (long long)t,
+                   receiver, source, known ? "true" : "false", clock ? "true" : "false", path ? "true" : "false");
+            if (known && clock) {
+                assert(c->n_ages < c->age_capacity);
+                const double age = (double)(utc - r->fix_utc_ms);
+                c->ages[c->n_ages++] = age;
+                printf("%.3f", age);
+            } else printf("null");
+            puts("}");
+        }
+    }
+}
+
+static void compare_percentile(const double *values, size_t count, size_t percentile) {
+    if (count) printf("%.3f", values[(count * percentile + 99) / 100 - 1]); else printf("null");
+}
+
+static int compare_run(const char *path, const char *seed_text, const char *environment_path) {
+    static comparison_t c;
+    static world_t w;
+    int64_t seed;
+    if (!compare_integer(seed_text, 1, UINT32_MAX, &seed)) {
+        fprintf(stderr, "comparison seed must be an integer from 1 to %lu\n", (unsigned long)UINT32_MAX);
+        return 2;
+    }
+    if (!compare_read(path, &c.cfg)) return 2;
+    c.seed = (uint32_t)seed;
+    if (!compare_environment_read(environment_path, &c)) return 2;
+    c.world = &w;
+    const scenario_t sc = {.nodes = c.cfg.nodes, .interval_ms = (uint32_t)c.cfg.interval_ms,
+                           .duration_us = c.cfg.duration_s * SEC, .seed = c.seed, .groups = 1,
+                           .clocks = c.environment.clocks};
+    world_init(&w, &sc, 1792670400000ll);
+    w.ctx = &c;
+    w.link_at = compare_link;
+    w.packet_lost = compare_loss;
+    w.external_busy = compare_external_busy;
+    w.gnss_mask = compare_gnss_mask;
+    w.on_tx = compare_tx;
+    w.on_rx = compare_rx;
+    c.age_capacity = (size_t)(c.cfg.duration_s - c.cfg.warmup_s) * (size_t)c.cfg.nodes * (size_t)(c.cfg.nodes - 1);
+    c.ages = malloc(c.age_capacity * sizeof(*c.ages));
+    if (!c.ages) { perror("comparison ages"); return 2; }
+    printf("{\"event\":\"run\",\"schema\":1,\"candidate\":\"current-v3\",\"evidence\":\"simulation\","
+           "\"scenario\":\"%s\",\"seed\":%lu,\"nodes\":%d,\"interval_ms\":%d,\"duration_s\":%d,"
+           "\"warmup_s\":%d,\"loss_permille\":%d,\"phy\":\"SF7/250\",\"packet_bytes\":%d,"
+           "\"clock_model\":\"constant crystal drift, PPS/NMEA as configured\",\"driver\":\"bypassed\","
+           "\"receiver\":\"C node, not phone or map\",\"motion\":\"synthetic circular rides\","
+           "\"step_us\":%d,\"sample_period_us\":1000000,\"utc0_ms\":%lld,\"listen_one_in\":32,"
+           "\"checks_executed\":[\"source_identity\",\"applied_identity\",\"update_order\",\"timing_budget\"],"
+           "\"checks_not_exercised\":[\"relayed_identity\",\"relay_expiry\",\"old_state_replay\","
+           "\"fix_age_integrity\",\"full_slot_containment\",\"rolling_duty_limit\"],", c.cfg.name, (unsigned long)c.seed,
+           c.cfg.nodes, c.cfg.interval_ms, c.cfg.duration_s, c.cfg.warmup_s, c.environment.loss_permille, PKT_POSITION_LEN,
+           STEP_US, (long long)w.utc0_ms);
+    const compare_environment_t *e = &c.environment;
+    printf("\"environment\":\"%s\",\"drift_ppm\":%.0f,\"nmea_only\":%d,\"nmea_lag_us\":%lld,"
+           "\"nmea_jitter_us\":%lld,\"nmea_told_lag_us\":%lld,\"nmea_error_us\":%lld,"
+           "\"interference_period_us\":%lld,\"interference_busy_us\":%lld,\"interference_phase_us\":%lld,"
+           "\"radio_model\":\"half duplex; any audible overlap loses packet; no capture; constant -90 dBm; immediate TX\","
+           "\"outages\":[", e->name, e->clocks.drift_ppm, e->clocks.nmea_only, (long long)e->clocks.lag_us,
+           (long long)e->clocks.jitter_us, (long long)e->clocks.told_lag_us, (long long)e->clocks.told_err_us,
+           (long long)e->interference_period_us, (long long)e->interference_busy_us, (long long)e->interference_phase_us);
+    for (int i = 0; i < e->n_outages; i++) {
+        const compare_outage_t *x = &e->outages[i];
+        printf("%s{\"type\":\"%s\",\"from_us\":%lld,\"until_us\":%lld,\"node\":%d}", i ? "," : "",
+               x->mask == 1 ? "gnss" : "fix", (long long)x->from_us, (long long)x->until_us, x->node);
+    }
+    printf("],\"node_clocks\":[");
+    for (int i = 0; i < c.cfg.nodes; i++) {
+        printf("%s{\"node\":%d,\"drift_ppm\":%.6f,\"offset_us\":%lld}", i ? "," : "", i,
+               w.clock[i].drift * 1e6, (long long)w.clock[i].offset_us);
+    }
+    puts("]}");
+    int next_state = 0;
+    for (int64_t t = 0; t < sc.duration_us; t += STEP_US) {
+        while (next_state < c.cfg.n_states && c.cfg.states[next_state].at_us == t) {
+            const compare_state_t *e = &c.cfg.states[next_state];
+            node_set_help(&w.node[e->source], e->help);
+            printf("{\"event\":\"state\",\"t_us\":%lld,\"source\":%d,\"help\":%d,\"state_event\":%d}\n",
+                   (long long)t, e->source, e->help, next_state++);
+        }
+        world_step(&w, t);
+        if (t >= c.cfg.warmup_s * SEC && t % SEC == SEC / 2) compare_sample(&c, t);
+    }
+    for (int receiver = 0; receiver < c.cfg.nodes; receiver++) {
+        for (int source = 0; source < c.cfg.nodes; source++) {
+            if (source == receiver) continue;
+            const int64_t last = c.last_rx[receiver][source] > c.cfg.warmup_s * SEC ?
+                                     c.last_rx[receiver][source] : c.cfg.warmup_s * SEC;
+            if (sc.duration_us - last > c.longest_gap_us) c.longest_gap_us = sc.duration_us - last;
+        }
+    }
+    int expected = 0, delivered = 0, superseded = 0, pending = 0;
+    for (int i = 0; i < c.cfg.n_states; i++) {
+        const compare_state_t *e = &c.cfg.states[i];
+        if (e->at_us < c.cfg.warmup_s * SEC) continue;
+        for (int receiver = 0; receiver < c.cfg.nodes; receiver++) {
+            if (receiver == e->source) continue;
+            expected++;
+            if (e->delivered[receiver]) delivered++;
+            else if (compare_superseded(&c, i, sc.duration_us)) superseded++;
+            else pending++;
+        }
+    }
+    uint64_t total_air = 0, max_air = 0;
+    unsigned long unsure = 0;
+    for (int i = 0; i < c.cfg.nodes; i++) {
+        total_air += c.air_us[i];
+        if (c.air_us[i] > max_air) max_air = c.air_us[i];
+        unsure += w.node[i].tx_unsure;
+    }
+    qsort(c.ages, c.n_ages, sizeof(*c.ages), by_value);
+    qsort(c.state_delays, (size_t)c.n_state_delays, sizeof(c.state_delays[0]), by_value);
+    printf("{\"event\":\"summary\",\"nodes\":%d,\"age_samples\":%llu,\"age_known_samples\":%zu,\"unseen_samples\":%llu,"
+           "\"clock_unknown_samples\":%llu,\"unseen_fraction\":%.9f,\"clock_unknown_fraction\":%.9f,"
+           "\"path_unavailable_fraction\":%.9f,\"age_p50_ms\":", c.cfg.nodes,
+           (unsigned long long)c.samples, c.n_ages, (unsigned long long)c.unseen, (unsigned long long)c.clock_unknown,
+           (double)c.unseen / c.samples, (double)c.clock_unknown / c.samples, (double)c.path_unavailable / c.samples);
+    compare_percentile(c.ages, c.n_ages, 50);
+    printf(",\"age_p95_ms\":"); compare_percentile(c.ages, c.n_ages, 95);
+    printf(",\"gap_max_ms\":%.3f,\"state_expected\":%d,\"state_delivered\":%d,\"state_superseded\":%d,"
+           "\"state_pending\":%d,\"state_delay_samples\":%d,\"state_delay_p50_ms\":",
+           (double)c.longest_gap_us / 1000, expected, delivered, superseded, pending, c.n_state_delays);
+    compare_percentile(c.state_delays, (size_t)c.n_state_delays, 50);
+    printf(",\"state_delay_p95_ms\":"); compare_percentile(c.state_delays, (size_t)c.n_state_delays, 95);
+    printf(",\"tx_airtime_max_fraction\":%.9f,\"tx_airtime_total_us\":%llu,\"tx_count\":%d,"
+           "\"rx_accepted\":%d,\"tx_unsure\":%lu,\"contract_failures\":%d,\"rx_attempts\":%llu,"
+           "\"rx_unreachable\":%llu,\"rx_interference\":%llu,\"rx_external_interference\":%llu,"
+           "\"rx_loss\":%llu,\"rx_rejected\":%llu,\"clock_error_max_us\":%lld,\"clock_bound_exceeded\":%llu,"
+           "\"tx_airtime_us\":[",
+           (double)max_air / sc.duration_us, (unsigned long long)total_air, w.sent, c.rx_accepted, unsure, c.contract_failures,
+           (unsigned long long)c.rx_attempts, (unsigned long long)c.rx_unreachable, (unsigned long long)c.rx_interference,
+           (unsigned long long)c.rx_external_interference, (unsigned long long)c.rx_loss, (unsigned long long)c.rx_rejected,
+           (long long)c.clock_error_max_us, (unsigned long long)c.clock_bound_exceeded);
+    for (int i = 0; i < c.cfg.nodes; i++) printf("%s%llu", i ? "," : "", (unsigned long long)c.air_us[i]);
+    puts("]}");
+    free(c.ages);
+    return c.contract_failures ? 1 : 0;
 }
 
 /* ---- serve: simulated boards for the app --------------------------------------------- */
@@ -547,6 +1161,13 @@ static void serve(int n, int port) {
 }
 
 int main(int argc, char **argv) {
+    if (argc >= 2 && strcmp(argv[1], "--compare") == 0) {
+        if (argc != 4 && argc != 5) {
+            fprintf(stderr, "usage: sim --compare SCENARIO_FILE SEED [ENVIRONMENT_FILE]\n");
+            return 2;
+        }
+        return compare_run(argv[2], argv[3], argc == 5 ? argv[4] : NULL);
+    }
     if (argc >= 3 && strcmp(argv[1], "serve") == 0) {
         const int n = atoi(argv[2]);
         if (n < 2 || n > MAX_NODES) {

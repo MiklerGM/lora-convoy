@@ -1,0 +1,4 @@
+# Position is unavailable but GNSS time and PPS remain available.
+environment fix-loss
+drift_ppm 40
+fix_outage 30 90 all

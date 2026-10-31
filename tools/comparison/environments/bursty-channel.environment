@@ -1,0 +1,3 @@
+# Shared external interference, two seconds in every ten; phase depends on the seed.
+environment bursty-channel
+interference 10000 2000

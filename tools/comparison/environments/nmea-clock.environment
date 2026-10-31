@@ -1,0 +1,8 @@
+# Illustrative clock errors, not calibrated Heltec or L1 measurements.
+environment nmea-clock
+drift_ppm 40
+nmea_only 1
+nmea_lag_us 120000
+nmea_jitter_us 5000
+nmea_told_lag_us 100000
+nmea_error_us 25000

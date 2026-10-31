@@ -28,6 +28,11 @@ to anyone, since Android ties installs and updates to the package.
 An outside review of v3, 2026-10-24, bears on most of these: what it found, checked against the
 code, and the order to settle it in are in [09](09-protocol-next.md).
 
+The capability register, common scenarios and evidence rules are in
+[10](10-protocol-comparison.md). Its topology and sensitivity suites run current v3 with ideal and
+non-ideal environments; measurements on boards will calibrate those assumptions. SDK-inspired
+designs and scoped Meshtastic patches remain candidates, not implemented or field-tested results.
+
 ### T-phy: radio modes, sync word, preamble
 
 v0 uses SF7/250 at 869.525 MHz, a sync word of our own and an 8-symbol preamble. Open: the modes
