@@ -1,0 +1,14 @@
+{
+  "schema": 1,
+  "candidates": {
+    "v3-4s": {
+      "implementation": "v3",
+      "settings": {"interval_ms": 4000, "phy": {"sf": 7, "bandwidth_hz": 250000}}
+    },
+    "relay-6s": {
+      "implementation": "relay",
+      "settings": {"interval_ms": 6000, "relay_records": 2,
+                   "phy": {"sf": 8, "bandwidth_hz": 125000, "crc": false}}
+    }
+  }
+}

@@ -11,6 +11,7 @@ python3 tools/simulate.py --scenario bridge-handover --seeds 17,29,43 --output /
 python3 tools/simulate.py --suite --shuffle-slots --action-phase-s 2 --output /tmp/convoy-des-suite
 python3 tools/simulate.py --generate neighbours --size 20 --seeds 17 --output /tmp/convoy-two-groups
 python3 tools/simulate.py --scenario hidden-terminals --candidates v3,v3-cad,relay,relay-cad --assumptions tools/simulation/assumptions/radio.json --output /tmp/convoy-sensitivity
+python3 tools/simulate.py --scenario chain-5 --setups tools/simulation/setups/phy-cadence.json --output /tmp/convoy-phy-cadence
 make -C firmware simulator ARGS="--generate chain --size 10 --seeds 17 --output /tmp/convoy-chain"
 make -C firmware test-simulator
 ```
@@ -31,6 +32,23 @@ worlds and private candidate seeds. Its JSON schema is `{"schema":1,"cases":[{"n
 is rejected. Reports retain per-world differences and mark sign reversals across the selected
 assumptions. No overall winner or statistical confidence is inferred from a few worlds.
 The checked-in cases are synthetic hypotheses, not measured capture thresholds.
+
+`--setups` names candidate configurations separately from their implementation. Each entry in
+`{"schema":1,"candidates":{"label":{"implementation":"relay","settings":{...}}}}` can override
+`interval_ms`, `phy`, `duty_permille`, `listen_one_in`, `relay_records`, `relay_ttl_s` and
+`tx_power_dbm`; sensor truth, membership and trajectories cannot be changed there. PHY settings
+merge with each node's declared mode. With no `--candidates`, the file's entries are selected;
+otherwise that flag selects labels explicitly. `--interval-ms` is the final cadence override.
+
+Use the same settings for comparisons of access/forwarding at a common offered workload. To
+compare each candidate's chosen feasible profile, supply different settings and assess the
+different offered loads explicitly. The example `phy-cadence.json` only illustrates this second
+experiment; it does not select field profiles or establish range. Results retain labels, actual
+implementations, requested settings, CLI cadence override and normalized effective node setups.
+The exogenous hash excludes protocol settings and normalized MODE PHY values. MODE timing and
+targets remain paired; its effective mode also depends on the candidate's starting PHY and is
+retained in the complete scenario hash. World equality alone does not establish identical radio
+configurations.
 
 ## What actually runs
 
@@ -130,6 +148,10 @@ Radio timing defaults, configured thresholds and supported/unsupported features 
 every summary. Failed decoding is an erasure, including no-CRC modes; corrupted-byte delivery
 and receiver recapture are explicitly unsupported. CAD is a local model with configurable errors;
 its existence does not establish that a candidate implements legal or useful LBT.
+`irq_delay_ns` delays observation delivery; the supplied event stamp still refers to the ideal
+completion edge and is then quantized by the node clock. ISR latency bias in that stamp is not
+modelled. A 31 microsecond clock tick therefore still does not establish a real L1 timestamp's
+accuracy; measured E0 latency is needed to extend and calibrate that part.
 
 ## Evaluation and evidence
 

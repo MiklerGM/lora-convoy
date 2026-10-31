@@ -99,6 +99,8 @@ class RadioNetwork:
                        **(config or {})}
         self.capabilities = {"corrupted_byte_delivery": False, "receiver_recapture": False,
                              "calibrated_rf": False, "acquisition_timing": "synthetic",
+                             "edge_stamp_bias": False,
+                             "irq_delay_semantics": "delayed notification; original completion-edge timestamp",
                              "rssi_model": "desired_signal_time_mean",
                              "snr_model": "desired_signal_to_background"}
         if type(self.config.get("trace_intervals", False)) is not bool:
@@ -139,6 +141,7 @@ class RadioNetwork:
         self.emit({"event": event, "t_ns": self.engine.now_ns, **values})
 
     def _notify(self, node, observation):
+        # shortcut: stamps use ideal edges; add ISR stamp bias when E0 latency observations exist.
         radio = self.radios[node]
         epoch = radio.epoch
         generation = radio.notification_generation

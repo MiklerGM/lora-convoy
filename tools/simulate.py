@@ -16,8 +16,10 @@ import tempfile
 from simulator.native import NativeLibrary, ROOT
 from simulator.replay import write_replay
 from simulator.runtime import Simulation, digest, keyed
+from simulator.types import Phy
 
 SCENARIOS = Path(__file__).resolve().parent / "simulation"
+IMPLEMENTATIONS = ("v3", "relay", "v3-cad", "relay-cad")
 
 
 def pairs_object(items):
@@ -71,11 +73,58 @@ def generated(kind, size):
     return result
 
 
-def prepare(config, candidate, layout_seed, shuffle_slots, action_phase_s, interval_ms):
+def candidate_setups(path):
+    if path is None:
+        return {}
+    data=load(path)
+    if (not isinstance(data,dict) or set(data)!={"schema","candidates"} or
+            type(data["schema"]) is not int or data["schema"]!=1 or
+            not isinstance(data["candidates"],dict) or not data["candidates"]):
+        raise ValueError("setups require schema 1 and a nonempty candidates object")
+    integer_bounds={"interval_ms":(100,60000),"duty_permille":(1,1000),
+                    "listen_one_in":(0,65535),"relay_records":(0,8)}
+    number_bounds={"relay_ttl_s":(0,86400),"tx_power_dbm":(-20,30)}
+    allowed={*integer_bounds,*number_bounds,"phy"}
+    for label,definition in data["candidates"].items():
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,31}",label):
+            raise ValueError("setup labels require 1..32 ASCII letters/digits, '.', '_' or '-', starting with a letter/digit")
+        if (not isinstance(definition,dict) or set(definition)!={"implementation","settings"} or
+                definition["implementation"] not in IMPLEMENTATIONS or not isinstance(definition["settings"],dict)):
+            raise ValueError(f"{label}: setup requires a built-in implementation and settings object")
+        if label in IMPLEMENTATIONS and label!=definition["implementation"]:
+            raise ValueError(f"{label}: a built-in label cannot identify another implementation")
+        settings=definition["settings"]
+        if set(settings)-allowed:
+            raise ValueError(f"{label}: unsupported setup settings {sorted(set(settings)-allowed)}")
+        for key,(low,high) in integer_bounds.items():
+            if key in settings and (type(settings[key]) is not int or not low<=settings[key]<=high):
+                raise ValueError(f"{label}: {key} must be an integer in {low}..{high}")
+        for key,(low,high) in number_bounds.items():
+            if key in settings:
+                value=settings[key]
+                if (type(value) not in (int,float) or not low<=value<=high or
+                        (key=="relay_ttl_s" and value==0)):
+                    raise ValueError(f"{label}: invalid {key}")
+        if "phy" in settings:
+            phy=settings["phy"]
+            if not isinstance(phy,dict) or set(phy)-Phy.__dataclass_fields__.keys():
+                raise ValueError(f"{label}: phy must contain supported PHY fields only")
+            Phy(**phy)
+    return data["candidates"]
+
+
+def prepare(config, candidate, layout_seed, shuffle_slots, action_phase_s, interval_ms, settings=None):
     config = copy.deepcopy(config)
     groups = {}
     for node in config["nodes"]:
         node["candidate"] = candidate
+        for key,value in (settings or {}).items():
+            if key=="phy":
+                if not isinstance(node.get("phy",{}),dict):
+                    raise ValueError("scenario node phy must be an object")
+                node[key] = node.get("phy",{})|value
+            else:
+                node[key] = copy.deepcopy(value)
         if interval_ms is not None:
             node["interval_ms"] = interval_ms
         groups.setdefault(node["group"], []).append(node)
@@ -101,6 +150,9 @@ def world_manifest(world):
     for node in result["nodes"]:
         for name in ("candidate","interval_ms","duty_permille","listen_one_in","relay_records","relay_ttl_s", "phy", "tx_power_dbm"):
             node.pop(name,None)
+    for action in result.get("actions",[]):
+        if action["kind"]=="mode":
+            action.pop("phy",None)
     return {"environment_seed":world.env_seed,"layout_seed":world.layout_seed,"world":result}
 
 
@@ -165,8 +217,18 @@ def git(*args):
 
 
 def markdown(data):
+    interval=data["experiment"]["interval_override_ms"]
+    interval_note="none; declared setup/scenario cadence is used" if interval is None else f"{interval} ms; overrides every setup/scenario interval"
     lines=["# DES protocol comparison", "", "Evidence: actual C node and codec with a synthetic Python DES world. No physical-radio or phone claim.",
            "The relay/CAD candidates are research policies, not the proposed v4 format, sdk or Meshtastic firmware.", "",
+           "## Candidate setups", "",
+           "Labels identify the implementation and protocol settings below. Complete effective per-node settings and mode commands are saved in each scenario snapshot.",
+           "Different settings can change offered RF load, airtime and feasible cadence. Such rows compare whole setups, not an isolated payload/access change; source trajectories, sensors and human actions remain paired.",
+           f"Final CLI interval override: {interval_note}.", "",
+           "| Label | Implementation | Declared settings |", "|---|---|---|"]
+    for label,definition in data["candidate_setups"].items():
+        lines.append(f"| {label} | {definition['implementation']} | `{json.dumps(definition['settings'],sort_keys=True)}` |")
+    lines += ["", "## Results", "",
            "| Assumption | Scenario | Candidate | Seed | True age p95, s | Known pair-time | Position RMS, m | Busiest node RF, % | Violations |",
            "|---|---|---|---:|---:|---:|---:|---:|---:|"]
     for run in data["runs"]:
@@ -220,7 +282,8 @@ def main(argv=None):
     parser.add_argument("--suite",action="store_true",help="run all checked-in scenarios")
     parser.add_argument("--generate",choices=("dense","chain","bridge","neighbours"))
     parser.add_argument("--size",type=int,default=10)
-    parser.add_argument("--candidates",default="v3,relay",help="comma-separated v3, relay, v3-cad and/or relay-cad")
+    parser.add_argument("--candidates",help="comma-separated setup labels and/or built-in implementations; default: setup entries, or v3,relay")
+    parser.add_argument("--setups",type=Path,help="schema-1 named implementations and protocol-only settings")
     parser.add_argument("--assumptions",type=Path,help="JSON named radio-model cases, paired against one exogenous world")
     parser.add_argument("--seeds",type=numbers,default=[17,29,43])
     parser.add_argument("--shuffle-slots",action="store_true")
@@ -231,9 +294,12 @@ def main(argv=None):
     parser.add_argument("--no-replay",action="store_true")
     parser.add_argument("--output",type=Path)
     args=parser.parse_args(argv)
-    candidates=args.candidates.split(",")
-    if not candidates or len(set(candidates))!=len(candidates) or any(c not in ("v3","relay","v3-cad","relay-cad") for c in candidates):
-        parser.error("candidates must be distinct v3, relay, v3-cad and/or relay-cad")
+    configured=candidate_setups(args.setups)
+    available={name:{"implementation":name,"settings":{}} for name in IMPLEMENTATIONS}|configured
+    candidates=args.candidates.split(",") if args.candidates is not None else list(configured) if args.setups is not None else ["v3","relay"]
+    if not candidates or len(set(candidates))!=len(candidates) or any(c not in available for c in candidates):
+        parser.error("candidates must be distinct setup labels or built-in implementations")
+    definitions={name:available[name] for name in candidates}
     if not 0<=args.action_phase_s<1e6:
         parser.error("action phase must be finite and nonnegative")
     if args.output is not None and args.output.exists() and (not args.output.is_dir() or any(args.output.iterdir())):
@@ -253,6 +319,8 @@ def main(argv=None):
     source={"revision":git("rev-parse","HEAD"),"status":git("status","--porcelain"),"native_sha256":library.sha256,
             "cli_sha256":hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "model_sha256":digest({p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted((ROOT/"tools/simulator").glob("*.py"))})}
+    source["candidate_setups_sha256"]=digest(definitions)
+    (output/"candidate-setups.json").write_text(json.dumps({"schema":1,"candidates":definitions},indent=2,allow_nan=False)+"\n")
     runs=[]
     hashes={}
     for scenario in scenarios:
@@ -261,7 +329,9 @@ def main(argv=None):
             layout=int.from_bytes(keyed(seed,"layout")[:8],"big")
             for case in cases:
                 for candidate in candidates:
-                    prepared=prepare(scenario,candidate,layout,args.shuffle_slots,args.action_phase_s,args.interval_ms)
+                    definition=definitions[candidate]
+                    prepared=prepare(scenario,definition["implementation"],layout,args.shuffle_slots,
+                                     args.action_phase_s,args.interval_ms,definition["settings"])
                     prepared["radio"]=prepared.get("radio",{})|case["radio"]
                     protocol=int.from_bytes(keyed(seed,"protocol",candidate)[:8],"big")
                     sim=Simulation(prepared,environment_seed=env,layout_seed=layout,
@@ -279,6 +349,8 @@ def main(argv=None):
                         hashes[pair]=world_hash
                         summary=sim.run(args.reference)
                         summary["run"]={"assumption":case["name"],"candidate":candidate,"seed":seed,
+                                        "implementation":definition["implementation"],"settings":definition["settings"],
+                                        "interval_override_ms":args.interval_ms,
                                         "environment_seed":env,"layout_seed":layout,
                                         "protocol_seed":protocol,"reverse_ties":args.reverse_ties,
                                         "world_sha256":world_hash,"scenario_sha256":digest(sim.world.config),"source":source}
@@ -291,11 +363,14 @@ def main(argv=None):
                         if not args.no_replay:
                             write_replay(sim.events,folder/"replay.html",sim.world.config)
                         runs.append({"assumption":case["name"],"scenario":name,"candidate":candidate,"seed":seed,
+                                     "implementation":definition["implementation"],"settings":definition["settings"],
                                      "directory":folder.name,"replay":not args.no_replay,"summary":summary})
                     finally:
                         sim.close()
     paired=paired_results(runs,candidates,args.seeds)
-    data={"schema":1,"runs":runs,"paired":paired,"assumptions":cases,
+    data={"schema":1,"runs":runs,"paired":paired,"assumptions":cases,"candidate_setups":definitions,
+          "experiment":{"interval_override_ms":args.interval_ms,
+                        "comparison":"candidate setups on paired exogenous worlds; protocol settings may change offered RF load"},
           "sensitivity":sensitivity_results(paired),"source":source}
     (output/"results.json").write_text(json.dumps(data,indent=2,allow_nan=False)+"\n")
     (output/"report.md").write_text(markdown(data))
