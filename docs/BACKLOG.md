@@ -36,6 +36,8 @@ The full simulator design and staged readiness criteria are in [11](11-simulatio
 independent truth and observations, DES/radio lifecycle, movement/channel models, candidate
 comparisons, calibration and replay. A first successful relay comparison is one milestone;
 it does not complete the model or validate its RF assumptions.
+The [DES implementation](../tools/simulator/README.md) now executes v3 and a research relay with
+independent models/evaluation. Its explicit unsupported features and calibration work remain open.
 
 ### T-phy: radio modes, sync word, preamble
 

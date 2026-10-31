@@ -1,0 +1,257 @@
+{
+  "schema": 1,
+  "name": "multi-group",
+  "duration_s": 120,
+  "warmup_s": 20,
+  "utc0_ms": 1792670400000,
+  "nodes": [
+    {
+      "id": "n0",
+      "group": "ride-0",
+      "slot": 0,
+      "roles": [
+        "leader"
+      ],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -500,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 700,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n1",
+      "group": "ride-0",
+      "slot": 1,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -530,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 670,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "group": "ride-0",
+      "slot": 2,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -560,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 640,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n3",
+      "group": "ride-0",
+      "slot": 3,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -590,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 610,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n4",
+      "group": "ride-0",
+      "slot": 4,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -620,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 580,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n5",
+      "group": "ride-0",
+      "slot": 5,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -650,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 550,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n6",
+      "group": "ride-1",
+      "slot": 0,
+      "roles": [
+        "leader"
+      ],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 500,
+          "y_m": 10
+        },
+        {
+          "t_s": 120,
+          "x_m": -700,
+          "y_m": 10
+        }
+      ]
+    },
+    {
+      "id": "n7",
+      "group": "ride-1",
+      "slot": 1,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 530,
+          "y_m": 10
+        },
+        {
+          "t_s": 120,
+          "x_m": -670,
+          "y_m": 10
+        }
+      ]
+    },
+    {
+      "id": "n8",
+      "group": "ride-1",
+      "slot": 2,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 560,
+          "y_m": 10
+        },
+        {
+          "t_s": 120,
+          "x_m": -640,
+          "y_m": 10
+        }
+      ]
+    },
+    {
+      "id": "n9",
+      "group": "ride-1",
+      "slot": 3,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 590,
+          "y_m": 10
+        },
+        {
+          "t_s": 120,
+          "x_m": -610,
+          "y_m": 10
+        }
+      ]
+    },
+    {
+      "id": "n10",
+      "group": "ride-1",
+      "slot": 4,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 620,
+          "y_m": 10
+        },
+        {
+          "t_s": 120,
+          "x_m": -580,
+          "y_m": 10
+        }
+      ]
+    },
+    {
+      "id": "n11",
+      "group": "ride-1",
+      "slot": 5,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 650,
+          "y_m": 10
+        },
+        {
+          "t_s": 120,
+          "x_m": -550,
+          "y_m": 10
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "help-on",
+      "t_s": 30,
+      "node": "n0",
+      "kind": "state",
+      "state": "help"
+    },
+    {
+      "id": "help-off",
+      "t_s": 50,
+      "node": "n0",
+      "kind": "state",
+      "state": "normal"
+    }
+  ],
+  "description": "Two independent six-member groups passing; parametric power is synthetic, not calibrated.",
+  "propagation": {
+    "reference_distance_m": 10,
+    "reference_power_dbm": -50,
+    "path_loss_exponent": 2.5,
+    "min_distance_m": 1
+  },
+  "max_channel_update_s": 0.1,
+  "noise": {
+    "background_dbm": -120,
+    "bursts": []
+  }
+}

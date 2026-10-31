@@ -1,0 +1,183 @@
+{
+  "schema": 1,
+  "name": "fork-catcher",
+  "duration_s": 120,
+  "warmup_s": 20,
+  "utc0_ms": 1792670400000,
+  "nodes": [
+    {
+      "id": "n0",
+      "group": "ride",
+      "slot": 0,
+      "roles": [
+        "leader"
+      ],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 0,
+          "y_m": 0
+        },
+        {
+          "t_s": 20,
+          "x_m": 200,
+          "y_m": 0
+        },
+        {
+          "t_s": 60,
+          "x_m": 600,
+          "y_m": 400
+        },
+        {
+          "t_s": 120,
+          "x_m": 1200,
+          "y_m": 1000
+        }
+      ]
+    },
+    {
+      "id": "n1",
+      "group": "ride",
+      "slot": 1,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -20,
+          "y_m": 0
+        },
+        {
+          "t_s": 22,
+          "x_m": 200,
+          "y_m": 0
+        },
+        {
+          "t_s": 60,
+          "x_m": 600,
+          "y_m": 400
+        },
+        {
+          "t_s": 120,
+          "x_m": 1200,
+          "y_m": 1000
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "group": "ride",
+      "slot": 2,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -40,
+          "y_m": 0
+        },
+        {
+          "t_s": 24,
+          "x_m": 200,
+          "y_m": 0
+        },
+        {
+          "t_s": 60,
+          "x_m": 600,
+          "y_m": 400
+        },
+        {
+          "t_s": 120,
+          "x_m": 1200,
+          "y_m": 1000
+        }
+      ]
+    },
+    {
+      "id": "n3",
+      "group": "ride",
+      "slot": 3,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -60,
+          "y_m": 0
+        },
+        {
+          "t_s": 26,
+          "x_m": 200,
+          "y_m": 0
+        },
+        {
+          "t_s": 60,
+          "x_m": 600,
+          "y_m": 400
+        },
+        {
+          "t_s": 120,
+          "x_m": 1200,
+          "y_m": 1000
+        }
+      ]
+    },
+    {
+      "id": "n4",
+      "group": "ride",
+      "slot": 4,
+      "roles": [
+        "catcher"
+      ],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -300,
+          "y_m": 0
+        },
+        {
+          "t_s": 50,
+          "x_m": 200,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 900,
+          "y_m": 700
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "help-on",
+      "t_s": 30,
+      "node": "n0",
+      "kind": "state",
+      "state": "help"
+    },
+    {
+      "id": "help-off",
+      "t_s": 50,
+      "node": "n0",
+      "kind": "state",
+      "state": "normal"
+    }
+  ],
+  "description": "The catcher reaches the fork at 50 s; a post-fork fix is needed to distinguish the branch.",
+  "default_link": {
+    "decode": true,
+    "sense": true,
+    "interfere": true,
+    "power_dbm": -85
+  },
+  "decisions": [
+    {
+      "id": "catcher-fork",
+      "node": "n4",
+      "at_s": 50,
+      "after_s": 20,
+      "watch": [
+        "n0"
+      ],
+      "kind": "fork"
+    }
+  ]
+}

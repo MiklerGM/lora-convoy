@@ -1,0 +1,214 @@
+{
+  "schema": 1,
+  "name": "dense-10",
+  "duration_s": 120,
+  "warmup_s": 20,
+  "utc0_ms": 1792670400000,
+  "nodes": [
+    {
+      "id": "n0",
+      "group": "ride",
+      "slot": 0,
+      "roles": [
+        "leader"
+      ],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 0,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1200,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n1",
+      "group": "ride",
+      "slot": 1,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -25,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1175,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "group": "ride",
+      "slot": 2,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -50,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1150,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n3",
+      "group": "ride",
+      "slot": 3,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -75,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1125,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n4",
+      "group": "ride",
+      "slot": 4,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -100,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1100,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n5",
+      "group": "ride",
+      "slot": 5,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -125,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1075,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n6",
+      "group": "ride",
+      "slot": 6,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -150,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1050,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n7",
+      "group": "ride",
+      "slot": 7,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -175,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1025,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n8",
+      "group": "ride",
+      "slot": 8,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -200,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1000,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n9",
+      "group": "ride",
+      "slot": 9,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": -225,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 975,
+          "y_m": 0
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "help-on",
+      "t_s": 30,
+      "node": "n0",
+      "kind": "state",
+      "state": "help"
+    },
+    {
+      "id": "help-off",
+      "t_s": 50,
+      "node": "n0",
+      "kind": "state",
+      "state": "normal"
+    }
+  ],
+  "description": "One dense group; explicit contacts do not claim a measured range.",
+  "default_link": {
+    "decode": true,
+    "sense": true,
+    "interfere": true,
+    "power_dbm": -80
+  }
+}

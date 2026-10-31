@@ -19,12 +19,22 @@ test: $(HOST)/test_core $(HOST)/test_core32 $(HOST)/test_sx1262 $(HOST)/sim
 	@$(HOST)/test_sx1262
 	@$(HOST)/sim
 	@python3 ../tools/test_compare.py
+	@$(MAKE) -s test-simulator
 
 sim: $(HOST)/sim
 	@$(HOST)/sim $(ARGS)
 
 compare: $(HOST)/sim
 	@python3 ../tools/compare.py $(ARGS)
+
+simulator: $(HOST)/libconvoy_sim.so
+	@python3 ../tools/simulate.py $(ARGS)
+
+test-simulator: $(HOST)/libconvoy_sim.so
+	@cd .. && python3 -m unittest discover -s tools/simulator -t .
+
+$(HOST)/libconvoy_sim.so: sim/bridge.c $(CORE) src/*.h | $(HOST)
+	@$(CC) $(CFLAGS) -fPIC -shared -o $@ sim/bridge.c $(CORE)
 
 $(HOST)/test_core: test/test_core.c $(CORE) src/*.h | $(HOST)
 	@$(CC) $(CFLAGS) -o $@ test/test_core.c $(CORE)
@@ -58,4 +68,4 @@ nrf:
 	    -d $(CURDIR)/zephyr/build $(CURDIR)/zephyr
 	@ls -l zephyr/build/zephyr/zephyr.uf2
 
-.PHONY: test sim compare esp nrf
+.PHONY: test sim compare simulator test-simulator esp nrf

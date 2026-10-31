@@ -1,0 +1,280 @@
+{
+  "schema": 1,
+  "name": "bridge-handover",
+  "duration_s": 120,
+  "warmup_s": 20,
+  "utc0_ms": 1792670400000,
+  "nodes": [
+    {
+      "id": "n0",
+      "group": "ride",
+      "slot": 0,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 0,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1200,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n1",
+      "group": "ride",
+      "slot": 1,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 100,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1300,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n2",
+      "group": "ride",
+      "slot": 2,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 200,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1400,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n3",
+      "group": "ride",
+      "slot": 3,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 300,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1500,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n4",
+      "group": "ride",
+      "slot": 4,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 400,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1600,
+          "y_m": 0
+        }
+      ]
+    },
+    {
+      "id": "n5",
+      "group": "ride",
+      "slot": 5,
+      "roles": [],
+      "trajectory": [
+        {
+          "t_s": 0,
+          "x_m": 500,
+          "y_m": 0
+        },
+        {
+          "t_s": 120,
+          "x_m": 1700,
+          "y_m": 0
+        }
+      ]
+    }
+  ],
+  "actions": [
+    {
+      "id": "help-on",
+      "t_s": 30,
+      "node": "n0",
+      "kind": "state",
+      "state": "help"
+    },
+    {
+      "id": "help-off",
+      "t_s": 50,
+      "node": "n0",
+      "kind": "state",
+      "state": "normal"
+    }
+  ],
+  "links": [
+    {
+      "from": "n0",
+      "to": "n1",
+      "power_dbm": -90
+    },
+    {
+      "from": "n0",
+      "to": "n2",
+      "power_dbm": -90
+    },
+    {
+      "from": "n1",
+      "to": "n0",
+      "power_dbm": -90
+    },
+    {
+      "from": "n1",
+      "to": "n2",
+      "power_dbm": -90
+    },
+    {
+      "from": "n2",
+      "to": "n0",
+      "power_dbm": -90
+    },
+    {
+      "from": "n2",
+      "to": "n1",
+      "power_dbm": -90
+    },
+    {
+      "from": "n3",
+      "to": "n4",
+      "power_dbm": -90
+    },
+    {
+      "from": "n3",
+      "to": "n5",
+      "power_dbm": -90
+    },
+    {
+      "from": "n4",
+      "to": "n3",
+      "power_dbm": -90
+    },
+    {
+      "from": "n4",
+      "to": "n5",
+      "power_dbm": -90
+    },
+    {
+      "from": "n5",
+      "to": "n3",
+      "power_dbm": -90
+    },
+    {
+      "from": "n5",
+      "to": "n4",
+      "power_dbm": -90
+    },
+    {
+      "from": "n2",
+      "to": "n3",
+      "power_dbm": -90,
+      "from_s": 0,
+      "until_s": 40
+    },
+    {
+      "from": "n2",
+      "to": "n4",
+      "power_dbm": -90,
+      "from_s": 0,
+      "until_s": 40
+    },
+    {
+      "from": "n2",
+      "to": "n5",
+      "power_dbm": -90,
+      "from_s": 0,
+      "until_s": 40
+    },
+    {
+      "from": "n3",
+      "to": "n2",
+      "power_dbm": -90,
+      "from_s": 0,
+      "until_s": 40
+    },
+    {
+      "from": "n4",
+      "to": "n2",
+      "power_dbm": -90,
+      "from_s": 0,
+      "until_s": 40
+    },
+    {
+      "from": "n5",
+      "to": "n2",
+      "power_dbm": -90,
+      "from_s": 0,
+      "until_s": 40
+    },
+    {
+      "from": "n1",
+      "to": "n3",
+      "power_dbm": -90,
+      "from_s": 50,
+      "until_s": 120
+    },
+    {
+      "from": "n1",
+      "to": "n4",
+      "power_dbm": -90,
+      "from_s": 50,
+      "until_s": 120
+    },
+    {
+      "from": "n1",
+      "to": "n5",
+      "power_dbm": -90,
+      "from_s": 50,
+      "until_s": 120
+    },
+    {
+      "from": "n3",
+      "to": "n1",
+      "power_dbm": -90,
+      "from_s": 50,
+      "until_s": 120
+    },
+    {
+      "from": "n4",
+      "to": "n1",
+      "power_dbm": -90,
+      "from_s": 50,
+      "until_s": 120
+    },
+    {
+      "from": "n5",
+      "to": "n1",
+      "power_dbm": -90,
+      "from_s": 50,
+      "until_s": 120
+    }
+  ],
+  "description": "One roster; the only bridge changes from n2 to n1 after a ten-second partition."
+}

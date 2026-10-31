@@ -12,6 +12,14 @@ fix the next air format. The executable baseline remains commit `9eb7725`: a 1 m
 simulation, current-v3 only, with the limitations documented in 10. Everything below is planned
 unless explicitly described as existing.
 
+**Implementation progress:** [`tools/simulate.py`](../tools/simulate.py) now composes a standard-library
+Python DES with a small ABI around the actual C node/codec. Implemented parts include causal event
+phases/delta cycles, world and clock models, directed/power channels, local radio state, interval
+reception, time-weighted evaluation, a research C forwarding adapter and offline replay. See the
+[implementation notes](../tools/simulator/README.md) for exact supported behaviour and commands.
+The complete target below is not yet achieved: calibrated RF/terrain, actual alternative upstream
+firmware adapters and phone integration remain distinct work.
+
 ## Purpose and completion
 
 The simulator must support these decisions:
