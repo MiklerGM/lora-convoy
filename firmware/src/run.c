@@ -32,6 +32,7 @@
 
 #define VERIFY_US (30 * 1000000ll)
 #define GNSS_LOG_US (60 * 1000000ll)
+#define GNSS_TELL_US (10 * 1000000ll)
 #define STATUS_PUSH_MS 10000
 
 /* What a board keeps over a restart, so it can ride as a beacon with no phone: the setup the app
@@ -116,6 +117,18 @@ static void gather(void *ctx, const char *line) {
     if (r->n < REPLY_LINES) snprintf(r->line[r->n++], sizeof(r->line[0]), "%s", line);
 }
 
+/* GNSS 0|1: the kit's load switch on a Heltec (active low), the L76K's standby line
+ * on an L1. */
+static void gnss_power(bool on) {
+#if defined(PIN_GNSS_EN)
+    port_pin_set(PIN_GNSS_EN, on ? 0 : 1);
+#elif defined(PIN_GNSS_WAKE)
+    port_pin_set(PIN_GNSS_WAKE, on);
+#else
+    (void)on;
+#endif
+}
+
 /* Runs one command and carries out what api_command leaves to its caller. True if it asked to
  * forget the paired phone, which only the transport knows how to answer. came_us: when the line
  * came, before any lock was waited for, which CLOCK answers with; all else is told as of the
@@ -126,6 +139,8 @@ static bool command(char *line, replies_t *out, int64_t came_us) {
     port_mutex_lock(s_lock);
     api_command(&s_api, line, came_us, port_uptime_us(), gather, out);
     const bool forget = s_api.forget, restart = s_api.restart, bootloader = s_api.bootloader;
+    if (s_api.gnss_ask) gnss_power(s_api.gnss_ask == 2);
+    s_api.gnss_ask = 0;
     if (s_api.radio_changed) atomic_store(&s_reapply, true);
     setup_t setup = {.version = SETUP_VERSION, .keyed = s_node.cfg.keyed, .slot = s_node.cfg.slot,
                      .slots = s_node.cfg.slots, .interval_ms = s_node.cfg.interval_ms, .sf = s_node.cfg.phy.sf,
@@ -217,10 +232,18 @@ static void gnss_task(void *arg) {
     nmea_t nmea;
     nmea_init(&nmea);
     port_gnss_open();
-    int64_t logged = -GNSS_LOG_US, pps = 0;
+    int64_t logged = -GNSS_LOG_US, pps = 0, told = -GNSS_TELL_US;
     bool was_valid = false;
     for (;;) {
         port_wdt_feed(watch);
+        /* GGA and RMC only (the L76K's PCAS03): with GSA and GSV before it, the RMC that dates a
+         * second came 0.1 s after it with no fix and over 0.8 s with twelve satellites (test plan
+         * 2.1, 2026-11-11), which no fixed lag covers. Told again now and then, for a GNSS that
+         * powers up after us. */
+        if (port_uptime_us() - told >= GNSS_TELL_US) {
+            port_gnss_write("$PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0*02\r\n");
+            told = port_uptime_us();
+        }
         const int c = port_gnss_getc(200);
         gnss_fix_t fix;
         if (c < 0 || !nmea_feed(&nmea, (char)c, &fix)) continue;

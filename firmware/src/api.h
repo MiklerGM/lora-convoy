@@ -54,6 +54,7 @@ typedef struct {
     bool forget;
     bool restart;
     bool bootloader;
+    uint8_t gnss_ask;               /* GNSS 0|1: 0 nothing asked, 1 off, 2 on */
 } api_t;
 
 /* One line from the phone or the console. The caller holds the node's lock. came_us: when the line

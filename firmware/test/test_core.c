@@ -903,6 +903,8 @@ static void test_api(void) {
     assert(strstr(api_status_of(&api), " kept=0"));
 
     /* What only the caller can do is left to it, unanswered here. */
+    ask(&api, "GNSS 0");
+    assert(n_replies == 1 && strcmp(replies[0], "OK gnss=0") == 0 && api.gnss_ask == 1);
     ask(&api, "FORGET");
     assert(n_replies == 0 && api.forget);
     ask(&api, "REBOOT");

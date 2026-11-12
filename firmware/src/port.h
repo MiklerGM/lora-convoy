@@ -38,6 +38,7 @@
  *
  *   void    port_gnss_open(void)                the GNSS's UART, 9600 8N1, on the board's pins
  *   int     port_gnss_getc(uint32_t timeout_ms) the next byte from the GNSS, or -1
+ *   void    port_gnss_write(const char *s)      a line to the GNSS, a configuration command
  *   int64_t port_pps_us(void)                   port_uptime_us at the GNSS's last PPS edge; 0 before
  *                                               one, and always on a board without the line
  *

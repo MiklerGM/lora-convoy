@@ -1,6 +1,8 @@
 /* port.h on ESP-IDF: the parts that are more than a call through. From dmd2-lora-bridge. */
 #include "port.h"
 
+#include <string.h>
+
 #include "driver/uart.h"
 #include "driver/usb_serial_jtag.h"
 #include "esp_attr.h"
@@ -181,6 +183,8 @@ void port_gnss_open(void) {
     ESP_ERROR_CHECK(gpio_isr_handler_add(PIN_GNSS_PPS, on_pps, NULL));
 #endif
 }
+
+void port_gnss_write(const char *s) { uart_write_bytes(GNSS_UART, s, strlen(s)); }
 
 int port_gnss_getc(uint32_t timeout_ms) {
     uint8_t c;

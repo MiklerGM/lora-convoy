@@ -166,9 +166,13 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
     } else if (strcasecmp(line, "bootloader") == 0 && !arg) {
         api->bootloader = true;
         return;
+    } else if (strcasecmp(line, "gnss") == 0 && number(arg, 0, 1, &v)) {
+        /* the GNSS off with the board running on the time it holds, for the bench (13, 2.7) */
+        api->gnss_ask = (uint8_t)(v + 1);
+        snprintf(out, sizeof(out), "OK gnss=%ld", v);
     } else {
         snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, CLOCK <t1>, TIME <ms> <utc ms> <err ms>, LEDGER, GROUP <32 hex> <slot> <slots> <ms>, KEY <32 hex>, HELP 0-1, SLOT 0-%d, SLOTS 1-%d, "
-                 "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
+                 "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, GNSS 0-1, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
                  NODE_SLOTS);
     }
     reply(ctx, out);

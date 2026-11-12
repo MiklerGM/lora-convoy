@@ -335,6 +335,10 @@ void port_gnss_open(void) {
     uart_irq_rx_enable(s_gnss);
 }
 
+void port_gnss_write(const char *s) {
+    while (*s) uart_poll_out(s_gnss, (unsigned char)*s++);
+}
+
 static int gnss_take(void) {
     uint8_t c;
     const unsigned key = irq_lock();

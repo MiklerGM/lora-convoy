@@ -59,6 +59,7 @@ int port_console_getc(uint32_t timeout_ms);
 
 void port_gnss_open(void);
 int port_gnss_getc(uint32_t timeout_ms);
+void port_gnss_write(const char *s);
 int64_t port_pps_us(void);
 void port_radio_irq_open(int pin);
 int64_t port_radio_irq_us(void);
