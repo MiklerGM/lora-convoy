@@ -210,11 +210,20 @@ while its status told its satellites: 187 ms at 5, 206 at 8, 219 at 10, 240 at 1
 firmware now reckons the lag from the count** (`NODE_NMEA_LAG_SAT_US`): 138 ms and 8.7 ms a
 satellite on the L1, 160 ms and 6.9 on the Heltec, where it matters only without PPS. Tried the
 same day, neighbours in a group of 10: on the desk for ten minutes (8–10 satellites) the L1 began
-−17 to +46 ms from its slot, mean −5; on the balcony on its battery for twenty, −27 to +43, mean
-−7.5, sd 8.9 (579 packets, all taken, none beyond ±50 ms). How many satellites it used out there
-is not known, the board being off its cable; the Heltec indoors used 17. So: no worse on the desk,
-and near its slot under more sky, where the fixed lag had left it tens of ms late; the line beyond
-15 satellites, an open sky and a moving board are still to try.
+−17 to +46 ms from its slot, mean −5; on the balcony on its battery for the first twenty, −27 to
++43, mean −7.5, sd 8.9 (579 packets, all taken, none beyond ±50 ms).
+
+**It did not hold there.** Left on the balcony for three and a half hours (12:47–16:22, 6,233
+packets, the Heltec indoors on PPS throughout): −36 to +200 ms, median +17, mean +25, sd 33, and
+1,377 packets (22%) beyond ±50 ms. Fine for the first 45 minutes; from 13:50 to 14:45 the
+five-minute medians stood at +29 to +76 ms, and again at +62 near 15:00 and +64 near 15:40, with
+medians of +3 to +15 between. It wanders over minutes, not in steps (packet to packet 10 ms on the
+median). How many satellites the L1 used out there is not known, the board being off its cable.
+The Heltec indoors kept to its own line all afternoon, from 225 ms at 10 satellites to 265 at 17,
+so the count does tell the lag where the sky is poor; under more sky something else adds up to
+75 ms on the median, or the line bends beyond 15. Twenty minutes was too short a trial to say
+"held". So a board without PPS has not been shown to keep ±50 ms out of doors, with or without
+the line.
 
 **Drift in the cold** (13, 2.7). The L1's GNSS switched off indoors (`GNSS 0`), the board put on
 a balcony at +3 °C, the Heltec indoors with PPS: 1,315 packets over 45 minutes, from 16 minutes

@@ -369,9 +369,10 @@ as witness ([07](07-experiments.md), results). Against this proposal:
 - **Corrected 2026-11-12**: the ±50 ms below is a desk's. Outdoors the same L1 was 87 ms late on
   average and up to 168, because the L76K's lag grows with the satellites it uses, some 6.5 ms
   each ([07](07-experiments.md)). The two rows stand only if the lag is reckoned from the
-  satellite count. That is built since, and held on a balcony (−27 to +43 ms over twenty minutes);
-  until it has held under an open sky and on the move, a board without PPS is safer in the ±100 ms
-  rows of section 1.
+  satellite count. That is built since, and did not hold on a balcony: fine for 45 minutes, then
+  up to +200 ms, 22% of packets beyond ±50 ms over three and a half hours. A board without PPS
+  belongs in the ±100 ms rows of section 1 until that is understood, and even those it overran at
+  times.
 - **A board without PPS needs ±50 ms, not ±100** [bench], once its L76K sends GGA and RMC only and
   the board is told its lag. The rows that changes [calc]; the PPS row stays a guess, as nothing
   but the Heltec itself has judged the Heltec's time:
