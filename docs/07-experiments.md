@@ -152,10 +152,69 @@ L76K told to send GGA and RMC only (`$PCAS03`). Working log and per-run numbers:
   Heltec: −10.8 to +62.1 ms, mean 8.0, sd 8.5, p99 34 (880/880 taken; 865/865 the other way); the
   SDR over five of those minutes agrees within 0.4 ms (1.9 against 2.2), bursts never closer than
   139 ms. The sky had changed: 14 satellites at the Heltec and its own lag 256 ms, against 234 in
-  the afternoon. One packet in 880 came later than the L1's ±50 ms allows, by 12 ms.
+  the afternoon. One packet in 880 came later than the L1's ±50 ms allows, by 12 ms. Out of doors
+the next day the claim did not hold at all (below).
 
-Not covered: range (E2), battery, the phone, a power cycle (only software restarts), stage 3.9 as
-written (a key and time but no fix was seen silent instead), outdoor sky and temperature.
+Not covered: battery, the phone, a power cycle (only software restarts), stage 3.9 as written (a
+key and time but no fix was seen silent instead).
+
+### Out of doors: range in a city, the lag under an open sky, drift in the cold, 2026-11-12
+
+One walk and one hour on a balcony, at +3 °C. Working log: `lab/2026-11-11-notes.md`; the scripts
+that read the logs: `lab/walk.py`, `lab/walkgpx.py`, `lab/drift.py`.
+
+**The walk** (13, stage 4; E2). The Heltec indoors, its antenna on 3 m of thin coax out of a window
+(an SDR kit's antenna, its tuning unknown); the L1 on its battery in the side pocket of a backpack;
+14 dBm; both on `TOUR 20`, so SF7/250, SF9/250 and SF10/125 took turns every 20 s on the same
+path; two riders at 2 s, some ten packets a minute in each mode. A built-up street, 51 minutes, out
+to 899 m and back; distance from the phone's GPX track, which the positions in the packets follow
+within 26 m (median).
+
+| Distance | SF7/250 | SF9/250 | SF10/125 |
+|---|---|---|---|
+| to 220 m | 9–10 of 10 | 8–10 | 9–10 |
+| 224–285 m | 7 | 10 | 6 |
+| 291–355 m | 2 | 7 | 7 |
+| 360–520 m (11 minutes) | 4 in all | 10 in all | 12 in all |
+| 527–899 m (19 minutes) | none | none | none |
+
+- **Whole to some 280 m, gone by 520 m, in every mode.** The slower modes took two to four times
+  the packets at the edge and moved the edge by some 100 m: in a street the signal falls too
+  steeply for 5 or 10 dB to buy much distance.
+- **The boards deliver the modes' sensitivity**: the weakest packets taken had an SNR of −10
+  (SF7/250), −15 (SF9/250) and −16.5 (SF10/125), the 5th percentile −4, −12 and −12, against the
+  SX1262's −7.5, −12.5 and −15. That is what carries over to other places; the metres do not.
+- **Out and back differed**: heard out to 375 m on the way out, and on the way back not before
+  180 m. Another street, or the walker's body between the backpack and the Heltec; one walk does
+  not tell which.
+- A lower bound for a city, not the system's range: low power, a pocket, an antenna of unknown
+  tuning, both ends near the ground.
+- `RSSI` at a negative SNR reads −95 to −101 dBm on the Heltec, 3 dB lower at 125 kHz: its noise
+  through its front end's LNA, not the signal. Only the SNR is a measure there.
+
+**The lag under an open sky.** The L1, built with 210 ms ±50 ms, began 87 ms late on average on
+the way out (sd 25–31, 168 at most; the same in all three modes) and 33–40 ms late on the way back;
+on the desk the evening before, 8. Its claim does not hold outdoors. The cause is in the Heltec's
+own `lag=` against its `sats=`, 3,310 status lines over both days with GGA and RMC only:
+
+| Satellites used | 4 | 7 | 8 | 10 | 12 | 14 | 15 |
+|---|---|---|---|---|---|---|---|
+| Lag, median | 188 ms | 208 | 214 | 225 | 244 | 259 | 264 |
+| 90th percentile | 190 | 214 | 222 | 253 | 271 | 322 | 328 |
+
+Some 6.5 ms a satellite on the medians, and the late tail widens with them. The 210 ms was a
+desk's nine satellites. Not yet corrected in the firmware: a lag reckoned from the satellites the
+fix reports, or a PPS line.
+
+**Drift in the cold** (13, 2.7). The L1's GNSS switched off indoors (`GNSS 0`), the board put on
+a balcony at +3 °C, the Heltec indoors with PPS: 1,315 packets over 45 minutes, from 16 minutes
+after the GNSS went off.
+
+- Settled, the L1's clock runs 24 ppm fast (−1.44 ms a minute), against 29 ppm at room
+  temperature: the same way, 5 ppm apart. Within any five minutes the line holds to 0.2–0.6 ms.
+- While it cooled, faster: 46 ppm in the first five minutes measured (8 to 13 minutes after it
+  went out), 31, 27, 26 in the next three. The 16 minutes before were not measured.
+- The 50 ppm the firmware assumes held where it was measured, narrowly while the board cooled.
 
 ### Earlier
 

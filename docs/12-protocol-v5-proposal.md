@@ -366,6 +366,11 @@ so the reserved byte is free. The tests come first ([13](13-test-plan.md)). The 
 Stages 0–3 of [13](13-test-plan.md) ran indoors on a Heltec V4.3 (PPS) and an L1 (none), with an SDR
 as witness ([07](07-experiments.md), results). Against this proposal:
 
+- **Corrected 2026-11-12**: the ±50 ms below is a desk's. Outdoors the same L1 was 87 ms late on
+  average and up to 168, because the L76K's lag grows with the satellites it uses, some 6.5 ms
+  each ([07](07-experiments.md)). The two rows stand only if the lag is reckoned from the
+  satellite count, which is not built or tried; until then a board without PPS needs the ±100 ms
+  rows of section 1, or more.
 - **A board without PPS needs ±50 ms, not ±100** [bench], once its L76K sends GGA and RMC only and
   the board is told its lag. The rows that changes [calc]; the PPS row stays a guess, as nothing
   but the Heltec itself has judged the Heltec's time:
@@ -399,8 +404,15 @@ as witness ([07](07-experiments.md), results). Against this proposal:
   heard as a clash within 21 s; two groups on one channel losing 4 % to each other (3 % computed);
   the duty ledger within 1.2 % of the air.
 
-Still unknown, in the order it would change the design: the lag and the drift outdoors (sky, cold,
-movement); range per mode (E2), which picks the modes; a second L1, to tell one board's numbers
-from the model's; a PPS board judged from outside (the T-Echo); what a board draws listening,
-fixing and asleep (E7), which decides whether the walking profile is about sending less or about
-sleeping between slots; and real tracks, to set the send rule's distance and heartbeat by.
+Since measured (2026-11-12, [07](07-experiments.md)): a city walk, where every mode was whole to
+280 m and gone by 520 m and the slower modes moved the edge by 100 m, their sensitivity being as
+the datasheet says; and the L1's clock in the cold, 24 ppm fast at +3 °C against 29 at room
+temperature, up to 46 while it cooled. A learned drift would so be right within some 5 ppm when
+settled and 20 while the temperature changes.
+
+Still unknown, in the order it would change the design: the lag reckoned from the satellite count,
+tried outdoors; range where the group rides, outside a city, and with the board where a rider
+carries it; a second L1, to tell one board's numbers from the model's; a PPS board judged from
+outside (the T-Echo); what a board draws listening, fixing and asleep (E7), which decides whether
+the walking profile is about sending less or about sleeping between slots; and real tracks, to set
+the send rule's distance and heartbeat by.
