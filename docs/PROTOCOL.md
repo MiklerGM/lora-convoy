@@ -54,18 +54,24 @@ k x 2 s   + phase   slot 0            slot 1            slot 2            spare
   of one frame a spacing clear of the first of the next, whatever their phases.
 - **Time.** A board's clock is set by marks. With a PPS line (the Heltec's kit), the edge is the
   second that the next NMEA fix names, within 100 µs. Without one (the L1), the fix's arrival less
-  the GNSS's lag, as far off as the board is told: 100 ms until E0 has measured the L76K. A mark is
-  taken to drift 50 ppm as it ages, and a new one replaces it only when better.
+  the GNSS's lag, as far off as the board's build tells it: 210 ms, give or take 50, measured on
+  one L1 ([07](07-experiments.md)); nothing, give or take 100, on a board with none measured. The
+  L76K is told to send GGA and RMC only (`$PCAS03`): behind its other sentences the fix came later
+  with every satellite in view, by up to 0.8 s. A mark is taken to drift 50 ppm as it ages, and a
+  new one replaces it only when better.
 - **A budget for the time.** A board sends only while its time, plus 1 ms for waking and the
   radio's start, is within half the gap between two packets: the spacing, less the packet and 2 ms
   for receivers to read it out. Otherwise it passes the slot over, and counts it (`unsure=`); a
-  slot whose moment it missed by over 2 ms is passed over too (`late=`). Every 2 s:
+  slot whose moment it missed by over 2 ms is passed over too (`late=`). The packet is handed to
+  the radio its start-up before the slot, so its RF begins on the slot's moment: 8.0 ms on the
+  Heltec, 7.1 ms on the L1, measured, and steady to 0.2 ms. Every 2 s:
 
-  | Riders | Spacing | Budget | A board with PPS keeps its slot without GNSS for | A board without PPS, its lag unmeasured (±100 ms) |
+  | Riders | Spacing | Budget | A board with PPS keeps its slot without GNSS for | The L1, without PPS (±50 ms) |
   |---|---|---|---|---|
-  | 3 | 500 ms | 233 ms | 77 min | sends; keeps its slot 44 min without GNSS |
-  | 7 | 250 ms | 108 ms | 36 min | sends; 2.5 min |
-  | 10 | 182 ms | 74 ms | 24 min | silent |
+  | 3 | 500 ms | 233 ms | 77 min | sends; keeps its slot 61 min without GNSS |
+  | 7 | 250 ms | 108 ms | 36 min | sends; 19 min |
+  | 10 | 182 ms | 74 ms | 24 min | sends; 8 min |
+  | 13 | 143 ms | 55 ms | 18 min | sends; 1 min: the largest group it joins |
   | 20 | 95 ms | 31 ms | 10 min | silent |
   | 32 | 61 ms | 14 ms | 4 min | silent |
 
@@ -233,8 +239,9 @@ and the slots passed over (`late=`, `unsure=`, and `held=` while the radio has y
 asked for: `mode=` is the mode asked for, and until the radio has taken it the board sends nothing,
 ARCHITECTURE D15). A board with both PPS and NMEA measures E0's number
 for boards without PPS: `lag=` is the NMEA fix's lag behind its PPS edge, last, least and most, in
-ms. `txlead=` is how late its own packets' RF began after their moment, least/mean/most in µs, by
-the radio's TxDone less the airtime (E0).
+ms. `txlead=` is how late its own packets' RF began after their slot's moment, least/mean/most in
+µs, by the radio's TxDone less the airtime (E0): what is left once the packet was handed over the
+radio's start-up early, near 0 on a board built with its own.
 
 Unasked, the board sends a `RIDER` line for every packet it takes, and its status every 10 s while
 a phone is connected; and, with the packet that brings a new answer to a call for help, the

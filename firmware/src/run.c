@@ -21,13 +21,18 @@
 #ifndef NODE_POWER_LEVEL
 #define NODE_POWER_LEVEL 3
 #endif
-/* The L76K's NMEA lag behind its second, for boards without PPS: unmeasured, so taken as nothing,
- * give or take 100 ms. A Heltec with its kit measures it (lag= in the status); E0 sets both. */
+/* The L76K's NMEA lag behind its second, for boards without PPS: taken as nothing, give or take
+ * 100 ms, unless the board's build names what was measured on it (zephyr/src/board.h). A Heltec
+ * with its kit measures it (lag= in the status). */
 #ifndef NODE_NMEA_LAG_US
 #define NODE_NMEA_LAG_US 0
 #endif
 #ifndef NODE_NMEA_ERR_US
 #define NODE_NMEA_ERR_US 100000
+#endif
+/* From handing the radio a packet to its RF beginning: each board's own, measured (txlead=). */
+#ifndef NODE_TX_LEAD_US
+#define NODE_TX_LEAD_US 0
 #endif
 
 #define VERIFY_US (30 * 1000000ll)
@@ -431,6 +436,7 @@ void run_start(const char *board, const char *reset) {
 #endif
     node_config_t cfg = {.slot = slot, .slots = NODE_SLOTS, .interval_ms = NODE_INTERVAL_MS, .duty_permille = 100,
                          .phy = PHY_V0, .nmea_lag_us = NODE_NMEA_LAG_US, .nmea_err_us = NODE_NMEA_ERR_US,
+                         .tx_lead_us = NODE_TX_LEAD_US,
                          .listen_one_in = 32};
     setup_t setup;
     const bool kept = port_setup_load(&setup, sizeof(setup)) && setup.version == SETUP_VERSION &&

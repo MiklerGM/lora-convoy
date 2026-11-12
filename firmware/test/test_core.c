@@ -239,6 +239,37 @@ static void tick(node_t *n, int64_t t) {
     }
 }
 
+/* A radio that takes 8 ms to start is handed each packet 8 ms before its slot, so its RF begins on
+ * the slot: against a twin with no start-up on the same clock, every packet 8 ms earlier, none
+ * lost; and a TxDone at the slot's moment plus the airtime is told as no lead at all. */
+static void test_tx_lead(void) {
+    node_config_t slow = CFG;
+    slow.tx_lead_us = 8000;
+    node_t a, b;
+    uint8_t buf[32];
+    node_init(&a, &CFG, 12345);
+    node_init(&b, &slow, 12345);
+    int64_t at_a[40], at_b[40];
+    int na = 0, nb = 0;
+    for (int64_t t = T0; t < 70 * SEC; t += 1000) {
+        tick(&a, t);
+        tick(&b, t);
+        /* the moment to hand over, exactly: a poll comes up to a millisecond after it */
+        const int64_t due = node_next_tx_us(&b, t);
+        if (node_poll_tx(&b, t, buf, sizeof(buf))) {
+            at_b[nb++] = t;
+            node_on_tx_done(&b, due + 8000 + phy_airtime_us(&b.cfg.phy, PKT_POSITION_LEN));
+        }
+        if (node_poll_tx(&a, t, buf, sizeof(buf))) at_a[na++] = t;
+    }
+    assert(na == 30 && nb == 30);
+    for (int i = 0; i < 30; i++) assert(at_a[i] - at_b[i] == 8000);
+    char line[512];
+    node_format_status(&b, 70 * SEC, line, sizeof(line));
+    assert(strstr(line, " txlead=0/0/0 "));
+    printf("node: a slow radio is handed its packet early, by its start-up\n");
+}
+
 static void test_node_sends(void) {
     node_t n;
     uint8_t b[32];
@@ -945,6 +976,7 @@ int main(void) {
     test_crypto();
     test_codec();
     test_nmea();
+    test_tx_lead();
     test_node_sends();
     test_node_time();
     test_node_duty();

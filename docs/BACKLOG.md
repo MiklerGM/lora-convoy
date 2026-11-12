@@ -100,7 +100,8 @@ Holdover, the guard's terms, NMEA timing on the L1, frame phase recovered from p
 measures each board. **M6, for now:** PPS edges paired with the NMEA fix of their second, or NMEA
 alone less a lag the board is told; 50 ppm of drift in holdover, and silence once the uncertainty
 leaves the budget ([PROTOCOL](PROTOCOL.md)). A Heltec with its kit measures the L76K's NMEA lag
-itself (`lag=`). Still open: the lag on the L1 (E0), the fix stamped by the UART's interrupt rather
+itself (`lag=`), and the L1 is built with its own, measured ([07](07-experiments.md)). Still open: a
+rider far off its slot told by its receivers (the status line has no room for a count), the fix stamped by the UART's interrupt rather
 than by the parser, time from packets heard without a fix, and clock drift calibration for longer
 holdover ([T-clock-drift](#t-clock-drift-calibrate-local-clocks)). A fix that came after the next
 PPS edge would be paired with it, a second out: the lag must stay well under a second (E0), or the

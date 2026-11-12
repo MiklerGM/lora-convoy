@@ -30,6 +30,9 @@ typedef struct {
      * arrival, and how far that may be off. The board's own measurement, until E0 gives one. */
     int32_t nmea_lag_us;
     int32_t nmea_err_us;
+    /* From handing the radio a packet to its RF beginning: the radio's start-up, steady to 0.2 ms
+     * on both boards (07, 2026-11-11). The packet is handed over this much before its slot. */
+    int32_t tx_lead_us;
     /* Listen in our own slot instead of sending, once in this many frames at random; 0 never. Two
      * radios given one slot send together, and never hear each other otherwise (T-join). */
     uint16_t listen_one_in;
@@ -153,7 +156,8 @@ void node_set_help(node_t *n, bool on);
 /* True if the packet was ours to take: a genuine, fresh v1 position of our group from another slot. */
 bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int snr_db4, int64_t now_us);
 
-/* A packet to send now, its length returned, or 0: at our slot, within TX_LATE_US of its moment.
+/* A packet to send now, its length returned, or 0: the radio's start-up (tx_lead_us) before our
+ * slot, within TX_LATE_US of that moment.
  * Its airtime is booked against the duty cycle when it is handed over, so a send that then fails
  * errs on the safe side. */
 size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap);
@@ -173,7 +177,8 @@ void node_on_tx_done(node_t *n, int64_t done_us);
  * platform applies before it sends anything (run.c). */
 void node_phy_applied(node_t *n, const phy_t *phy);
 
-/* Our clock at the moment of our next slot, for the platform to be ready by; INT64_MAX while no
+/* Our clock at the moment to hand over our next packet, the radio's start-up before its slot, for
+ * the platform to be ready by; INT64_MAX while no
  * slot can be told (no key, no time, a slot outside the group). Due already if not above now_us. */
 int64_t node_next_tx_us(const node_t *n, int64_t now_us);
 

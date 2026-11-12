@@ -107,7 +107,59 @@ derivation and known counterexamples. None of the tests above can be settled wit
 
 ## Results
 
-None of E0–E12 has run yet. Measurements the documents already rely on:
+### E0 and the schedule on two boards, 2026-11-11
+
+Stages 0–3 of [13](13-test-plan.md), indoors on one desk: a Heltec V4.3 with its GNSS kit (PPS) and a
+Wio Tracker L1 Pro (no PPS), an RTL-SDR without antenna as the third witness. Firmware 4ec578f, from
+15:32 with a bench change, since in every build: a `GNSS 0|1` console command and the
+L76K told to send GGA and RMC only (`$PCAS03`). Working log and per-run numbers: `lab/2026-11-11-notes.md`.
+
+- **The SDR and the Heltec agree.** The L1's lateness by the Heltec's `offset=` less the Heltec's own
+  `txlead=`, against the SDR's burst starts, in five 5-minute windows: within 0.2 ms each time. From
+  then on the Heltec is the reference.
+- **NMEA lag grows with the satellites while the L76K sends its default sentences.** RMC comes last,
+  after GSA and GSV, at 9600 baud: from the Heltec's PPS 520 ms at 6 satellites, ~700 at 12, 871 at
+  most, near the 900 ms pairing limit; the L1 ~90 ms late with no fix, ~190 ms at 4–5 satellites.
+  That is the plan's stop condition: a lateness that wanders by more than 100 ms.
+- **With GGA and RMC only** the lag is 222–322 ms at 11–12 satellites (median 234, p95 278); the L1
+  was 187–280 ms late over 30 minutes, sd 14, 196 at 5–6 satellites and 226 at 10–12. A spread of
+  some ±40 ms from second to second remains, the receiver's own.
+- **The L1 told its lag** (217 ms, ±50 ms): mean 8.5 ms late, of which its own start of transmission
+  is 7.1; p1 −7, p99 +27, most +54 (n=298). Over the next two hours on air, in groups of 10 and 13
+  (3,503 packets), the earliest and latest start the Heltec recorded for it were −26.3 and +59.1 ms:
+  one packet beyond what its claim allows (57 ms: its 50 and its 7 ms start), by 2 ms.
+- **Start of transmission:** 7.9–8.1 ms on the Heltec, 7.1–7.3 ms on the L1, steady to 0.2 ms; the
+  schedule allows 1 ms (`TX_ERR_US`). SetStandby(RC) stops the TCXO before each packet and SetTx waits
+  its 5 ms start, plus the Heltec's 1 ms front end.
+- **Drift without GNSS** (the L1's L76K on standby for an hour): the L1's clock 29.4 ppm fast, a
+  straight line (residual sd 0.9 ms); its `err=` grew at the 50 ppm bound, 50 to 229 ms, the true
+  error to ~99 ms. Indoors, steady temperature.
+- **A packet** is 31.06 ms (Heltec) and 31.10 ms (L1) at half power; computed 30.85.
+- **The schedule** ([13](13-test-plan.md) stage 3, the L1 at ±50 ms, 2 s frames): neighbours in a group
+  of 10 for an hour, every packet taken both ways (1719/1719, 1711/1711), never closer than 126 ms on
+  air; 13 is the largest group the L1 joins (budget 55 ms) and held for an hour with no overlap; in 14,
+  20 and 32 it stays silent, counting `unsure=`, as in SF9 in a group of 10 (budget 38 ms). Both in one
+  slot: the first `clash=` after 21 s. Two groups on the channel: overlaps in 4 % of frames, scattered,
+  the other's packets counted `foreign=` and never shown as riders. A restart: heard again in 12 s, a
+  new session. `LEDGER`: 53.4 and 53.9 s in an hour, as computed. A lag told 181 ms wrong puts the
+  L1 on its neighbour's slot every frame, and nothing flags it (`clash=0`); 100 ms wrong at 182 ms
+  spacing does not reach the neighbour, contrary to the plan's expectation.
+
+- **With both in the firmware** (the same evening, 30 minutes, neighbours in a group of 10): the
+  L76K told GGA and RMC only in every build, the L1 built with its lag (210 ms, ±50; the 217 above
+  held its 7 ms of start) and each board handing its packet over its radio's start-up early.
+  `txlead=` fell to −0.4/−0.1/0.0 ms on the Heltec and 0.0/0.0/0.2 ms on the L1. The L1 at the
+  Heltec: −10.8 to +62.1 ms, mean 8.0, sd 8.5, p99 34 (880/880 taken; 865/865 the other way); the
+  SDR over five of those minutes agrees within 0.4 ms (1.9 against 2.2), bursts never closer than
+  139 ms. The sky had changed: 14 satellites at the Heltec and its own lag 256 ms, against 234 in
+  the afternoon. One packet in 880 came later than the L1's ±50 ms allows, by 12 ms.
+
+Not covered: range (E2), battery, the phone, a power cycle (only software restarts), stage 3.9 as
+written (a key and time but no fix was seen silent instead), outdoor sky and temperature.
+
+### Earlier
+
+Measurements the documents already rely on:
 
 - **DMD's time on air:** a one-rider DMD packet (46 bytes) takes 314 ms, measured on
   dmd2-lora-bridge's firmware. `tools/airtime.py` calibrates DMD's fixed overhead on it

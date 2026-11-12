@@ -266,6 +266,8 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
     int64_t utc, err;
     /* Nothing without a time to find our slot by. */
     if (!node_utc_us(n, now_us, &utc, &err)) return 0;
+    /* The radio takes tx_lead_us to start: everything below is reckoned as of the RF's beginning. */
+    utc += n->cfg.tx_lead_us;
     const int64_t k = utc / frame_us(n);
     /* Nothing at all without a key (v1 has no clear text), nor from a slot outside the group; the
      * frames go by meanwhile, so the one running when the key comes is not counted as missed. */
@@ -327,7 +329,7 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
     /* The nonce must never repeat: before the counter wraps, a new session. */
     if (++n->counter == 0) n->session = next_random(n);
     n->sent++;
-    n->tx_due_us = now_us - (utc - at);
+    n->tx_due_us = now_us - (utc - at) + n->cfg.tx_lead_us;
     n->tx_air_us = phy_airtime_us(&n->phy, PKT_POSITION_LEN);
     duty_book(&n->duty, now_us, air_ms);
     return pkt_seal(out, &p, &n->group);
@@ -336,6 +338,7 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
 int64_t node_next_tx_us(const node_t *n, int64_t now_us) {
     int64_t utc, err;
     if (!n->cfg.keyed || n->cfg.slot >= n->cfg.slots || !node_utc_us(n, now_us, &utc, &err)) return INT64_MAX;
+    utc += n->cfg.tx_lead_us;
     const int64_t k = utc / frame_us(n);
     int64_t at = slot_utc_us(n, k, phase_us(n, k), n->cfg.slot);
     if (k <= n->last_frame || utc - at > TX_LATE_US) at = slot_utc_us(n, k + 1, phase_us(n, k + 1), n->cfg.slot);

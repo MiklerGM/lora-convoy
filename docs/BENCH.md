@@ -25,18 +25,20 @@ Both boards answer the phone API's commands typed on the console ([PROTOCOL](PRO
 
 - **Heltec:** after a few minutes, `lag=last/min/max` in `STATUS` is how far the L76K's NMEA fix
   lags behind its PPS edge. Note all three. If the most nears a second, the pairing is wrong (T-timing).
-- **L1:** it has no PPS, so it starts from the Heltec's numbers, a first guess only, as each
-  board's UART and processing differ: build it with `-DNODE_NMEA_LAG_US=<the lag>` and
-  `-DNODE_NMEA_ERR_US=<half the spread, plus a margin>`. Without them it assumes 0 ± 100 ms, and
-  keeps quiet in groups of more than seven. The offsets below then measure the L1 itself.
+- **L1:** it has no PPS, and is built with what one board measured ([07](07-experiments.md)):
+  a lag of 210 ms, ±50 ms (`zephyr/src/board.h`), so it keeps quiet in groups of more than 13 at
+  2 s. Another board, or another GNSS, is measured by the offsets below and built with
+  `-DNODE_NMEA_LAG_US=<the lag>` and `-DNODE_NMEA_ERR_US=<half the spread, plus a margin>`.
 - **Both:** `late=` and `unsure=` stay at 0 with a fix. `late=` growing means the radio task wakes
   too late for its slot.
 - **When RF begins**, on each board: `txlead=least/mean/most` in `STATUS`, in µs, from a packet's
   moment in its slot to its RF, which the radio's TxDone gives, as DIO1's interrupt stamps it, less
   the packet's airtime. Everything is inside: the radio task's wake-up, the packet's making, SPI,
   and on the Heltec the front end's 1 ms before SetTx. `?` after some packets means DIO1's
-  interrupt stamps nothing: its line or its pin is wrong. The schedule's `TX_ERR_US`, 1 ms, has to
-  cover the most (node.c).
+  interrupt stamps nothing: its line or its pin is wrong. Each board hands its packet over its
+  radio's start-up early (`NODE_TX_LEAD_US`: 8.0 ms on the Heltec, 7.1 ms on the L1), so the mean
+  is near 0; a new board is built with 0 first, and then with the mean it shows. The schedule's
+  `TX_ERR_US`, 1 ms, has to cover what is left (node.c).
 - **How late each board is heard**: three boards in one group, two Heltecs and the L1, so their
   slots are 500 ms apart at 2 s and a late packet still lands clear. On each Heltec, whose own time
   is its PPS's, each `RIDER` line's `offset=least/mean/most` is how late that rider's packets
