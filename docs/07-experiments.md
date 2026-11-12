@@ -225,6 +225,13 @@ so the count does tell the lag where the sky is poor; under more sky something e
 "held". So a board without PPS has not been shown to keep ±50 ms out of doors, with or without
 the line.
 
+Then 22 minutes with the L1 on the balcony on its cable (16:24–16:46, 583 packets), its status
+telling the count: with the line already taken off, the median left over was −2 ms at 14
+satellites, +7 at 15, +21 at 16, +29 at 17 (13 stood at +7, on 40 packets); 26 packets beyond
+±50 ms, the latest +112. So the lag climbs faster beyond 15 than the line allows, some 10 ms a
+satellite more, which would make the afternoon's +50 to +76 ms some 20 satellites. One short
+stretch, four counts: a pointer to where to measure, not a line to build in.
+
 **Drift in the cold** (13, 2.7). The L1's GNSS switched off indoors (`GNSS 0`), the board put on
 a balcony at +3 °C, the Heltec indoors with PPS: 1,315 packets over 45 minutes, from 16 minutes
 after the GNSS went off.
