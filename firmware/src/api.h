@@ -55,6 +55,7 @@ typedef struct {
     bool restart;
     bool bootloader;
     uint8_t gnss_ask;               /* GNSS 0|1: 0 nothing asked, 1 off, 2 on */
+    uint8_t tour_s;                 /* TOUR: the mode changed by the clock every so many seconds; 0 never */
 } api_t;
 
 /* One line from the phone or the console. The caller holds the node's lock. came_us: when the line
@@ -64,3 +65,9 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
 
 /* The status line, which the board also sends unasked. */
 int api_status(const api_t *api, int64_t now_us, char *buf, size_t cap);
+
+/* TOUR, for trying range (E2): the mode asked for by the clock, SF7/250, SF9/250 and SF10/125 in
+ * turn, each for tour_s seconds of UTC, so the boards of a group change together with no word
+ * between them. True when the mode asked for changed: the caller applies the radio, as after MODE.
+ * Nothing without a time. The caller holds the node's lock. */
+bool api_tour(api_t *api, int64_t now_us);

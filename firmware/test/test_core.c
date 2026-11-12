@@ -787,6 +787,32 @@ static const char *api_status_of(const api_t *api) {
     return line;
 }
 
+/* TOUR: two boards told the same seconds are in the same mode at the same UTC with no word between
+ * them: the three modes in turn, changed on the seconds of UTC that the dwell divides, and nothing
+ * before a board has a time. */
+static void test_tour(void) {
+    node_t n;
+    node_init(&n, &CFG, 1);
+    api_t api = {.node = &n, .tour_s = 20};
+    assert(!api_tour(&api, 0) && n.cfg.phy.sf == 7);
+    int changes = 0, seen = 0;
+    for (int64_t t = T0; t < T0 + 125 * SEC; t += SEC / 4) {
+        tick(&n, t);
+        const uint8_t before = n.cfg.phy.sf;
+        if (!api_tour(&api, t)) continue;
+        const int64_t utc_ms = UTC0_MS + (t - T0) / 1000;
+        /* the first call puts it into the running dwell; every later change is on its boundary */
+        assert(changes == 0 || utc_ms % 20000 == 0);
+        assert(n.cfg.phy.sf != before || changes == 0);
+        assert((n.cfg.phy.sf == 7 && n.cfg.phy.bw_hz == 250000) || (n.cfg.phy.sf == 9 && n.cfg.phy.bw_hz == 250000) ||
+               (n.cfg.phy.sf == 10 && n.cfg.phy.bw_hz == 125000));
+        seen |= 1 << (n.cfg.phy.sf - 7);
+        changes++;
+    }
+    assert(changes >= 6 && seen == 0x0D);
+    printf("api: a tour of the modes, by the clock\n");
+}
+
 static void test_api(void) {
     node_t n;
     uint8_t b[PKT_POSITION_LEN];
@@ -983,6 +1009,7 @@ int main(void) {
     test_node_hears();
     test_node_help();
     test_node_mode();
+    test_tour();
     test_api();
     return 0;
 }

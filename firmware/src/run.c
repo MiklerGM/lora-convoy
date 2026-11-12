@@ -50,7 +50,7 @@ typedef struct {
     uint8_t key[16];
     uint32_t interval_ms;
     uint8_t sf;           /* the radio mode, on v0's frequency */
-    uint8_t reserved;
+    uint8_t tour_s;       /* TOUR; 0 in every setup kept before there was one */
     uint16_t bw_khz;      /* 62 for 62.5 */
 } setup_t;
 #define SETUP_VERSION 3
@@ -149,7 +149,7 @@ static bool command(char *line, replies_t *out, int64_t came_us) {
     if (s_api.radio_changed) atomic_store(&s_reapply, true);
     setup_t setup = {.version = SETUP_VERSION, .keyed = s_node.cfg.keyed, .slot = s_node.cfg.slot,
                      .slots = s_node.cfg.slots, .interval_ms = s_node.cfg.interval_ms, .sf = s_node.cfg.phy.sf,
-                     .bw_khz = (uint16_t)(s_node.cfg.phy.bw_hz / 1000)};
+                     .tour_s = s_api.tour_s, .bw_khz = (uint16_t)(s_node.cfg.phy.bw_hz / 1000)};
     memcpy(setup.key, s_node.cfg.key, sizeof(setup.key));
     const bool save = s_api.setup_changed;
     s_api.forget = s_api.restart = s_api.bootloader = s_api.radio_changed = s_api.setup_changed = false;
@@ -359,7 +359,10 @@ static void radio_task(void *arg) {
             console_line(text);
         }
         now = port_uptime_us();
-        const bool reapply = atomic_exchange(&s_reapply, false);
+        port_mutex_lock(s_lock);
+        const bool toured = api_tour(&s_api, now);
+        port_mutex_give(s_lock);
+        const bool reapply = atomic_exchange(&s_reapply, false) || toured;
         if (reapply || now >= next_verify) {
             /* a new power level, or a chip that no longer holds our configuration */
             if (reapply || !radio_verify()) apply_radio();
@@ -453,12 +456,13 @@ void run_start(const char *board, const char *reset) {
         phy.bw_hz = setup.bw_khz == 62 ? 62500 : (uint32_t)setup.bw_khz * 1000;
         if (phy_supported(&phy)) cfg.phy = phy;
     }
+    const uint8_t tour_s = kept ? setup.tour_s : 0;
     memset(&setup, 0, sizeof(setup));
     s_lock = port_mutex_create();
     s_command_lock = port_mutex_create();
     node_init(&s_node, &cfg, port_random() ^ h);
     s_api = (api_t){.node = &s_node, .board = board, .reset = s_reset, .power = NODE_POWER_LEVEL,
-                    .tx_dbm = radio_tx_dbm};
+                    .tx_dbm = radio_tx_dbm, .tour_s = tour_s};
     LOGI(TAG, "LoRa Convoy, protocol v%d, phone API %d, on %s after %s: %s, slot %u of %u%s, every %u ms, %d dBm",
          PKT_VERSION, API_PROTO, board, s_reset,
          cfg.keyed ? "keyed" : "no key yet: silent until the app or KEY gives one", cfg.slot, cfg.slots,
