@@ -30,6 +30,9 @@
 #ifndef NODE_NMEA_ERR_US
 #define NODE_NMEA_ERR_US 100000
 #endif
+#ifndef NODE_NMEA_LAG_SAT_US
+#define NODE_NMEA_LAG_SAT_US 0
+#endif
 /* From handing the radio a packet to its RF beginning: each board's own, measured (txlead=). */
 #ifndef NODE_TX_LEAD_US
 #define NODE_TX_LEAD_US 0
@@ -439,6 +442,7 @@ void run_start(const char *board, const char *reset) {
 #endif
     node_config_t cfg = {.slot = slot, .slots = NODE_SLOTS, .interval_ms = NODE_INTERVAL_MS, .duty_permille = 100,
                          .phy = PHY_V0, .nmea_lag_us = NODE_NMEA_LAG_US, .nmea_err_us = NODE_NMEA_ERR_US,
+                         .nmea_lag_sat_us = NODE_NMEA_LAG_SAT_US,
                          .tx_lead_us = NODE_TX_LEAD_US,
                          .listen_one_in = 32};
     setup_t setup;

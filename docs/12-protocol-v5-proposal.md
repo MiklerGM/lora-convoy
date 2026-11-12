@@ -369,8 +369,9 @@ as witness ([07](07-experiments.md), results). Against this proposal:
 - **Corrected 2026-11-12**: the ±50 ms below is a desk's. Outdoors the same L1 was 87 ms late on
   average and up to 168, because the L76K's lag grows with the satellites it uses, some 6.5 ms
   each ([07](07-experiments.md)). The two rows stand only if the lag is reckoned from the
-  satellite count, which is not built or tried; until then a board without PPS needs the ±100 ms
-  rows of section 1, or more.
+  satellite count. That is built since, and held on a balcony (−27 to +43 ms over twenty minutes);
+  until it has held under an open sky and on the move, a board without PPS is safer in the ±100 ms
+  rows of section 1.
 - **A board without PPS needs ±50 ms, not ±100** [bench], once its L76K sends GGA and RMC only and
   the board is told its lag. The rows that changes [calc]; the PPS row stays a guess, as nothing
   but the Heltec itself has judged the Heltec's time:
@@ -411,7 +412,7 @@ temperature, up to 46 while it cooled. A learned drift would so be right within 
 settled and 20 while the temperature changes.
 
 Still unknown, in the order it would change the design: the lag reckoned from the satellite count,
-tried outdoors; range where the group rides, outside a city, and with the board where a rider
+tried under an open sky and on the move; range where the group rides, outside a city, and with the board where a rider
 carries it; a second L1, to tell one board's numbers from the model's; a PPS board judged from
 outside (the T-Echo); what a board draws listening, fixing and asleep (E7), which decides whether
 the walking profile is about sending less or about sleeping between slots; and real tracks, to set

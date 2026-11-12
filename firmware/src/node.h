@@ -30,6 +30,9 @@ typedef struct {
      * arrival, and how far that may be off. The board's own measurement, until E0 gives one. */
     int32_t nmea_lag_us;
     int32_t nmea_err_us;
+    /* More lag for each satellite the fix used: the L76K's fix comes later the more it has to
+     * reckon with, some 7 to 9 ms each (07, 2026-11-12). */
+    int32_t nmea_lag_sat_us;
     /* From handing the radio a packet to its RF beginning: the radio's start-up, steady to 0.2 ms
      * on both boards (07, 2026-11-11). The packet is handed over this much before its slot. */
     int32_t tx_lead_us;

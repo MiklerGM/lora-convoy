@@ -152,7 +152,8 @@ void node_on_fix(node_t *n, const gnss_fix_t *fix, int64_t now_us) {
             n->lag_us = lag;
             set_time(n, TIME_PPS, n->pps_us, utc_us, PPS_ERR_US, now_us);
         } else {
-            set_time(n, TIME_NMEA, now_us - n->cfg.nmea_lag_us, utc_us, n->cfg.nmea_err_us, now_us);
+            const int64_t told = n->cfg.nmea_lag_us + (int64_t)n->cfg.nmea_lag_sat_us * fix->sats;
+            set_time(n, TIME_NMEA, now_us - told, utc_us, n->cfg.nmea_err_us, now_us);
         }
     }
     if (fix->valid) {

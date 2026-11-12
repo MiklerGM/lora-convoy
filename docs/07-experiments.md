@@ -203,8 +203,18 @@ own `lag=` against its `sats=`, 3,310 status lines over both days with GGA and R
 | 90th percentile | 190 | 214 | 222 | 253 | 271 | 322 | 328 |
 
 Some 6.5 ms a satellite on the medians, and the late tail widens with them. The 210 ms was a
-desk's nine satellites. Not yet corrected in the firmware: a lag reckoned from the satellites the
-fix reports, or a PPS line.
+desk's nine satellites.
+
+The L1's own lag against its own count, from 5,600 of its packets heard by the Heltec on both days
+while its status told its satellites: 187 ms at 5, 206 at 8, 219 at 10, 240 at 12, 275 at 15. **The
+firmware now reckons the lag from the count** (`NODE_NMEA_LAG_SAT_US`): 138 ms and 8.7 ms a
+satellite on the L1, 160 ms and 6.9 on the Heltec, where it matters only without PPS. Tried the
+same day, neighbours in a group of 10: on the desk for ten minutes (8–10 satellites) the L1 began
+−17 to +46 ms from its slot, mean −5; on the balcony on its battery for twenty, −27 to +43, mean
+−7.5, sd 8.9 (579 packets, all taken, none beyond ±50 ms). How many satellites it used out there
+is not known, the board being off its cable; the Heltec indoors used 17. So: no worse on the desk,
+and near its slot under more sky, where the fixed lag had left it tens of ms late; the line beyond
+15 satellites, an open sky and a moving board are still to try.
 
 **Drift in the cold** (13, 2.7). The L1's GNSS switched off indoors (`GNSS 0`), the board put on
 a balcony at +3 °C, the Heltec indoors with PPS: 1,315 packets over 45 minutes, from 16 minutes

@@ -54,9 +54,9 @@ k x 2 s   + phase   slot 0            slot 1            slot 2            spare
   of one frame a spacing clear of the first of the next, whatever their phases.
 - **Time.** A board's clock is set by marks. With a PPS line (the Heltec's kit), the edge is the
   second that the next NMEA fix names, within 100 µs. Without one (the L1), the fix's arrival less
-  the GNSS's lag, as far off as the board's build tells it: 210 ms, give or take 50, measured on
-  one L1 on a desk ([07](07-experiments.md)), and wrong under an open sky, where the lag grows with
-  the satellites used and the L1 was 87 ms late on average; nothing, give or take 100, on a board with none measured. The
+  the GNSS's lag, as far off as the board's build tells it: 138 ms and 8.7 ms for each satellite the fix
+  used, give or take 50, measured on one L1 ([07](07-experiments.md)): a fixed lag was right on a
+  desk and 87 ms short under an open sky; nothing, give or take 100, on a board with none measured. The
   L76K is told to send GGA and RMC only (`$PCAS03`): behind its other sentences the fix came later
   with every satellite in view, by up to 0.8 s. A mark is taken to drift 50 ppm as it ages, and a
   new one replaces it only when better.

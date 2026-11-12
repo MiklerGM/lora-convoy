@@ -407,6 +407,21 @@ static void test_node_time(void) {
     assert(n.time == TIME_NMEA && node_utc_us(&n, 5150000, &utc, &err));
     assert(utc == UTC0_MS * 1000 + 100000 && err == 20000 + 5);
 
+    /* The lag told may grow with the satellites the fix used: 100 ms and 5 ms for each. A fix of 9
+     * satellites 145 ms after its second, and one of 20 satellites 200 ms after, both set the clock
+     * to the second they name. */
+    node_config_t sky = cfg;
+    sky.nmea_lag_sat_us = 5000;
+    for (int sats = 9; sats <= 20; sats += 11) {
+        node_t s;
+        node_init(&s, &sky, 1);
+        gnss_fix_t g = fix_at(UTC0_MS, true);
+        g.sats = (uint8_t)sats;
+        const int64_t came = 5000000 + 100000 + 5000 * sats;
+        node_on_fix(&s, &g, came);
+        assert(node_utc_us(&s, came, &utc, &err) && utc == UTC0_MS * 1000 + 100000 + 5000 * sats);
+    }
+
     /* A PPS edge, then the fix that names its second: the edge is the second, and how far the NMEA
      * lagged behind it is measured. */
     node_on_pps(&n, 6000000);

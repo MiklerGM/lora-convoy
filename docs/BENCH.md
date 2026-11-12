@@ -26,9 +26,11 @@ Both boards answer the phone API's commands typed on the console ([PROTOCOL](PRO
 - **Heltec:** after a few minutes, `lag=last/min/max` in `STATUS` is how far the L76K's NMEA fix
   lags behind its PPS edge. Note all three. If the most nears a second, the pairing is wrong (T-timing).
 - **L1:** it has no PPS, and is built with what one board measured ([07](07-experiments.md)):
-  a lag of 210 ms, ±50 ms (`zephyr/src/board.h`), so it keeps quiet in groups of more than 13 at
-  2 s. Another board, or another GNSS, is measured by the offsets below and built with
-  `-DNODE_NMEA_LAG_US=<the lag>` and `-DNODE_NMEA_ERR_US=<half the spread, plus a margin>`.
+  a lag of 138 ms and 8.7 ms for each satellite used, ±50 ms (`zephyr/src/board.h`), so it keeps
+  quiet in groups of more than 13 at 2 s. Another board, or another GNSS, is measured by the
+  offsets below, against the satellites its status tells, and built with
+  `-DNODE_NMEA_LAG_US=<the lag at none>`, `-DNODE_NMEA_LAG_SAT_US=<more for each satellite>` and
+  `-DNODE_NMEA_ERR_US=<half the spread, plus a margin>`.
 - **Both:** `late=` and `unsure=` stay at 0 with a fix. `late=` growing means the radio task wakes
   too late for its slot.
 - **When RF begins**, on each board: `txlead=least/mean/most` in `STATUS`, in µs, from a packet's

@@ -63,11 +63,16 @@
 #define BOARD_OLED_SH1106 DT_CHOSEN(zephyr_display)
 #endif
 
-/* The Wio Tracker L1 Pro's own, measured on one board, 2026-11-11 (docs/07): its L76K's RMC, sending
- * GGA and RMC only, comes 210 ms after its second, give or take 50; its radio takes 7.1 ms to
- * start. ponytail: one board's numbers for every nRF build; another board names its own. */
+/* The Wio Tracker L1 Pro's own, measured on one board, 2026-11-11 and 12 (docs/07): its L76K's RMC,
+ * sending GGA and RMC only, comes 138 ms after its second and 8.7 ms more for each satellite used
+ * (187 ms at 5, 275 at 15, by 5,600 packets heard on a board with PPS); its radio takes 7.1 ms to
+ * start. ponytail: one board's numbers for every nRF build, a straight line tried to 15 satellites
+ * only, and +-50 ms kept from the desk; another board names its own. */
 #ifndef NODE_NMEA_LAG_US
-#define NODE_NMEA_LAG_US 210000
+#define NODE_NMEA_LAG_US 138000
+#endif
+#ifndef NODE_NMEA_LAG_SAT_US
+#define NODE_NMEA_LAG_SAT_US 8700
 #endif
 #ifndef NODE_NMEA_ERR_US
 #define NODE_NMEA_ERR_US 50000
