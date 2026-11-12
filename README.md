@@ -8,7 +8,7 @@ a moving group could do better.
 roadmap and backlog below; an app that shows riders and routes in OsmAnd and sets up a private
 group, and firmware for the Heltec V4.3 and the Wio Tracker L1 Pro that sends positions encrypted
 for the group, each rider in a slot by GPS time, answers calls for help, and talks to the app over
-Bluetooth, all tested without hardware (M1–M6, and M7 in progress). Nothing has run on a board yet, and nothing here has been ridden.
+Bluetooth, all tested without hardware (M1–M6, and M7 in progress). Two boards have run on a desk, where the schedule held ([07](docs/07-experiments.md)); nothing here has been ridden.
 
 ## Why this exists
 
@@ -34,6 +34,8 @@ protocol, with OsmAnd as the map.
 | 09 | [The protocol's next version](docs/09-protocol-next.md) | What an outside review of v3 found, and the order to settle it in |
 | 10 | [Capabilities and protocol comparison](docs/10-protocol-comparison.md) | Wanted behaviour, common scenarios, measurements and the runnable draft baseline |
 | 11 | [Simulation model](docs/11-simulation-model.md) | The target DES, world/radio models, candidate boundaries, validation and calibration |
+| 12 | [Proposal: protocol v5](docs/12-protocol-v5-proposal.md) | A review of v3 and of v4's plan; profiles by activity, sending by movement, one packet, a shared plan, and one test rig. Not decided |
+| 13 | [Test plan: two boards and an SDR](docs/13-test-plan.md) | What to measure with a Heltec, an L1 and an RTL-SDR, in what order, and what each stage decides. Stages 0–3 run |
 
 ## Building it
 
