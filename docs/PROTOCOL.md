@@ -103,7 +103,7 @@ k x 2 s   + phase   slot 0            slot 1            slot 2            spare
 | 17 | speed | km/h, 0–254; 255 unknown |
 | 18 | course | 2° steps from north, 0–179; 255 unknown |
 | 19 | status | bit 0 needs help, bit 1 stopped, bit 2 GPS ok, bit 3 battery low (not yet set); bits 6–4 the call for help's number, 1–7, 0 without a call |
-| 20 | help heard | a call for help the sender hears: bits 4–0 the caller's slot, bits 7–5 the call's number; 0 for none |
+| 20 | help heard | a call for help the sender hears: bits 4–0 the caller's slot, bits 7–5 the call's number, 1–7. With bits 7–5 at 0 no call is heard, and bits 4–0 are the satellites the sender's fix used, to 31, 0 for unknown (since 2026-11-13, for the bench: a receiver tells them in `RIDER … sats=`; an older one reads no call and nothing else) |
 | 21–24 | tag | CCM's |
 
 Bytes 0–8 go in clear and are authenticated; bytes 9–20 are encrypted. Coordinates round to the
@@ -224,7 +224,7 @@ on three transports:
 | `MODE <SF 7–12> <kHz 62, 125, 250, 500>` | `OK mode=<SF>/<kHz>`: another radio mode on the same frequency, for trying range (E2); kept over a restart. Every board of a group needs the same |
 | `TOUR <0–255>` | `OK tour=<s>`: for trying range (E2), the board changes its mode by the clock, SF7/250, SF9/250 and SF10/125 in turn, each for so many seconds of UTC, so a group's boards change together and one walk tries all three; 0 stops it, in the mode it is in. Kept over a restart |
 | `GNSS <0–1>` | `OK gnss=<0–1>`: the board's GNSS off or on, for the bench: off, it runs on the time and the position it holds, as in a tunnel. On again at a restart |
-| `SYSTEMS <1–7>` | `OK systems=<1–7>`: which satellites the L76K uses, for the bench: 1 GPS, 2 BeiDou, 4 GLONASS, summed (its `$PCAS04`; 3 as it comes). Fewer satellites, less lag ([07](07-experiments.md)). Not kept over a restart of the board |
+| `SYSTEMS <1–8>` | `OK systems=<1–8>`: which satellites the L76K uses, for the bench: 1 GPS, 2 BeiDou, 4 GLONASS, summed (its `$PCAS04`; 3 as it comes; the units tried had no GLONASS, 5 being as 1 and 7 as 3). 8: 3 and 1 in turn, a quarter of an hour of UTC each, 3 from the hour and the half hour. Fewer satellites, less lag ([07](07-experiments.md)). Not kept over a restart of the board |
 | `FORGET` | `FORGOTTEN` once the board has dropped its bond, or `ERR forget incomplete` |
 | `REBOOT`, and `BOOTLOADER` on the L1 Pro (its UF2 drive) | — |
 

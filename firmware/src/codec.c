@@ -90,7 +90,10 @@ size_t pkt_seal(uint8_t out[PKT_POSITION_LEN], const position_t *p, const group_
     body[8] = p->speed_kmh;
     body[9] = p->course2;
     body[10] = (uint8_t)((p->status & 0x0F) | (p->call & 7) << 4);
-    body[11] = p->help_heard == HELP_HEARD_NONE ? 0 : (uint8_t)((p->heard_call & 7) << 5 | (p->help_heard & 0x1F));
+    /* with no help heard the slot's five bits are free, and a receiver that reads no call's number
+     * reads nothing else there: they carry the satellites of the fix, for the bench (07, 2026-11-13) */
+    body[11] = p->help_heard == HELP_HEARD_NONE ? (p->sats > 31 ? 31 : p->sats)
+                                                : (uint8_t)((p->heard_call & 7) << 5 | (p->help_heard & 0x1F));
     uint8_t nonce[CCM_NONCE_LEN];
     nonce_of(out, nonce);
     ccm_seal(&g->ccm, nonce, out, PKT_HEADER_LEN, body, PKT_BODY_LEN, &out[PKT_HEADER_LEN],
@@ -120,5 +123,6 @@ pkt_result_t pkt_open(const uint8_t *buf, size_t len, const group_key_t *g, posi
     p->call = body[10] >> 4 & 7;
     p->heard_call = body[11] >> 5;
     p->help_heard = p->heard_call ? body[11] & 0x1F : HELP_HEARD_NONE;
+    p->sats = p->heard_call ? 0 : body[11] & 0x1F;
     return PKT_OK;
 }

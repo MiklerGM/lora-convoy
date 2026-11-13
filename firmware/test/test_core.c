@@ -116,6 +116,17 @@ static void test_codec(void) {
     assert(q.group == 0x86 && q.slot == 3 && q.session == 0x01020304 && q.counter == 5 && q.fix_time == 64197);
     assert(q.speed_kmh == 40 && q.course2 == 135 && q.status == (ST_GPS_OK | ST_HELP) && q.call == 5);
     assert(q.help_heard == 7 && q.heard_call == 2);
+    /* The satellites ride in that byte only while no help is heard, and are never read as a call
+     * heard: an answer nobody gave would tell a rider in trouble that help knows. */
+    position_t s = p, t;
+    s.sats = 40;
+    assert(pkt_seal(b, &s, &g) == PKT_POSITION_LEN && memcmp(b, want, sizeof(want)) == 0);
+    s.help_heard = HELP_HEARD_NONE;
+    pkt_seal(b, &s, &g);
+    assert(pkt_open(b, sizeof(b), &g, &t) == PKT_OK && t.help_heard == HELP_HEARD_NONE && t.sats == 31);
+    s.sats = 17;
+    pkt_seal(b, &s, &g);
+    assert(pkt_open(b, sizeof(b), &g, &t) == PKT_OK && t.help_heard == HELP_HEARD_NONE && t.sats == 17);
     /* half a step at most: 1.07e-5 degrees of latitude, 2.15e-5 of longitude */
     assert(labs((long)q.lat_e7 - 471410000) <= 54 && labs((long)q.lon_e7 - 95215000) <= 108);
 
@@ -980,7 +991,7 @@ static void test_api(void) {
     /* SYSTEMS goes to the GNSS as it stands: nothing the L76K has no meaning for is passed on */
     ask(&api, "SYSTEMS 1");
     assert(strcmp(replies[0], "OK systems=1") == 0 && api.gnss_systems == 1);
-    ask(&api, "SYSTEMS 8");
+    ask(&api, "SYSTEMS 9");
     assert(strncmp(replies[0], "ERR", 3) == 0 && api.gnss_systems == 1);
     ask(&api, "FORGET");
     assert(n_replies == 0 && api.forget);

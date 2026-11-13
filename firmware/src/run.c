@@ -242,6 +242,7 @@ static void gnss_task(void *arg) {
     port_gnss_open();
     int64_t logged = -GNSS_LOG_US, pps = 0, told = -GNSS_TELL_US;
     uint8_t systems = 0;
+    int64_t utc_ms = 0;
     bool was_valid = false;
     for (;;) {
         port_wdt_feed(watch);
@@ -255,8 +256,12 @@ static void gnss_task(void *arg) {
         }
         /* SYSTEMS (the L76K's PCAS04), once for each asking: not kept over a restart of ours,
          * for the bench. A byte read without the lock, which is whole or not yet there. */
-        if (s_api.gnss_systems != systems) {
-            systems = s_api.gnss_systems;
+        uint8_t want = s_api.gnss_systems;
+        /* 8: GPS with BeiDou and GPS alone in turn, a quarter of an hour of UTC each, the first from
+         * the hour and the half hour: the two compared under one sky by a board off its cable. */
+        if (want == 8) want = !utc_ms ? systems : utc_ms / (15 * 60000) % 2 ? 1 : 3;
+        if (want != systems) {
+            systems = want;
             char body[12], cmd[20];
             const int n = snprintf(body, sizeof(body), "PCAS04,%u", systems);
             uint8_t sum = 0;
@@ -269,6 +274,7 @@ static void gnss_task(void *arg) {
         if (c < 0 || !nmea_feed(&nmea, (char)c, &fix)) continue;
         /* ponytail: the fix's time is when its last sentence was parsed, after the UART's buffering;
          * a timestamp from the receive interrupt is finer, if E0 finds NMEA time too rough */
+        if (fix.time_valid) utc_ms = fix.utc_ms;
         const int64_t now = port_uptime_us();
         const int64_t edge = port_pps_us();
         port_mutex_lock(s_lock);

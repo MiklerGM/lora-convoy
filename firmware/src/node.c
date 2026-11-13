@@ -325,6 +325,7 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
         .course2 = h->course_deg10 < 0 ? COURSE_UNKNOWN : (uint8_t)(((h->course_deg10 + 10) / 20) % 180),
         .status = (uint8_t)((current ? ST_GPS_OK : 0) | (n->help ? ST_HELP : 0) | (n->stopped ? ST_STOPPED : 0)),
         .call = n->help ? n->help_call : 0,
+        .sats = current ? n->fix.sats : 0,
     };
     help_to_answer(n, now_us, &p);
     /* The nonce must never repeat: before the counter wraps, a new session. */
@@ -522,7 +523,7 @@ int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf,
     char offset[72];
     return snprintf(buf, cap,
                     "RIDER slot=%u group=%08lx boot=%08lx at=%lld heard_at=%lld fix=%u lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
-                    "help=%d stopped=%d answered=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu offset=%s",
+                    "help=%d stopped=%d answered=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu offset=%s sats=%u",
                     slot, (unsigned long)n->group.id, (unsigned long)n->boot, (long long)(now_us / 1000),
                     (long long)(r->heard_us / 1000), r->last.fix_time, deg(lat, sizeof(lat), r->last.lat_e7),
                     deg(lon, sizeof(lon), r->last.lon_e7),
@@ -531,7 +532,7 @@ int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf,
                     (r->last.status & ST_STOPPED) ? 1 : 0, answered, r->rssi_dbm, r->snr_db4 < 0 ? "-" : "",
                     snr / 4, snr % 4 * 25, (unsigned long)r->received,
                     (unsigned long)((uint16_t)(r->last.counter - r->first_counter) + 1u),
-                    spread_text(offset, sizeof(offset), &r->offset));
+                    spread_text(offset, sizeof(offset), &r->offset), r->last.sats);
 }
 
 int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {

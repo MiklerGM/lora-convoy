@@ -44,6 +44,7 @@ typedef struct {
     uint8_t call;       /* with ST_HELP, our call's number, 1..HELP_CALLS; 0 without */
     uint8_t help_heard; /* the slot of a rider whose call for help we hear, or HELP_HEARD_NONE */
     uint8_t heard_call; /* and that call's number */
+    uint8_t sats;       /* the satellites the sender's fix used, to 31; told only with no help heard, 0 else */
 } position_t;
 
 /* What the 16-byte group key gives: the CCM key, the tag, and the key that draws each frame's
