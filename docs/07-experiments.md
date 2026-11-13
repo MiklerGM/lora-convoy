@@ -259,18 +259,18 @@ judges. Lateness is the L1's packet against its slot as the judge heard it. Work
 - **Battery against USB is not it.** The failure of 2026-11-12 was on battery. On the cable
   (14:24–14:52) median −13, one packet at +51; on the battery at the same window (14:52–15:38,
   1,335 packets) median −22, sd 9, none beyond ±50.
-- **The balcony again, on battery, 3 h 07 min** (17:08–20:14, 7,324 packets heard of 7,324), the
+- **The balcony again, on battery, 4 h 11 min** (17:08–21:19, 9,221 packets heard of 9,221), the
   board changing its mode by the clock (`SYSTEMS 8`) and telling its satellites in each packet:
 
   | Mode | Satellites | Packets | Median | sd | Latest | Beyond ±50 ms |
   |---|---|---|---|---|---|---|
-  | GPS and BeiDou | 11–15 | 2,542 | −17 ms | 8.1 | +52 | 1 (+49 by the other judge) |
-  | GPS alone | 5–9 | 2,355 | −8 ms | 6.0 | +45 | 0 |
+  | GPS and BeiDou | 10–15 | 3,343 | −18 ms | 8.1 | +52 | 1 (+49 by the other judge) |
+  | GPS alone | 5–9 | 3,234 | −7 ms | 6.1 | +45 | 0 |
 
   The first 90 s of each 15 minutes are left out; one packet 4 s after a change to GPS and
   BeiDou came +83 ms late, the change's own doing.
 - **The lag by satellites that evening** (lateness plus the line): GPS and BeiDou 215 ms at 11,
-  226 at 12, 233 at 13, 243 at 14, 255 at 15; GPS alone 181 at 5, 184 at 6, 192 at 7, 198 at 8,
+  224 at 12, 232 at 13, 243 at 14, 255 at 15; GPS alone 184 at 5, 185 at 6, 192 at 7, 198 at 8,
   203 at 9. At 15 that is 20 ms under the 275 of the two days before: the same count does not
   give the same lag from day to day.
 

@@ -372,8 +372,8 @@ as witness ([07](07-experiments.md), results). Against this proposal:
   satellite count. That is built since, and did not hold on a balcony: fine for 45 minutes, then
   up to +200 ms, 22% of packets beyond ±50 ms over three and a half hours. A board without PPS
   belongs in the ±100 ms rows of section 1 until that is understood, and even those it overran at
-  times. On 2026-11-13 it was not met again: three hours on the same balcony, two PPS boards
-  judging, one packet of 4,897 at the ±50 ms edge. But the sky gave 15 satellites at most and
+  times. On 2026-11-13 it was not met again: four hours on the same balcony, two PPS boards
+  judging, one packet of 6,577 at the ±50 ms edge. But the sky gave 15 satellites at most and
   the board's mode was changed every 15 minutes, so the cause is not found; the row stays.
   GPS alone (5–10 satellites, sd 6 ms) is the candidate default for a board without PPS, after
   three hours untouched.
