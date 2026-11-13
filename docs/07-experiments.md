@@ -242,6 +242,47 @@ after the GNSS went off.
   went out), 31, 27, 26 in the next three. The 16 minutes before were not measured.
 - The 50 ppm the firmware assumes held where it was measured, narrowly while the board cooled.
 
+### The L1 against two PPS boards: constellations, battery, the balcony again, 2026-11-13
+
+All [bench]. The L1 (no PPS) as slot 4 of 10 at 2 s, built with the satellite line (138 ms and
+8.7 ms a satellite) and claiming ±50 ms; the Heltec and, from 13:15, a T-Echo indoors on PPS as
+judges. Lateness is the L1's packet against its slot as the judge heard it. Working log:
+`lab/2026-11-11-notes.md`; scripts `lab/ab.py`, `lab/turn.py`.
+
+- **Two PPS boards agree to 0.2 ms**: the T-Echo hears the Heltec +0.14 to +0.19 ms from its
+  slot, the Heltec hears the T-Echo −0.06 to +0.04. So the Heltec's time, which nothing had judged
+  before, is right to that, and both judges give the L1 the same figures to 0.5 ms.
+- **The L76K here has GPS and BeiDou only**: `SYSTEMS 5` behaves as 1, `SYSTEMS 7` as 3.
+- **At a window, on its cable**, the mode changed every 15 minutes from the PC (10:02–14:23):
+  GPS and BeiDou 3,647 packets, 10–15 satellites, median −19 ms, sd 8.2; GPS alone 3,418 packets,
+  6–10 satellites, median −11, sd 7.2. None beyond ±50 ms in either.
+- **Battery against USB is not it.** The failure of 2026-11-12 was on battery. On the cable
+  (14:24–14:52) median −13, one packet at +51; on the battery at the same window (14:52–15:38,
+  1,335 packets) median −22, sd 9, none beyond ±50.
+- **The balcony again, on battery, 3 h 07 min** (17:08–20:14, 7,324 packets heard of 7,324), the
+  board changing its mode by the clock (`SYSTEMS 8`) and telling its satellites in each packet:
+
+  | Mode | Satellites | Packets | Median | sd | Latest | Beyond ±50 ms |
+  |---|---|---|---|---|---|---|
+  | GPS and BeiDou | 11–15 | 2,542 | −17 ms | 8.1 | +52 | 1 (+49 by the other judge) |
+  | GPS alone | 5–9 | 2,355 | −8 ms | 6.0 | +45 | 0 |
+
+  The first 90 s of each 15 minutes are left out; one packet 4 s after a change to GPS and
+  BeiDou came +83 ms late, the change's own doing.
+- **The lag by satellites that evening** (lateness plus the line): GPS and BeiDou 215 ms at 11,
+  226 at 12, 233 at 13, 243 at 14, 255 at 15; GPS alone 181 at 5, 184 at 6, 192 at 7, 198 at 8,
+  203 at 9. At 15 that is 20 ms under the 275 of the two days before: the same count does not
+  give the same lag from day to day.
+
+**The failure of 2026-11-12 was not met again, and this run could not have ruled it out.** Two
+differences remain. The sky gave 15 satellites at most, where the day before had 16 and 17 and
+the lag climbed there. And the mode changed every 15 minutes, where the day before the board ran
+untouched and was fine for its first 45: a cause that builds up with time would be reset by each
+change. What the day does show: GPS alone keeps the count at 5 to 10, away from where the trouble
+was, with less spread, on a line of its own (about 157 ms and 4.7 ms a satellite). It is shown in
+pieces of 15 minutes only. Next: the L1 on the balcony in one mode, GPS alone, three hours
+untouched.
+
 ### Earlier
 
 Measurements the documents already rely on:

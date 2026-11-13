@@ -102,9 +102,11 @@ alone less a lag the board is told; 50 ppm of drift in holdover, and silence onc
 leaves the budget ([PROTOCOL](PROTOCOL.md)). A Heltec with its kit measures the L76K's NMEA lag
 itself (`lag=`), and the L1 is built with its own, measured ([07](07-experiments.md)). The L1's lag is reckoned from the satellites its fix used (07). That line did not hold on a
 balcony: the L1 claimed ±50 ms and was up to 200 ms late, 22% of packets beyond its claim (07).
-Still open: why (the count it used there, a cause other than the count, the parser's stamp), what
-a board without PPS may claim meanwhile, a
-rider far off its slot told by its receivers (the status line has no room for a count), the fix stamped by the UART's interrupt rather
+Not met again on 2026-11-13 (battery ruled out; the count now travels in each packet, 07).
+Still open: why (16 satellites and more, or something that builds up while the L76K runs
+untouched; the parser's stamp), GPS alone as the default for a board without PPS with a lag line of
+its own, after three hours untouched on the balcony; what such a board may claim meanwhile, a
+rider far off its slot told by its receivers, the fix stamped by the UART's interrupt rather
 than by the parser, time from packets heard without a fix, and clock drift calibration for longer
 holdover ([T-clock-drift](#t-clock-drift-calibrate-local-clocks)). A fix that came after the next
 PPS edge would be paired with it, a second out: the lag must stay well under a second (E0), or the
