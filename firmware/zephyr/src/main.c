@@ -31,6 +31,14 @@ static void oled_off(void) {
 int main(void) {
     const char *reset = run_reset_name();
     const int watch = port_wdt_watch();
+#ifdef PIN_POWER_EN
+    port_pin_output(PIN_POWER_EN);
+    port_pin_set(PIN_POWER_EN, 1);
+#endif
+#ifdef PIN_GNSS_RESET
+    port_pin_output(PIN_GNSS_RESET);
+    port_pin_set(PIN_GNSS_RESET, 1);
+#endif
 #ifdef PIN_GNSS_WAKE
     port_pin_output(PIN_GNSS_WAKE);
     port_pin_set(PIN_GNSS_WAKE, 1);
@@ -70,7 +78,7 @@ int main(void) {
         /* Settings are still mounted over what was just erased: start again, not write into it. */
         port_restart(RESTART_NOTE_MAGIC | RESTART_FOR_BOND);
     }
-    run_start("wio_tracker_l1", reset);
+    run_start(BOARD_NAME, reset);
     port_wdt_unwatch(watch);
     return 0;
 }

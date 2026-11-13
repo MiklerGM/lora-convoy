@@ -62,8 +62,9 @@ void port_console_line(const char *text);
 void port_radio_irq_open(int pin);
 int64_t port_radio_irq_us(void);
 
-/* The L1's pin map has no PPS line (ARCHITECTURE D5): its time is NMEA's. */
-static inline int64_t port_pps_us(void) { return 0; }
+/* 0 for ever on a board whose pin map has no PPS line, the L1 (ARCHITECTURE D5): its time is
+ * NMEA's. */
+int64_t port_pps_us(void);
 
 uint32_t port_random(void);
 size_t port_device_id(uint8_t *out, size_t cap);

@@ -323,7 +323,39 @@ static void gnss_isr(const struct device *dev, void *user_data) {
     }
 }
 
+/* The PPS edge, stamped in its interrupt as DIO1 is, on a board that wires it (board.h). */
+static struct k_spinlock s_pps_lock;
+static int64_t s_pps_us;
+
+#ifdef PIN_GNSS_PPS
+static struct gpio_callback s_pps_cb;
+
+static void on_pps(const struct device *dev, struct gpio_callback *cb, uint32_t pins) {
+    (void)dev;
+    (void)cb;
+    (void)pins;
+    const int64_t now = port_uptime_us();
+    const k_spinlock_key_t key = k_spin_lock(&s_pps_lock);
+    s_pps_us = now;
+    k_spin_unlock(&s_pps_lock, key);
+}
+#endif
+
+int64_t port_pps_us(void) {
+    const k_spinlock_key_t key = k_spin_lock(&s_pps_lock);
+    const int64_t t = s_pps_us;
+    k_spin_unlock(&s_pps_lock, key);
+    return t;
+}
+
 void port_gnss_open(void) {
+#ifdef PIN_GNSS_PPS
+    const struct device *port = pin_port(PIN_GNSS_PPS);
+    gpio_pin_configure(port, PIN_GNSS_PPS % 32, GPIO_INPUT);
+    gpio_init_callback(&s_pps_cb, on_pps, BIT(PIN_GNSS_PPS % 32));
+    gpio_add_callback(port, &s_pps_cb);
+    gpio_pin_interrupt_configure(port, PIN_GNSS_PPS % 32, GPIO_INT_EDGE_RISING);
+#endif
     const struct uart_config cfg = {.baudrate = 9600, .parity = UART_CFG_PARITY_NONE,
                                     .stop_bits = UART_CFG_STOP_BITS_1, .data_bits = UART_CFG_DATA_BITS_8,
                                     .flow_ctrl = UART_CFG_FLOW_CTRL_NONE};

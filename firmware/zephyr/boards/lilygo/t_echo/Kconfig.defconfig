@@ -1,0 +1,5 @@
+if BOARD_T_ECHO
+
+source "boards/common/usb/Kconfig.cdc_acm_serial.defconfig"
+
+endif # BOARD_T_ECHO

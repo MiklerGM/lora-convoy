@@ -54,7 +54,21 @@
  * GPIO 41), is held high so it never sleeps. Zephyr's board file does not name it.
  */
 #if DT_NODE_HAS_COMPAT(DT_ROOT, seeed_wio_tracker_l1)
+#define BOARD_NAME "wio_tracker_l1"
 #define PIN_GNSS_WAKE (1 * 32 + 9)
+#endif
+
+/*
+ * The T-Echo's, from Meshtastic's variant (boards/lilygo/t_echo): the same L76K with its PPS on
+ * P1.04, its reset on P1.05, low for over 100 ms resetting it and so held high, and P0.12, which
+ * powers the board's peripherals and is raised before anything else. Not yet run on a board.
+ */
+#if DT_NODE_HAS_COMPAT(DT_ROOT, lilygo_t_echo)
+#define BOARD_NAME "t_echo"
+#define PIN_POWER_EN (0 * 32 + 12)
+#define PIN_GNSS_WAKE (1 * 32 + 2)
+#define PIN_GNSS_RESET (1 * 32 + 5)
+#define PIN_GNSS_PPS (1 * 32 + 4)
 #endif
 
 /* Its OLED keeps lit whatever the last firmware drew, since a restart does not reset it; main.c

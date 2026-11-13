@@ -68,4 +68,11 @@ nrf:
 	    -d $(CURDIR)/zephyr/build $(CURDIR)/zephyr
 	@ls -l zephyr/build/zephyr/zephyr.uf2
 
-.PHONY: test sim compare simulator test-simulator esp nrf
+# The LILYGO T-Echo, whose board file is ours (zephyr/boards): zephyr/build-t_echo/zephyr/zephyr.uf2
+techo:
+	@test -f $(ZEPHYR_WS)/env.sh || { echo "no Zephyr workspace at $(ZEPHYR_WS)"; exit 1; }
+	@. $(ZEPHYR_WS)/env.sh && cd $(ZEPHYR_WS) && west build -b t_echo \
+	    -d $(CURDIR)/zephyr/build-t_echo $(CURDIR)/zephyr -- -DBOARD_ROOT=$(CURDIR)/zephyr
+	@ls -l zephyr/build-t_echo/zephyr/zephyr.uf2
+
+.PHONY: test sim compare simulator test-simulator esp nrf techo

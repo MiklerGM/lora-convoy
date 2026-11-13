@@ -195,5 +195,6 @@ neither.
 | | stage 6 on it | the walker's board as it would be carried: small, on its own battery |
 
 The T-Echo's port is its own piece of work (T-boards): Zephyr 4.5 has no board file for it, and
-our Zephyr side stamps no PPS edge yet, the L1 having none [code: `zephyr-ws/zephyr/boards`,
-`firmware/zephyr/src`]. It is worth doing after stage 2 on the first two boards, not before.
+our Zephyr side stamped no PPS edge, the L1 having none [code: `zephyr-ws/zephyr/boards`,
+`firmware/zephyr/src`]. Both are written since and build (`make -C firmware techo`, 2026-11-13);
+nothing of it has run on a board, which came the same day.
