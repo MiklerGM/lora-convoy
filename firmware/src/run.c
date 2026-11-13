@@ -241,6 +241,7 @@ static void gnss_task(void *arg) {
     nmea_init(&nmea);
     port_gnss_open();
     int64_t logged = -GNSS_LOG_US, pps = 0, told = -GNSS_TELL_US;
+    uint8_t systems = 0;
     bool was_valid = false;
     for (;;) {
         port_wdt_feed(watch);
@@ -251,6 +252,17 @@ static void gnss_task(void *arg) {
         if (port_uptime_us() - told >= GNSS_TELL_US) {
             port_gnss_write("$PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0*02\r\n");
             told = port_uptime_us();
+        }
+        /* SYSTEMS (the L76K's PCAS04), once for each asking: not kept over a restart of ours,
+         * for the bench. A byte read without the lock, which is whole or not yet there. */
+        if (s_api.gnss_systems != systems) {
+            systems = s_api.gnss_systems;
+            char body[12], cmd[20];
+            const int n = snprintf(body, sizeof(body), "PCAS04,%u", systems);
+            uint8_t sum = 0;
+            for (int i = 0; i < n; i++) sum ^= (uint8_t)body[i];
+            snprintf(cmd, sizeof(cmd), "$%s*%02X\r\n", body, sum);
+            port_gnss_write(cmd);
         }
         const int c = port_gnss_getc(200);
         gnss_fix_t fix;

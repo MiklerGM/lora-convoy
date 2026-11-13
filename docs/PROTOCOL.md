@@ -224,6 +224,7 @@ on three transports:
 | `MODE <SF 7–12> <kHz 62, 125, 250, 500>` | `OK mode=<SF>/<kHz>`: another radio mode on the same frequency, for trying range (E2); kept over a restart. Every board of a group needs the same |
 | `TOUR <0–255>` | `OK tour=<s>`: for trying range (E2), the board changes its mode by the clock, SF7/250, SF9/250 and SF10/125 in turn, each for so many seconds of UTC, so a group's boards change together and one walk tries all three; 0 stops it, in the mode it is in. Kept over a restart |
 | `GNSS <0–1>` | `OK gnss=<0–1>`: the board's GNSS off or on, for the bench: off, it runs on the time and the position it holds, as in a tunnel. On again at a restart |
+| `SYSTEMS <1–7>` | `OK systems=<1–7>`: which satellites the L76K uses, for the bench: 1 GPS, 2 BeiDou, 4 GLONASS, summed (its `$PCAS04`; 3 as it comes). Fewer satellites, less lag ([07](07-experiments.md)). Not kept over a restart of the board |
 | `FORGET` | `FORGOTTEN` once the board has dropped its bond, or `ERR forget incomplete` |
 | `REBOOT`, and `BOOTLOADER` on the L1 Pro (its UF2 drive) | — |
 

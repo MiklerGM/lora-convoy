@@ -977,6 +977,11 @@ static void test_api(void) {
     /* What only the caller can do is left to it, unanswered here. */
     ask(&api, "GNSS 0");
     assert(n_replies == 1 && strcmp(replies[0], "OK gnss=0") == 0 && api.gnss_ask == 1);
+    /* SYSTEMS goes to the GNSS as it stands: nothing the L76K has no meaning for is passed on */
+    ask(&api, "SYSTEMS 1");
+    assert(strcmp(replies[0], "OK systems=1") == 0 && api.gnss_systems == 1);
+    ask(&api, "SYSTEMS 8");
+    assert(strncmp(replies[0], "ERR", 3) == 0 && api.gnss_systems == 1);
     ask(&api, "FORGET");
     assert(n_replies == 0 && api.forget);
     ask(&api, "REBOOT");

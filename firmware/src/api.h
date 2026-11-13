@@ -55,6 +55,7 @@ typedef struct {
     bool restart;
     bool bootloader;
     uint8_t gnss_ask;               /* GNSS 0|1: 0 nothing asked, 1 off, 2 on */
+    uint8_t gnss_systems;           /* SYSTEMS: 1 GPS, 2 BeiDou, 4 GLONASS, summed; 0 as the GNSS has it */
     uint8_t tour_s;                 /* TOUR: the mode changed by the clock every so many seconds; 0 never */
 } api_t;
 
