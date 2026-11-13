@@ -197,4 +197,4 @@ neither.
 The T-Echo's port is its own piece of work (T-boards): Zephyr 4.5 has no board file for it, and
 our Zephyr side stamped no PPS edge, the L1 having none [code: `zephyr-ws/zephyr/boards`,
 `firmware/zephyr/src`]. Both are written since and build (`make -C firmware techo`, 2026-11-13);
-nothing of it has run on a board, which came the same day.
+the board came the same day and ran it at its first start: radio, GNSS, PPS.

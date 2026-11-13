@@ -10,7 +10,7 @@ captures go in `lab/`, which is not committed.
 |---|---|---|---|
 | Heltec V4.3 with its GNSS kit | `make -C firmware esp` | `cd firmware && pio run -e heltec_v4 -t upload` | `pio device monitor -e heltec_v4`, 115200 |
 | Wio Tracker L1 Pro | `make -C firmware nrf` | double-tap reset, or `BOOTLOADER` on the console; copy `firmware/zephyr/build/zephyr/zephyr.uf2` to the `TRACKER L1` drive | the board's USB serial port (Zephyr CDC ACM) |
-| LILYGO T-Echo | `make -C firmware techo` | as the L1, the image being `firmware/zephyr/build-t_echo/zephyr/zephyr.uf2`. **Built, never run on a board** (2026-11-13): the board file is ours (`firmware/zephyr/boards/lilygo/t_echo`), its pins from Meshtastic's variant, its partition for a bootloader with SoftDevice v6, to be checked against the unit's `INFO_UF2.TXT` first | as the L1 |
+| LILYGO T-Echo | `make -C firmware techo` | as the L1, the image being `firmware/zephyr/build-t_echo/zephyr/zephyr.uf2`. The board file is ours (`firmware/zephyr/boards/lilygo/t_echo`), its pins from Meshtastic's variant, its partition for the bootloader the unit came with (0.6.1, SoftDevice S140 6.1.1; `INFO_UF2.TXT` on the `TECHOBOOT` drive says). Run on one board, 2026-11-13: radio, GNSS and PPS; the e-paper, the battery and Bluetooth with a phone not tried | as the L1 |
 
 Both boards answer the phone API's commands typed on the console ([PROTOCOL](PROTOCOL.md)).
 

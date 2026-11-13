@@ -6,7 +6,7 @@
  * GNSS's wake and reset, the peripherals' power) are in src/board.h.
  *
  * The partition is for the Adafruit UF2 bootloader with SoftDevice v6, the application at
- * 0x26000: to be checked against the unit's INFO_UF2.TXT before the first image is copied.
+ * 0x26000: what a unit bought in 2026 came with (bootloader 0.6.1, S140 6.1.1).
  */
 
 /dts-v1/;

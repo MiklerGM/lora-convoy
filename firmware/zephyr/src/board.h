@@ -61,7 +61,7 @@
 /*
  * The T-Echo's, from Meshtastic's variant (boards/lilygo/t_echo): the same L76K with its PPS on
  * P1.04, its reset on P1.05, low for over 100 ms resetting it and so held high, and P0.12, which
- * powers the board's peripherals and is raised before anything else. Not yet run on a board.
+ * powers the board's peripherals and is raised before anything else.
  */
 #if DT_NODE_HAS_COMPAT(DT_ROOT, lilygo_t_echo)
 #define BOARD_NAME "t_echo"
