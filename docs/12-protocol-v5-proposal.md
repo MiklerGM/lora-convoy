@@ -351,6 +351,9 @@ so the reserved byte is free. The tests come first ([13](13-test-plan.md)). The 
 6. The phone's time opening a slot in wide-slot profiles, once measured?
 7. The rig: a desk script and one evaluator before any more simulator; `compare.py` retired?
 
+Answered 2026-11-14 [owner], and it changes sections 3 to 6: see
+[what the owner's review changed](#what-the-owners-review-changed-2026-11-14).
+
 ## What would change it
 
 - **E0 worse than ±100 ms on the L1**, or a lag that wanders: the motorcycle profile needs PPS
@@ -422,3 +425,89 @@ carries it; a second L1, to tell one board's numbers from the model's; a PPS boa
 outside (the T-Echo); what a board draws listening, fixing and asleep (E7), which decides whether
 the walking profile is about sending less or about sleeping between slots; and real tracks, to set
 the send rule's distance and heartbeat by.
+
+## What the owner's review changed (2026-11-14)
+
+Three days went into whether an L1 keeps ±50 ms; the owner asked what that was for, and then went
+through the packet field by field. What stands now, all [owner] unless marked:
+
+- **The L1's chase is over.** A board without PPS is in the ±100 ms class; the cause of
+  2026-11-12 stays an open note ([07](07-experiments.md)). GPS alone is not wanted: standing on a
+  balcony, 95% of fixes fell within 3.1 m with GPS and BeiDou and 4.8 m with GPS alone [bench],
+  and under trees the fewer satellites would cost fixes. The phone's time (question 6) is not
+  wanted either.
+- **A board without PPS takes its time from boards with it** (proposed, agreed as a direction). A
+  packet says "my time is precise"; a board hearing it knows when that slot should have begun by
+  its own clock and when it did, and the difference, smoothed over 5 to 8 packets, corrects its
+  clock. It always sends by its own clock, never on hearing a packet, so a lost packet costs
+  nothing: its bound is some ±10 ms when corrected and grows 3 ms a minute (50 ppm) until the next
+  one, back to the NMEA's ±100 ms after half an hour. A corrected board never sets the bit.
+- **No plan, no meeting point, no route pointer in v5** (sections 4 and 5 fall away, and the
+  second packet type with them). "A checksum byte of where we ride will hardly help": what a
+  group shares beyond positions is to be designed whole, with the infrastructure it needs and
+  what it integrates with, or not at all.
+- **Protection as a shared password, no more.** What it is for: other groups' packets kept off
+  the map, positions not readable by a passer-by, an old recording refused. A tag of 4 bytes as
+  in v3, a session of 2 bytes, and no claim against a determined attacker. The bytes go to
+  relaying.
+- **Relaying is wanted**: the city walk reached 500 m. Power first, and it is done: a board starts
+  at 24 or 20 dBm, not 14 ([PROTOCOL](PROTOCOL.md)). Power does not turn corners, so:
+- **Passengers** (proposed): each packet carries its sender's own record and one or more short
+  records of other riders, 9 bytes each: who, where, how long ago, state. A board carries the
+  record it has told least recently, a changed state before anything else, and a receiver keeps
+  whichever record of a rider has the later fix. That is gossip of the latest known state, not
+  forwarding of packets: nothing loops, nothing floods, no slot is added, and it reaches further
+  than one hop by itself. It is 06's "piggybacked" option.
+- **32 riders are enough. Speed and course stay. Altitude goes** unless bytes are left over.
+  States: normal, need help, stop now, a stop wanted when convenient (fuel for motorcycles, a
+  snack on foot: one number, the app names it by activity), helping (kept, doubtful).
+- **The satellites of the fix** go in the packet, 4 bits; 0 says there is no position now, so the
+  "position is current" fact goes, and "has a position" becomes a value of the age.
+
+**The packet, as it stands** (a draft; nothing built):
+
+| Bytes | Field |
+|---|---|
+| 0 | version, type |
+| 1 | group tag |
+| 2 | slot, 0–31; three bits free |
+| 3–4 | session |
+| 5–8 | sent, UTC seconds |
+| 9 | count |
+| 10 | age of the fix: seconds to two minutes, then minutes to two hours, then "older", "none" |
+| 11–16 | latitude, longitude |
+| 17, 18 | speed, course |
+| 19 | facts: stopped, battery low, time is precise; state |
+| 20 | heartbeat, satellites |
+| 21–29 | a passenger: slot, latitude, longitude, age, state; more of them by the packet's length |
+| last 4 | tag |
+
+34 bytes with one passenger, 43 with two [calc, `tools/airtime.py`, preamble 8]:
+
+| Bytes | SF7/250 | SF9/250 | SF10/125 |
+|---|---:|---:|---:|
+| 33, the draft of section 3 | 36.0 ms | 123.4 ms | 452.6 ms |
+| 34, one passenger | 38.5 ms | 123.4 ms | 452.6 ms |
+| 43, two | 43.6 ms | 143.9 ms | 534.5 ms |
+
+How many passengers a packet has is the profile's choice; the slot is sized for the most.
+
+**What passengers buy** [calc: DES, `python3 tools/simulate.py --generate chain --size 10 --seeds
+17,29,43 --setups tools/simulation/setups/relay-records.json`; the research relay of
+[11](11-simulation-model.md), which carries whole v3 packets, least recently told first, a 4 s
+frame, 100 s watched]. Ten riders in a line, each hearing only its two neighbours:
+
+| Records a packet | Rider two away: known, median age | five away | nine away |
+|---|---|---|---|
+| none | never | never | never |
+| 1 | 95% of the time, 18 s | 87%, 38 s | 77%, 53 s |
+| 2 | 100%, 12 s | 95%, 31 s | 86%, 55 s |
+| 3 | 100%, 9 s | 98%, 23 s | 88%, 45 s |
+
+A neighbour's is 3 s. So one record already shows the whole line, late; the second takes a third
+off the age nearby. The worst case, and synthetic: a real column hears further than its
+neighbours, and the choice of whom to carry (the weakest heard, a changed state) is not in that
+model.
+
+Still open: one passenger or two per profile, after the model carries this packet; whether
+"helping" earns its place; what a group shares beyond positions, as a design of its own.

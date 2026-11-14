@@ -1,0 +1,5 @@
+{"schema":1,"candidates":{
+ "direct":{"implementation":"v3","settings":{}},
+ "relay1":{"implementation":"relay","settings":{"relay_records":1}},
+ "relay2":{"implementation":"relay","settings":{"relay_records":2}},
+ "relay3":{"implementation":"relay","settings":{"relay_records":3}}}}

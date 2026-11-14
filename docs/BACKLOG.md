@@ -185,6 +185,10 @@ is built. Still open: a call heard only through a relay (T-relay).
 
 ### T-relay: work out relaying
 
+Chosen as a direction on 2026-11-14 [owner]: passengers, 9-byte records of other riders in each
+packet ([12](12-protocol-v5-proposal.md), what the owner's review changed). The rest below is the
+survey it was chosen from.
+
 Version 2 in [06](06-own-protocol.md): who relays (riders someone misses, from bitmaps of who hears
 whom), who owns a relay slot (by role, in turn, by the hearing graph, or piggybacked), the budget
 of one rider bridging two bunches, and ages that never get younger. Compared first offline on E8's
