@@ -19,7 +19,7 @@ call, and boards with any of them are reflashed. The code is
 | Header and CRC | explicit header, CRC on |
 | Low data rate optimisation | off; on in any mode with symbols of 16.38 ms or more |
 | Sync word | SX1262 registers 0x0740 and 0x0741 = `0x64 0x74`, sync symbols 48 and 56 |
-| Power | 14 dBm (25 mW) by default; 28 dBm at most on the Heltec V4.3, 22 dBm on the L1 Pro |
+| Power | `POWER 1` by default: 24 dBm on the Heltec V4.3, 20 dBm on the L1 Pro and the T-Echo; `POWER 0` is 28 and 22 dBm, `POWER 3` is 14 dBm on all. Not kept over a restart |
 
 A 25-byte packet is on the air for 30.848 ms, by the same formula as `tools/airtime.py`: the same
 as 24 bytes, and 26 would cost no more.

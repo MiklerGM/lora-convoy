@@ -17,9 +17,10 @@
 #ifndef NODE_INTERVAL_MS
 #define NODE_INTERVAL_MS 2000
 #endif
-/* 14 dBm on both boards: 25 mW, inside every EU sub-band's limit. */
+/* 24 dBm on the Heltec, 20 on boards with the bare chip: under the 27 dBm ERP of the sub-band we
+ * use (PROTOCOL), with room for an antenna's gain. A desk wants POWER 3, and it is not kept. */
 #ifndef NODE_POWER_LEVEL
-#define NODE_POWER_LEVEL 3
+#define NODE_POWER_LEVEL 1
 #endif
 /* The L76K's NMEA lag behind its second, for boards without PPS: taken as nothing, give or take
  * 100 ms, unless the board's build names what was measured on it (zephyr/src/board.h). A Heltec

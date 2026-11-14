@@ -22,8 +22,8 @@ Two boards can still stand as neighbours in a large group: given slots 3 and 4 o
 ## Rules for every run
 
 - **An antenna on each board before power.** The Heltec's amplifier reaches 28 dBm.
-- **On the desk:** the default power, `POWER 3`, the weakest: 14 dBm, as `dbm=` in `STATUS`
-  shows. `POWER 0` is the strongest, not the least [code]. Boards a metre or more apart, the SDR
+- **On the desk:** `POWER 3`, the weakest: 14 dBm, as `dbm=` in `STATUS` shows, sent after every
+  restart, since a board starts at `POWER 1` (24 or 20 dBm) from 2026-11-14 [owner]. `POWER 0` is the strongest, not the least [code]. Boards a metre or more apart, the SDR
   without an antenna and at low gain; a capture whose bursts clip is redone.
 - **Logs:** one file per board per run, with the computer's time on every line:
   `pio device monitor -p <port> -b 115200 --filter time --filter log2file`. No script is needed
@@ -105,7 +105,7 @@ The L1 built as in 2.6. One hour each unless said, a 5 min capture in each.
 
 One board stays, high and in the clear, on the computer; the other is carried along one fixed
 path, out and back. One walk per mode, both boards set to it first: `MODE 7 250`, `MODE 9 250`,
-`MODE 10 125`, at the default 14 dBm (`POWER 3`).
+`MODE 10 125`, at 14 dBm (`POWER 3`).
 
 - **Walker to home needs no log on the walker**: the home board's `RIDER` lines carry the
   walker's own position, so each packet taken has its distance, `rssi=` and `snr=`, and `rx=`
