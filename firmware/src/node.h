@@ -37,6 +37,9 @@ typedef struct {
     /* Listen in our own slot instead of sending, once in this many frames at random; 0 never. Two
      * radios given one slot send together, and never hear each other otherwise (T-join). */
     uint16_t listen_one_in;
+    /* How far this board's crystal may run from true time, in ppm, temperature included: what an
+     * aging mark is taken to drift. 0 is 50. A T-Echo ran 102-115 ppm off (07, 2026-11-14). */
+    uint16_t drift_ppm;
     /* When a board sends (12, section 2): its slot comes every frame, and it speaks in it once it
      * has moved this far from the position it last sent, has turned, has something changed to
      * tell, or has been silent for 2^beat frames. beat 0 sends in every frame. */

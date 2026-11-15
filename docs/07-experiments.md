@@ -303,8 +303,8 @@ RIDER lines while the judge was on PPS (`lab/late.py`); working log `lab/2026-11
   ±9.9 ms when it was 27 ms off; at 10 ms it turned to the group's time, as built, and came back
   to within a millisecond. The Heltec saw it up to 35 ms early. Meshtastic's board file says the
   T-Echo has a 32 kHz crystal, and our build asks for it; why it runs so far off is not known.
-  The L1, the same chip, ran 24–29 ppm settled. A bound per board is the fix (PROTOCOL, what
-  comes next); the group's time limits the harm meanwhile.
+  The L1, the same chip, ran 24–29 ppm settled. Since, a bound per board: 150 ppm on the
+  T-Echo, so it turns to the group's time some 65 s into a holdover, about 7 ms off.
 
 ### Earlier
 

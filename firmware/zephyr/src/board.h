@@ -69,6 +69,9 @@
 #define PIN_GNSS_WAKE (1 * 32 + 2)
 #define PIN_GNSS_RESET (1 * 32 + 5)
 #define PIN_GNSS_PPS (1 * 32 + 4)
+/* Its clock ran 102-115 ppm off without a fix, the same in three holdovers (07, 2026-11-14), though
+ * Meshtastic's board file says it has a 32 kHz crystal and the build asks for it. */
+#define NODE_DRIFT_PPM 150
 #endif
 
 /* Its OLED keeps lit whatever the last firmware drew, since a restart does not reset it; main.c

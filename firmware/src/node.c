@@ -9,7 +9,7 @@
 
 /* The schedule's terms (docs/PROTOCOL.md, When a board sends). Bounds, not measurements: E0 measures
  * each board. */
-#define DRIFT_PPM 50       /* our crystal against true time, temperature included */
+#define DRIFT_PPM 50       /* our crystal against true time, temperature included, unless the board says */
 #define PPS_ERR_US 100     /* a PPS edge's timestamp: the GNSS's own error and the interrupt's latency */
 /* An NMEA fix this soon after a PPS edge is that edge's second. ponytail: a fix that came after the
  * next edge would be paired a second out; the L76K's RMC comes some 100 ms after its edge, and lag=
@@ -86,11 +86,13 @@ void node_set_state(node_t *n, uint8_t state) {
 
 /* ---- time ------------------------------------------------------------------------ */
 
+static int64_t drift_ppm(const node_t *n) { return n->cfg.drift_ppm ? n->cfg.drift_ppm : DRIFT_PPM; }
+
 bool node_utc_us(const node_t *n, int64_t now_us, int64_t *utc_us, int64_t *err_us) {
     if (n->time == TIME_NONE) return false;
     const int64_t since = now_us - n->mark_us;
     *utc_us = n->mark_utc_us + since;
-    *err_us = n->mark_err_us + (since < 0 ? -since : since) * DRIFT_PPM / 1000000;
+    *err_us = n->mark_err_us + (since < 0 ? -since : since) * drift_ppm(n) / 1000000;
     return true;
 }
 
@@ -113,7 +115,7 @@ static bool calendar_us(const node_t *n, int64_t at_us, int64_t *utc_us, int64_t
     if (!n->phone_time) return false;
     const int64_t since = at_us - n->phone_at_us;
     *utc_us = n->phone_utc_us + since;
-    *err_us = n->phone_err_us + (since < 0 ? -since : since) * DRIFT_PPM / 1000000;
+    *err_us = n->phone_err_us + (since < 0 ? -since : since) * drift_ppm(n) / 1000000;
     *source = "phone";
     return true;
 }
@@ -122,7 +124,7 @@ static bool calendar_us(const node_t *n, int64_t at_us, int64_t *utc_us, int64_t
 static bool set_time(node_t *n, time_source_t source, int64_t at_us, int64_t utc_us, int64_t err_us,
                      int64_t now_us) {
     int64_t utc, err;
-    const int64_t carried = err_us + (now_us - at_us) * DRIFT_PPM / 1000000;
+    const int64_t carried = err_us + (now_us - at_us) * drift_ppm(n) / 1000000;
     if (node_utc_us(n, now_us, &utc, &err) && err < carried) return false;
     /* The frame running when the time first comes is not ours: its slot may have gone already. */
     if (n->time == TIME_NONE) n->last_frame = utc_us / ((int64_t)n->cfg.interval_ms * 1000);

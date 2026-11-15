@@ -60,8 +60,8 @@ k x 2 s   + phase   slot 0            slot 1            slot 2            spare
   arrival less the GNSS's lag, as far off as the board's build tells it: 138 ms and 8.7 ms for
   each satellite the fix used, give or take 100 ms ([07](07-experiments.md): ±50 ms held at a
   window for days and failed on a balcony for an afternoon). The L76K is told to send GGA and RMC
-  only (`$PCAS03`). A mark is taken to drift 50 ppm as it ages, and a new one replaces it only
-  when better.
+  only (`$PCAS03`). A mark is taken to drift 50 ppm as it ages, 150 on the T-Echo, whose clock
+  ran 102–115 ppm off ([07](07-experiments.md)), and a new one replaces it only when better.
 - **Time from the group.** A board on PPS whose mark is within 5 ms says so in each packet
   ("time precise"). A board that hears such a packet knows when that slot should have begun by its
   own clock, and when it did: the median of the latest five such differences sets its clock, give
@@ -297,7 +297,6 @@ from 0 here; the app shows riders from 1.
 
 - The send rule's numbers, the passengers and the slot width per kind of group, in the invitation
   (profiles, [12](12-protocol-v5-proposal.md)); the app's states, five buttons.
-- A per-board drift bound: a T-Echo's clock ran 102–115 ppm off without a fix (2026-11-14), past
-  the 50 ppm assumed.
+- Why the T-Echo's clock runs 110 ppm off; its bound is 150 meanwhile.
 - The mode chosen for the group's size and freshness, carried in the invitation (T-phy).
 - A shorter packet: an implicit header, the CRC left to CCM (T-length).

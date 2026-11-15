@@ -474,6 +474,19 @@ static void test_node_time(void) {
     f = fix_at(UTC0_MS + 500000, true);
     node_on_fix(&n, &f, 505130000);
     assert(n.time == TIME_NMEA && n.mark_us == 505030000);
+    /* A board whose crystal is known to run worse is told so: the same edge, three times the
+     * drift, and NMEA's time is taken a third of the way on, before the edge's bound lies. */
+    node_t t;
+    node_config_t loose = cfg;
+    loose.drift_ppm = 150;
+    node_init(&t, &loose, 1);
+    node_on_pps(&t, 6000000);
+    f = fix_at(UTC0_MS + 1000, true);
+    node_on_fix(&t, &f, 6130000);
+    assert(t.time == TIME_PPS && node_utc_us(&t, 66000000, &utc, &err) && err == 100 + 9000);
+    f = fix_at(UTC0_MS + 140000, true);
+    node_on_fix(&t, &f, 145130000);
+    assert(t.time == TIME_NMEA);
 
     /* The budget: 400 ms between slots, less the packet's 30.8 ms and 2 ms for the receivers,
      * halved between the two senders either side. */

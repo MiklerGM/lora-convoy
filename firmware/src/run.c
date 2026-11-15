@@ -19,6 +19,10 @@
 #endif
 /* 24 dBm on the Heltec, 20 on boards with the bare chip: under the 27 dBm ERP of the sub-band we
  * use (PROTOCOL), with room for an antenna's gain. A desk wants POWER 3, and it is not kept. */
+/* The crystal's drift bound, in ppm (node.h); 0 is the core's 50. */
+#ifndef NODE_DRIFT_PPM
+#define NODE_DRIFT_PPM 0
+#endif
 #ifndef NODE_POWER_LEVEL
 #define NODE_POWER_LEVEL 1
 #endif
@@ -465,7 +469,8 @@ void run_start(const char *board, const char *reset) {
                          .phy = PHY_V0, .nmea_lag_us = NODE_NMEA_LAG_US, .nmea_err_us = NODE_NMEA_ERR_US,
                          .nmea_lag_sat_us = NODE_NMEA_LAG_SAT_US,
                          .tx_lead_us = NODE_TX_LEAD_US,
-                         .listen_one_in = 32, .move_m = 10, .beat = 3, .passengers = 1};
+                         .listen_one_in = 32, .move_m = 10, .beat = 3, .passengers = 1,
+                         .drift_ppm = NODE_DRIFT_PPM};
     setup_t setup;
     const bool kept = port_setup_load(&setup, sizeof(setup)) && setup.version == SETUP_VERSION &&
                       setup.slot < NODE_SLOTS && setup.slots >= 1 && setup.slots <= NODE_SLOTS &&
