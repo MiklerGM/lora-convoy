@@ -306,6 +306,32 @@ RIDER lines while the judge was on PPS (`lab/late.py`); working log `lab/2026-11
   The L1, the same chip, ran 24–29 ppm settled. Since, a bound per board: 150 ppm on the
   T-Echo, so it turns to the group's time some 65 s into a holdover, about 7 ms off.
 
+### The chain on the desk, 2026-11-15
+
+All [bench], 12:45–13:40, build 9906789: the Heltec (slot 3) told `DEAF 4`, the L1 (slot 4) `DEAF 3`,
+the T-Echo (slot 5) hearing both: each end hears the other only through the middle. A group of 10
+at 2 s, the defaults: heartbeat every 8 frames, 10 m, one passenger, 14 dBm, all standing still.
+Scripts `lab/chain_run.sh`, `lab/chain_eval.py`.
+
+- **Each end had the other through the middle all the time**, `via=5` in every line: the Heltec
+  saw the L1 13 s old at the median, 35 s at the 95th percentile, 40 s at most (113 samples over
+  14 minutes); the L1 saw the Heltec 19, 40 and 44 s old. The middle itself, heard directly: 1 s,
+  14 s, 18 s. Standing boards speak every 16 s and the middle carries one of the two in turn, so
+  some 48 s is the bound; moving riders speak every frame (10 m at 18 km/h).
+- **States crossed the chain at once.** Twenty changes on the L1, help and back, one a minute:
+  each reached the Heltec within 3 s, the median 1 s; twenty on the Heltec reached the L1 within
+  4 s. None missed. The changer saw its own new state carried back (`echo=`) within 8 s, 5–6 s
+  at the median. (The Zephyr boards' console lines reach the PC up to a second or two late, so
+  their times read late; the Heltec's do not.)
+- **The send rule kept the air quiet**: of some 1,650 slots in 55 minutes each board spoke in
+  300–324 (`quiet=` 1,336–1,369), its heartbeats and the bursts after each change.
+- **The L1 took its time from the T-Echo alone** (`time=group` throughout) and the T-Echo found
+  it −0.1 ms from its slot at the median, sd 0.4 ms, 295 packets: not an independent check, since
+  the L1 is set by the very board judging it.
+- **Found and fixed on the way** (9906789): a board sent the phone a `RIDER` line only for a
+  packet's sender, so a carried rider's moves never reached the map, only its changes of state.
+  Now every rider a packet brings a newer record of gets its line.
+
 ### Earlier
 
 Measurements the documents already rely on:
