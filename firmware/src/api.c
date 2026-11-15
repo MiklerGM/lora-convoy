@@ -138,9 +138,23 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
         cfg->phy = phy;
         api->radio_changed = api->setup_changed = true;
         snprintf(out, sizeof(out), "OK mode=%u/%lu", phy.sf, (unsigned long)(phy.bw_hz / 1000));
+    } else if (strcasecmp(line, "state") == 0 && number(arg, 0, STATES - 1, &v)) {
+        node_set_state(api->node, (uint8_t)v);
+        snprintf(out, sizeof(out), "OK state=%ld", v);
     } else if (strcasecmp(line, "help") == 0 && number(arg, 0, 1, &v)) {
-        node_set_help(api->node, v == 1);
+        /* v3's word, for an app that has only that button: states 1 and 0 */
+        node_set_state(api->node, v ? STATE_HELP : STATE_NORMAL);
         snprintf(out, sizeof(out), "OK help=%ld", v);
+    } else if (strcasecmp(line, "beat") == 0 && number(arg, 0, 7, &v)) {
+        /* the send rule's knobs, for the bench until a profile carries them; not kept */
+        cfg->beat = (uint8_t)v;
+        snprintf(out, sizeof(out), "OK beat=%ld", v);
+    } else if (strcasecmp(line, "move") == 0 && number(arg, 1, 1000, &v)) {
+        cfg->move_m = (uint16_t)v;
+        snprintf(out, sizeof(out), "OK move=%ld", v);
+    } else if (strcasecmp(line, "passengers") == 0 && number(arg, 0, PKT_PASSENGERS_MAX, &v)) {
+        cfg->passengers = (uint8_t)v;
+        snprintf(out, sizeof(out), "OK passengers=%ld", v);
     } else if (strcasecmp(line, "slot") == 0 && number(arg, 0, NODE_SLOTS - 1, &v)) {
         cfg->slot = (uint8_t)v;
         api->setup_changed = true;
@@ -179,7 +193,7 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
         api->gnss_systems = (uint8_t)v;
         snprintf(out, sizeof(out), "OK systems=%ld", v);
     } else {
-        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, CLOCK <t1>, TIME <ms> <utc ms> <err ms>, LEDGER, GROUP <32 hex> <slot> <slots> <ms>, KEY <32 hex>, HELP 0-1, SLOT 0-%d, SLOTS 1-%d, "
+        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, CLOCK <t1>, TIME <ms> <utc ms> <err ms>, LEDGER, GROUP <32 hex> <slot> <slots> <ms>, KEY <32 hex>, STATE 0-15, BEAT 0-7, MOVE <m>, PASSENGERS 0-3, SLOT 0-%d, SLOTS 1-%d, "
                  "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, TOUR 0-255, GNSS 0-1, SYSTEMS 1-8, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
                  NODE_SLOTS);
     }

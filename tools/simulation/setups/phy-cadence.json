@@ -8,7 +8,7 @@
     "relay-6s": {
       "implementation": "relay",
       "settings": {"interval_ms": 6000, "relay_records": 2,
-                   "phy": {"sf": 8, "bandwidth_hz": 125000, "crc": false}}
+                   "phy": {"sf": 8, "bandwidth_hz": 125000}}
     }
   }
 }

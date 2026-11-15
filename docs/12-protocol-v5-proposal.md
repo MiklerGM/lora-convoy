@@ -135,7 +135,7 @@ Its slot comes once a frame. It sends in it if any of these holds, and otherwise
 
 | Reason | Rule (numbers from the profile; first guesses) |
 |---|---|
-| Moved | 15 m or more from the last position it sent |
+| Moved | 10 m or more from the last position it sent (15 m first; 10 m by the owner, 2026-11-14: a board standing still wanders 3–5 m) |
 | Turned | course 30° or more from the last sent, after moving 5 m |
 | State or facts changed | in each of its next three slots, so that one loss does not hide it |
 | Heartbeat | 8 frames since it last sent: 21 s for motorcycles, 2 min on foot |
@@ -509,5 +509,12 @@ off the age nearby. The worst case, and synthetic: a real column hears further t
 neighbours, and the choice of whom to carry (the weakest heard, a changed state) is not in that
 model.
 
-Still open: one passenger or two per profile, after the model carries this packet; whether
+**Built, 2026-11-14** (branch `v5`): this packet with up to three passengers, the five states,
+the send rule at 10 m, time from the group; phone API 8; both simulators on it. Eight hours on
+three boards: [07](07-experiments.md). The stepped simulator's column of 20 over 9.5 km, radios to
+1 km: riders out of reach 26 s old at the median with one passenger, 12 s with two, 8 s with
+three, 60, 34 and 24 s at the 95th percentile; a call for help reaches all 19 within 10 s with
+any of them [calc, `firmware/test/sim.c`, `-DSIM_PASSENGERS=n`].
+
+Still open: one passenger or two per profile; whether
 "helping" earns its place; what a group shares beyond positions, as a design of its own.

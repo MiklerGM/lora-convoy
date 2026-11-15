@@ -23,7 +23,7 @@ class ComparisonTest(unittest.TestCase):
                               for i in range(3)]}
             definitions={"v3":{"implementation":"v3","settings":{"interval_ms":4000,"listen_one_in":0}},
                          relay_label:{"implementation":"relay","settings":{"interval_ms":6000,"listen_one_in":0,
-                             "phy":{"sf":8,"bandwidth_hz":125000,"crc":False,"frequency_hz":869475000}}}}
+                             "phy":{"sf":8,"bandwidth_hz":125000,"frequency_hz":869475000}}}}
             (root/"scene.json").write_text(json.dumps(scene))
             (root/"setups.json").write_text(json.dumps({"schema":1,"candidates":definitions}))
             (root/"cases.json").write_text(json.dumps({"schema":1,"cases":[{"name":"a"*64,"radio":{}}]}))
@@ -59,11 +59,12 @@ class ComparisonTest(unittest.TestCase):
             self.assertTrue(relay)
             self.assertEqual(sum(e["sender"]=="n0" for e in relay),2)
             self.assertTrue(all(e["phy"]["sf"]==8 and e["phy"]["bandwidth_hz"]==125000 and
-                                not e["phy"]["crc"] and e["phy"]["frequency_hz"]==869475000 for e in relay))
-            # Independent LoRa airtime vectors: 29B -> 60.25 symbols; 54B -> 90.25, at 2048us/symbol.
-            self.assertEqual(relay[0]["bytes"],29)
-            self.assertEqual(relay[0]["end_ns"]-relay[0]["start_ns"],123392000)
-            self.assertTrue(any(e["bytes"]==54 and e["end_ns"]-e["start_ns"]==184832000 for e in relay))
+                                e["phy"]["crc"] and e["phy"]["frequency_hz"]==869475000 for e in relay))
+            # Independent LoRa airtime vectors, with a CRC: 25B -> 55.25 symbols; 43B (two riders
+            # carried) -> 80.25, at 2048us/symbol.
+            self.assertEqual(relay[0]["bytes"],25)
+            self.assertEqual(relay[0]["end_ns"]-relay[0]["start_ns"],113152000)
+            self.assertTrue(any(e["bytes"]==43 and e["end_ns"]-e["start_ns"]==164352000 for e in relay))
             self.assertEqual(max(len(r["directory"].encode()) for r in data["runs"]),247)
             report=(root/"out/report.md").read_text()
             self.assertIn("Different settings can change offered RF load",report)

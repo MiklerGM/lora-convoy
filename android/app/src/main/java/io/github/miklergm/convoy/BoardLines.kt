@@ -7,7 +7,7 @@ package io.github.miklergm.convoy
 object BoardLines {
 
     /** The version of the phone API this app speaks. A board with another is refused (D3). */
-    const val PROTO = 7
+    const val PROTO = 8
 
     /** The board's own state, from its STATUS line. */
     data class Status(
@@ -22,7 +22,7 @@ object BoardLines {
         val group: Long,
         val fix: Boolean,
         val stopped: Boolean,
-        /** Our rider's call for help is on, and so many others' boards say they hear it. */
+        /** Our rider's call for help is on (state 1), and so many others' boards carry it on. */
         val help: Boolean,
         val heard: Int,
         /** Where its clock comes from: none, nmea or pps; and how far off it may be, in ms. */
@@ -105,7 +105,7 @@ object BoardLines {
             group = t["group"]?.toLongOrNull(16) ?: return null,
             fix = t["fix"] == "1",
             stopped = t["stopped"] == "1",
-            help = t["help"] == "1",
+            help = t["state"] == "1",
             heard = t["heard"]?.toIntOrNull() ?: 0,
             time = t["time"] ?: "?",
             timeErrMs = t["err"]?.toDoubleOrNull(),
@@ -130,6 +130,8 @@ object BoardLines {
         val lat = t["lat"]?.toDoubleOrNull() ?: return null
         val lon = t["lon"]?.toDoubleOrNull() ?: return null
         val heardS = t["heard"]?.toDoubleOrNull() ?: return null
+        // a rider told of with no position yet has nowhere to be drawn (v5 pos=0)
+        if (t["pos"] == "0") return null
         if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
         // riders count from 1, as the group screen does; slots from 0
         fun nameOf(s: Int) = group?.riderName(s) ?: "Rider ${s + 1}"

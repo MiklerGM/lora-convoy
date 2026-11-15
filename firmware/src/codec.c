@@ -4,24 +4,27 @@
 
 /*
  *  in clear, authenticated:
- *  0     version (2 bits) | type (2 bits) | flags (4 bits, zero)
+ *  0     version (4 bits) | type (4 bits)
  *  1     group tag
- *  2     slot
- *  3-6   session, big-endian
- *  7-8   counter, big-endian
+ *  2     slot in bits 4-0; bits 7-5 zero
+ *  3-4   session, big-endian
+ *  5-8   sent: UTC seconds, big-endian
+ *  9     count
  *  encrypted:
- *  9-10  fix time, big-endian
+ *  10    the fix's age when sent (age_code); 255 with no position
  *  11-13 latitude, signed, 90 degrees = 2^23
  *  14-16 longitude, signed, 180 degrees = 2^23
  *  17    speed, km/h
  *  18    course, 2-degree steps
- *  19    status in bits 3-0; the call for help's number in bits 6-4, 0 without one
- *  20    help heard: a call for help the sender hears, the caller's slot in bits 4-0 and the
- *        call's number in bits 7-5; 0 for none
- *  21-24 tag
+ *  19    facts in bits 3-0, state in bits 7-4
+ *  20    heartbeat in bits 2-0, the fix's satellites in bits 6-3; bit 7 zero
+ *  then  passengers, 9 bytes each, as many as the length holds:
+ *        slot in bits 4-0, bit 5 "has a position"; latitude; longitude; how long ago it said so
+ *        itself (age_code); facts and state
+ *  last 4 tag
  *
- * Nonce, 13 bytes: slot, session, counter, then zeros. A sender's slot and session make it unique
- * even when two radios are misconfigured onto one slot; the counter within the session.
+ * Nonce, 13 bytes: slot, session, sent, count, then zeros. A sender never sends twice with one
+ * (sent, count); the session keeps two radios misconfigured onto one slot apart.
  */
 
 #define SCALE (1 << 23)
@@ -69,60 +72,100 @@ static int32_t sign24(uint32_t v) { return (v & 0x800000u) ? (int32_t)v - 0x1000
 
 static void nonce_of(const uint8_t *header, uint8_t nonce[CCM_NONCE_LEN]) {
     memset(nonce, 0, CCM_NONCE_LEN);
-    memcpy(nonce, &header[2], 7); /* slot, session, counter */
+    memcpy(nonce, &header[2], 8); /* slot, session, sent, count */
 }
 
-size_t pkt_seal(uint8_t out[PKT_POSITION_LEN], const position_t *p, const group_key_t *g) {
-    out[0] = (uint8_t)(PKT_VERSION << 6 | PKT_TYPE_POSITION << 4);
+uint8_t age_code(uint32_t s) {
+    return s < AGE_MINUTES_FROM ? (uint8_t)s : s < 122 * 60 ? (uint8_t)(118 + s / 60) : AGE_OLDER;
+}
+
+uint32_t age_seconds(uint8_t code) {
+    return code < AGE_MINUTES_FROM ? code : code < 240 ? (code - 118u) * 60 : 122 * 60;
+}
+
+static void put_where(uint8_t *b, const record_t *r) {
+    put24(&b[0], (uint32_t)to24(r->has_pos ? r->lat_e7 : 0, 900000000ll) & 0xFFFFFFu);
+    put24(&b[3], (uint32_t)to24(r->has_pos ? r->lon_e7 : 0, 1800000000ll) & 0xFFFFFFu);
+}
+
+static void get_where(const uint8_t *b, record_t *r) {
+    r->lat_e7 = from24(sign24(get24(&b[0])), 900000000ll);
+    r->lon_e7 = from24(sign24(get24(&b[3])), 1800000000ll);
+}
+
+size_t pkt_seal(uint8_t *out, const packet_t *p, const group_key_t *g) {
+    const unsigned n = p->passengers > PKT_PASSENGERS_MAX ? PKT_PASSENGERS_MAX : p->passengers;
+    const size_t body_len = PKT_OWN_LEN + n * PKT_PASSENGER_LEN;
+    out[0] = (uint8_t)(PKT_VERSION << 4 | PKT_TYPE_STATUS);
     out[1] = g->tag;
-    out[2] = p->slot;
-    out[3] = (uint8_t)(p->session >> 24);
-    out[4] = (uint8_t)(p->session >> 16);
-    out[5] = (uint8_t)(p->session >> 8);
-    out[6] = (uint8_t)p->session;
-    out[7] = (uint8_t)(p->counter >> 8);
-    out[8] = (uint8_t)p->counter;
-    uint8_t body[PKT_BODY_LEN];
-    body[0] = (uint8_t)(p->fix_time >> 8);
-    body[1] = (uint8_t)p->fix_time;
-    put24(&body[2], (uint32_t)to24(p->lat_e7, 900000000ll) & 0xFFFFFFu);
-    put24(&body[5], (uint32_t)to24(p->lon_e7, 1800000000ll) & 0xFFFFFFu);
-    body[8] = p->speed_kmh;
-    body[9] = p->course2;
-    body[10] = (uint8_t)((p->status & 0x0F) | (p->call & 7) << 4);
-    /* with no help heard the slot's five bits are free, and a receiver that reads no call's number
-     * reads nothing else there: they carry the satellites of the fix, for the bench (07, 2026-11-13) */
-    body[11] = p->help_heard == HELP_HEARD_NONE ? (p->sats > 31 ? 31 : p->sats)
-                                                : (uint8_t)((p->heard_call & 7) << 5 | (p->help_heard & 0x1F));
+    out[2] = p->own.slot & 0x1F;
+    out[3] = (uint8_t)(p->session >> 8);
+    out[4] = (uint8_t)p->session;
+    out[5] = (uint8_t)(p->sent >> 24);
+    out[6] = (uint8_t)(p->sent >> 16);
+    out[7] = (uint8_t)(p->sent >> 8);
+    out[8] = (uint8_t)p->sent;
+    out[9] = p->count;
+    uint8_t body[PKT_MAX_LEN];
+    body[0] = p->own.has_pos ? (p->own.age == AGE_NONE ? AGE_OLDER : p->own.age) : AGE_NONE;
+    put_where(&body[1], &p->own);
+    body[7] = p->speed_kmh;
+    body[8] = p->course2;
+    body[9] = (uint8_t)((p->own.facts & 0x0F) | (p->own.state & 0x0F) << 4);
+    body[10] = (uint8_t)((p->beat & 7) | (p->sats > 15 ? 15 : p->sats) << 3);
+    for (unsigned i = 0; i < n; i++) {
+        const record_t *r = &p->passenger[i];
+        uint8_t *b = &body[PKT_OWN_LEN + i * PKT_PASSENGER_LEN];
+        b[0] = (uint8_t)((r->slot & 0x1F) | (r->has_pos ? 0x20 : 0));
+        put_where(&b[1], r);
+        b[7] = r->age == AGE_NONE ? AGE_OLDER : r->age;
+        b[8] = (uint8_t)((r->facts & 0x0F) | (r->state & 0x0F) << 4);
+    }
     uint8_t nonce[CCM_NONCE_LEN];
     nonce_of(out, nonce);
-    ccm_seal(&g->ccm, nonce, out, PKT_HEADER_LEN, body, PKT_BODY_LEN, &out[PKT_HEADER_LEN],
-             &out[PKT_HEADER_LEN + PKT_BODY_LEN], PKT_TAG_LEN);
-    return PKT_POSITION_LEN;
+    ccm_seal(&g->ccm, nonce, out, PKT_HEADER_LEN, body, body_len, &out[PKT_HEADER_LEN],
+             &out[PKT_HEADER_LEN + body_len], PKT_TAG_LEN);
+    return PKT_HEADER_LEN + body_len + PKT_TAG_LEN;
 }
 
-pkt_result_t pkt_open(const uint8_t *buf, size_t len, const group_key_t *g, position_t *p) {
-    if (len != PKT_POSITION_LEN || buf[0] != (PKT_VERSION << 6 | PKT_TYPE_POSITION << 4)) return PKT_MALFORMED;
+pkt_result_t pkt_open(const uint8_t *buf, size_t len, const group_key_t *g, packet_t *p) {
+    if (len < PKT_LEN(0) || len > PKT_MAX_LEN || (len - PKT_LEN(0)) % PKT_PASSENGER_LEN ||
+        buf[0] != (PKT_VERSION << 4 | PKT_TYPE_STATUS)) {
+        return PKT_MALFORMED;
+    }
     if (buf[1] != g->tag) return PKT_FOREIGN;
-    uint8_t nonce[CCM_NONCE_LEN], body[PKT_BODY_LEN];
+    const size_t body_len = len - PKT_HEADER_LEN - PKT_TAG_LEN;
+    uint8_t nonce[CCM_NONCE_LEN], body[PKT_MAX_LEN];
     nonce_of(buf, nonce);
-    if (!ccm_open(&g->ccm, nonce, buf, PKT_HEADER_LEN, &buf[PKT_HEADER_LEN], PKT_BODY_LEN,
-                  &buf[PKT_HEADER_LEN + PKT_BODY_LEN], PKT_TAG_LEN, body)) {
+    if (!ccm_open(&g->ccm, nonce, buf, PKT_HEADER_LEN, &buf[PKT_HEADER_LEN], body_len,
+                  &buf[PKT_HEADER_LEN + body_len], PKT_TAG_LEN, body)) {
         return PKT_FORGED;
     }
+    memset(p, 0, sizeof(*p));
     p->group = buf[1];
-    p->slot = buf[2];
-    p->session = (uint32_t)buf[3] << 24 | (uint32_t)buf[4] << 16 | (uint32_t)buf[5] << 8 | buf[6];
-    p->counter = (uint16_t)(buf[7] << 8 | buf[8]);
-    p->fix_time = (uint16_t)(body[0] << 8 | body[1]);
-    p->lat_e7 = from24(sign24(get24(&body[2])), 900000000ll);
-    p->lon_e7 = from24(sign24(get24(&body[5])), 1800000000ll);
-    p->speed_kmh = body[8];
-    p->course2 = body[9];
-    p->status = body[10] & 0x0F;
-    p->call = body[10] >> 4 & 7;
-    p->heard_call = body[11] >> 5;
-    p->help_heard = p->heard_call ? body[11] & 0x1F : HELP_HEARD_NONE;
-    p->sats = p->heard_call ? 0 : body[11] & 0x1F;
+    p->own.slot = buf[2] & 0x1F;
+    p->session = (uint16_t)(buf[3] << 8 | buf[4]);
+    p->sent = (uint32_t)buf[5] << 24 | (uint32_t)buf[6] << 16 | (uint32_t)buf[7] << 8 | buf[8];
+    p->count = buf[9];
+    p->own.has_pos = body[0] != AGE_NONE;
+    p->own.age = body[0];
+    get_where(&body[1], &p->own);
+    p->speed_kmh = body[7];
+    p->course2 = body[8];
+    p->own.facts = body[9] & 0x0F;
+    p->own.state = body[9] >> 4;
+    p->beat = body[10] & 7;
+    p->sats = body[10] >> 3 & 15;
+    p->passengers = (uint8_t)((body_len - PKT_OWN_LEN) / PKT_PASSENGER_LEN);
+    for (unsigned i = 0; i < p->passengers; i++) {
+        const uint8_t *b = &body[PKT_OWN_LEN + i * PKT_PASSENGER_LEN];
+        record_t *r = &p->passenger[i];
+        r->slot = b[0] & 0x1F;
+        r->has_pos = (b[0] & 0x20) != 0;
+        get_where(&b[1], r);
+        r->age = b[7];
+        r->facts = b[8] & 0x0F;
+        r->state = b[8] >> 4;
+    }
     return PKT_OK;
 }

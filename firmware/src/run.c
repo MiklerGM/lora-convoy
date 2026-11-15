@@ -69,7 +69,7 @@ static port_mutex_t s_lock;
  * radio needs. */
 static port_mutex_t s_command_lock;
 static atomic_bool s_reapply = ATOMIC_VAR_INIT(false);
-/* A new answer to our call for help: the status goes to the phone now, not in up to 10 s (D16). */
+/* Our state newly carried by another rider: the status goes to the phone now, not in up to 10 s (D16). */
 static atomic_bool s_status_now = ATOMIC_VAR_INIT(false);
 static atomic_bool s_restart_after_bond_clear = ATOMIC_VAR_INIT(false);
 static const char *s_reset = "other";
@@ -340,14 +340,16 @@ static void radio_task(void *arg) {
             const bool taken = node_on_packet(&s_node, buf, n, rssi, snr, now);
             /* E0's offset from its RxDone, where DIO1 stamped it; a poll's time is no measure */
             if (taken && rx_at) node_on_rx_done(&s_node, rx_at);
-            if (taken) node_format_rider(&s_node, buf[2], now, text, sizeof(text));
-            /* A rider's call newly answered goes to the phone now, with its answerers; our own,
-             * with the status, which the status task sends in its order with the commands. */
-            const int caller = s_node.answered_news;
-            s_node.answered_news = -1;
+            if (taken) node_format_rider(&s_node, buf[2] & 0x1F, now, text, sizeof(text));
+            /* A rider whose state has changed, told by this packet as a passenger, goes to the phone
+             * now; our own state newly carried, with the status, which the status task sends in its
+             * order with the commands. */
+            int caller = s_node.state_news;
+            s_node.state_news = -1;
+            if (!taken || caller == (buf[2] & 0x1F)) caller = -1;
             if (caller >= 0) node_format_rider(&s_node, (unsigned)caller, now, news, sizeof(news));
-            if (s_node.help_news) atomic_store(&s_status_now, true);
-            s_node.help_news = false;
+            if (s_node.echo_news) atomic_store(&s_status_now, true);
+            s_node.echo_news = false;
             port_mutex_give(s_lock);
             if (taken) {
                 if (ble_nus_connected()) ble_nus_send_line(text);
@@ -366,7 +368,7 @@ static void radio_task(void *arg) {
         now = port_uptime_us();
         port_mutex_lock(s_lock);
         const size_t len = node_poll_tx(&s_node, now, buf, sizeof(buf));
-        const uint32_t counter = s_node.counter - 1;
+        const uint32_t counter = (uint8_t)(s_node.count - 1);
         port_mutex_give(s_lock);
         if (len) {
             int64_t done;
@@ -463,7 +465,7 @@ void run_start(const char *board, const char *reset) {
                          .phy = PHY_V0, .nmea_lag_us = NODE_NMEA_LAG_US, .nmea_err_us = NODE_NMEA_ERR_US,
                          .nmea_lag_sat_us = NODE_NMEA_LAG_SAT_US,
                          .tx_lead_us = NODE_TX_LEAD_US,
-                         .listen_one_in = 32};
+                         .listen_one_in = 32, .move_m = 10, .beat = 3, .passengers = 1};
     setup_t setup;
     const bool kept = port_setup_load(&setup, sizeof(setup)) && setup.version == SETUP_VERSION &&
                       setup.slot < NODE_SLOTS && setup.slots >= 1 && setup.slots <= NODE_SLOTS &&

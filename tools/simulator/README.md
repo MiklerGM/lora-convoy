@@ -54,22 +54,17 @@ configurations.
 
 | Candidate | Implementation and limitations |
 |---|---|
-| `v3` | The production node/codec with its existing help acknowledgements; explicit header and CRC only |
-| `relay` | Research C adapter using the same node/codec, adding a four-byte `SR`/version/count envelope and up to eight intact foreign v3 packets |
+| `v3` | The production node/codec, since 2026-11-14 protocol v5, carrying no other riders; explicit header and CRC only. The name is kept for the setups that use it |
+| `relay` | The same core carrying `relay_records` other riders in each packet (v5 passengers, 0–3); `relay_ttl_s` is no longer used, the core forgets a rider after 10 minutes |
 | `v3-cad`, `relay-cad` | The corresponding payload/forwarding logic with a research C policy that senses before its own scheduled transmission |
 
-`relay` forwards the locally cached sources least recently forwarded, expires cache entries by
-time since their **new authenticated packet** was accepted, preserves the original source packet,
-and charges the complete RF frame against its node's native ledger. It uses the configured
-maximum frame length for time guards, and can reduce forwarded records to fit remaining budget.
-Duplicates do not renew the cache. The configured TTL is a local-cache policy, not a wire-carried
-source-transmission timestamp. It is neither sdk firmware nor a selected v4 format.
+Both run the board's own send rule and passenger choice (`node.c`); a carried record keeps the
+second its rider said it, so it never looks younger, and the host keys records by that second,
+place and state, which every teller of a rider agrees on.
 
-Source packets retain their original authentication. The research envelope itself is not
-authenticated and does not communicate a relay-peer identity. The observer knows the physical
-RF sender; that knowledge is not given to the candidate. This adapter inherits v3's two-state
-help behaviour and cannot transmit before its first position fix. It does not implement the
-agreed future five-state interface or establish a security claim for a relay protocol.
+Carried records travel inside their carrier's authenticated packet. The observer knows the
+physical RF sender; the core knows only the slot that carried a record. The host drives two states
+(normal, help) of the five the core has.
 
 The CAD policies prepare their real packet in the nominal slot, then use only local CAD results.
 They make at most three attempts, with a private seeded 1–20 ms backoff after a busy channel or

@@ -43,11 +43,22 @@
 /* Kept this long after it ends, longer than any packet lasts, so later ones still see it overlap. */
 #define KEEP_US (2 * SEC)
 
+/* Records of other riders each packet carries here: -DSIM_PASSENGERS=0..3 to compare. */
+#ifndef SIM_PASSENGERS
+#define SIM_PASSENGERS 1
+#endif
+
+/* A rider's fix in UTC ms as a node holds it, or when it last said anything where a passenger told of it; 0 before one. */
+static int64_t fix_ms(const rider_t *r) { return (int64_t)(r->fix_utc ? r->fix_utc : r->as_of) * 1000; }
+
+/* v3's call for help, which these scenarios were written with: states 1 and 0. */
+static void node_set_help(node_t *n, bool on) { node_set_state(n, on ? STATE_HELP : STATE_NORMAL); }
+
 typedef struct {
     int from;
     int64_t start, end;
     bool done;
-    uint8_t bytes[PKT_POSITION_LEN];
+    uint8_t bytes[PKT_MAX_LEN];
     size_t len;
 } transmission_t;
 
@@ -239,7 +250,7 @@ static void world_init(world_t *w, const scenario_t *sc, int64_t utc0_ms) {
         node_config_t cfg = {.keyed = sc->groups > 0, .slot = (uint8_t)w->slot_of[i],
                              .slots = (uint8_t)w->size_of[i], .interval_ms = sc->interval_ms,
                              .duty_permille = 100, .phy = PHY_V0, .nmea_lag_us = (int32_t)c->told_lag_us,
-                             .nmea_err_us = (int32_t)c->told_err_us, .listen_one_in = 32};
+                             .nmea_err_us = (int32_t)c->told_err_us, .listen_one_in = 32, .passengers = SIM_PASSENGERS};
         memset(cfg.key, w->group_of[i] + 1, sizeof(cfg.key));
         node_init(&w->node[i], &cfg, splitmix(sc->seed * 1000u + (uint32_t)i));
         w->clock[i].drift = c->drift_ppm * 1e-6 * ((double)(rnd(&w->rng) % 2001) / 1000 - 1);
@@ -272,7 +283,7 @@ static void world_step(world_t *w, int64_t t) {
             node_on_fix(&w->node[i], &f, local_us(w, i, w->clock[i].fix_due));
             w->clock[i].fix_pending = false;
         }
-        uint8_t b[32];
+        uint8_t b[PKT_MAX_LEN];
         const size_t len = node_poll_tx(&w->node[i], local_us(w, i, t), b, sizeof(b));
         if (len) {
             assert(w->in_air < MAX_AIR);
@@ -384,7 +395,7 @@ static outcome_t run(const scenario_t *sc, bool print) {
                 for (int j = 0; j < sc->nodes; j++) {
                     if (j == i || s_run.group_of[j] != s_run.group_of[i] || n_ages >= max_ages) continue;
                     const rider_t *r = &s_run.node[i].riders[s_run.slot_of[j]];
-                    ages[n_ages++] = r->known ? (double)(utc - r->fix_utc_ms) / 1000 : 1e9;
+                    ages[n_ages++] = r->known ? (double)(utc - fix_ms(r)) / 1000 : 1e9;
                 }
             }
         }
@@ -747,8 +758,8 @@ static void compare_tx(void *ctx, const transmission_t *x) {
     comparison_t *c = ctx;
     const node_t *n = &c->world->node[x->from];
     c->air_us[x->from] += (uint64_t)(x->end - x->start);
-    position_t p;
-    if (pkt_open(x->bytes, x->len, &n->group, &p) != PKT_OK || p.slot != x->from) {
+    packet_t p;
+    if (pkt_open(x->bytes, x->len, &n->group, &p) != PKT_OK || p.own.slot != x->from) {
         compare_failure(c, "source_identity", -1, x->from, x->start);
         return;
     }
@@ -765,7 +776,7 @@ static void compare_tx(void *ctx, const transmission_t *x) {
     }
     printf("{\"event\":\"tx\",\"t_us\":%lld,\"sender\":%d,\"session\":%lu,\"packet\":%u,"
            "\"bytes\":%zu,\"air_us\":%lld}\n", (long long)x->start, x->from,
-           (unsigned long)p.session, p.counter, x->len, (long long)(x->end - x->start));
+           (unsigned long)p.session, p.count, x->len, (long long)(x->end - x->start));
 }
 
 static int compare_event_at(const comparison_t *c, int source, int64_t t) {
@@ -796,22 +807,22 @@ static void compare_rx(void *ctx, const transmission_t *x, int receiver, bool ac
     if (!accepted) return;
     c->rx_accepted++;
     const rider_t *r = &c->world->node[receiver].riders[x->from];
-    position_t p;
+    packet_t p;
     if (pkt_open(x->bytes, x->len, &c->world->node[receiver].group, &p) != PKT_OK ||
-        r->last.slot != x->from || r->last.session != p.session || r->last.counter != p.counter) {
+        r->via != x->from || r->session != p.session || r->count != p.count) {
         compare_failure(c, "applied_identity", receiver, x->from, x->end);
         return;
     }
-    if (x->start < c->last_update[receiver][x->from] || r->fix_utc_ms < c->last_fix[receiver][x->from]) {
+    if (x->start < c->last_update[receiver][x->from] || fix_ms(r) < c->last_fix[receiver][x->from]) {
         compare_failure(c, "update_order", receiver, x->from, x->end);
     }
     c->last_update[receiver][x->from] = x->start;
-    c->last_fix[receiver][x->from] = r->fix_utc_ms;
+    c->last_fix[receiver][x->from] = fix_ms(r);
     const int64_t warmup = c->cfg.warmup_s * SEC;
     const int64_t before = c->last_rx[receiver][x->from] > warmup ? c->last_rx[receiver][x->from] : warmup;
     if (x->end > before && x->end - before > c->longest_gap_us) c->longest_gap_us = x->end - before;
     c->last_rx[receiver][x->from] = x->end;
-    const bool help = (r->last.status & ST_HELP) != 0;
+    const bool help = r->rec.state == STATE_HELP;
     /* Only this observer knows the originating scenario event; no event id enters a node. */
     const int event = compare_event_at(c, x->from, x->start);
     if (event >= 0) {
@@ -825,7 +836,7 @@ static void compare_rx(void *ctx, const transmission_t *x, int receiver, bool ac
     printf("{\"event\":\"applied\",\"t_us\":%lld,\"created_us\":%lld,\"receiver\":%d,\"source\":%d,"
            "\"via\":%d,\"session\":%lu,\"packet\":%u,\"fix_time_us\":%lld,\"help\":%d,\"state\":\"%s\",\"state_event\":",
            (long long)x->end, (long long)x->start, receiver, x->from, x->from,
-           (unsigned long)p.session, p.counter, (long long)(r->fix_utc_ms * 1000), help, help ? "help" : "normal");
+           (unsigned long)p.session, p.count, (long long)(fix_ms(r) * 1000), help, help ? "help" : "normal");
     if (event >= 0) printf("%d", event); else printf("null");
     puts("}");
 }
@@ -854,7 +865,7 @@ static void compare_sample(comparison_t *c, int64_t t) {
         for (int source = 0; source < c->cfg.nodes; source++) {
             if (source == receiver) continue;
             const rider_t *r = &c->world->node[receiver].riders[source];
-            const bool known = r->known && r->fix_utc_ms;
+            const bool known = r->known && fix_ms(r);
             const bool path = compare_path(c, source, receiver, t);
             c->samples++;
             c->unseen += !known;
@@ -865,7 +876,7 @@ static void compare_sample(comparison_t *c, int64_t t) {
                    receiver, source, known ? "true" : "false", clock ? "true" : "false", path ? "true" : "false");
             if (known && clock) {
                 assert(c->n_ages < c->age_capacity);
-                const double age = (double)(utc - r->fix_utc_ms);
+                const double age = (double)(utc - fix_ms(r));
                 c->ages[c->n_ages++] = age;
                 printf("%.3f", age);
             } else printf("null");
@@ -913,7 +924,7 @@ static int compare_run(const char *path, const char *seed_text, const char *envi
            "\"checks_executed\":[\"source_identity\",\"applied_identity\",\"update_order\",\"timing_budget\"],"
            "\"checks_not_exercised\":[\"relayed_identity\",\"relay_expiry\",\"old_state_replay\","
            "\"fix_age_integrity\",\"full_slot_containment\",\"rolling_duty_limit\"],", c.cfg.name, (unsigned long)c.seed,
-           c.cfg.nodes, c.cfg.interval_ms, c.cfg.duration_s, c.cfg.warmup_s, c.environment.loss_permille, PKT_POSITION_LEN,
+           c.cfg.nodes, c.cfg.interval_ms, c.cfg.duration_s, c.cfg.warmup_s, c.environment.loss_permille, PKT_LEN(1),
            STEP_US, (long long)w.utc0_ms);
     const compare_environment_t *e = &c.environment;
     printf("\"environment\":\"%s\",\"drift_ppm\":%.0f,\"nmea_only\":%d,\"nmea_lag_us\":%lld,"
@@ -1056,10 +1067,11 @@ static void on_taken(void *ctx, int node, unsigned slot, int64_t t) {
     world_t *w = ctx;
     board_t *b = &s_boards[node];
     node_t *n = &w->node[node];
-    const int caller = n->answered_news;
-    const bool status = n->help_news;
-    n->answered_news = -1;
-    n->help_news = false;
+    int caller = n->state_news;
+    const bool status = n->echo_news;
+    n->state_news = -1;
+    n->echo_news = false;
+    if (caller == (int)slot) caller = -1;
     if (b->client < 0) return;
     char line[API_LINE];
     node_format_rider(n, slot, t, line, sizeof(line));
@@ -1072,6 +1084,16 @@ static void on_taken(void *ctx, int node, unsigned slot, int64_t t) {
         api_status(&b->api, t, line, sizeof(line));
         send_line(b, line);
     }
+}
+
+/* How many of the others hold rider k as calling for help: heard from itself, or told. */
+static int know_of_call(const world_t *w, int nodes, int k) {
+    int count = 0;
+    for (int i = 0; i < nodes; i++) {
+        const rider_t *r = &w->node[i].riders[w->slot_of[k]];
+        count += i != k && r->known && r->rec.state == STATE_HELP;
+    }
+    return count;
 }
 
 static int listen_on(int port) {
@@ -1220,9 +1242,9 @@ int main(int argc, char **argv) {
            100 * o.delivered, o.collisions);
     assert(o.delivered > 0.99 && o.collisions == 0 && o.unsure == 0);
 
-    /* A tunnel: three riders lose their GNSS for 15 minutes. Each holds its slot while its time is
-     * sure enough, about 10 minutes at 50 ppm against 31 ms, then goes quiet, and comes back with
-     * the fix. Nobody collides. */
+    /* A tunnel: three riders lose their GNSS for 15 minutes. v3 held their slots about 10 minutes,
+     * at 50 ppm against 31 ms, and then went quiet. Now the packets of the seventeen on PPS keep
+     * their clocks set (12, 2026-11-14): they hold their slots throughout. Nobody collides. */
     const clocks_t tunnel = {.drift_ppm = 20, .lag_us = 100000, .told_err_us = 100000, .dark = 3,
                              .dark_from_us = 60 * SEC, .dark_us = 900 * SEC};
     const scenario_t dark = {20, 2000, 1200 * SEC, 0, 6, 1, tunnel, 0, false};
@@ -1232,25 +1254,19 @@ int main(int argc, char **argv) {
         quiet += s_run.node[i].tx_unsure;
         after += s_run.sent_by[i];
     }
-    printf("sim: 3 of 20 riders 15 min without GNSS: they held their slots about %lu s, then passed over "
-           "%lu slots until the fix came back; %d collisions\n",
-           (unsigned long)((900 - quiet / 3 * 2)), quiet, o.collisions);
-    assert(o.collisions == 0 && quiet > 3 * 100 && quiet < 3 * 200 && after > 3 * 400);
+    printf("sim: 3 of 20 riders 15 min without GNSS, the others on PPS: they passed over %lu slots unsure of "
+           "their time, and sent %lu packets; %d collisions\n", quiet, after, o.collisions);
+    assert(o.collisions == 0 && quiet == 0 && after > 3 * 550);
 
-    /* An L1 told nothing of its NMEA's lag, and sure of it, sends 100 ms late, into the next
-     * rider's slot, every frame: why E0 measures the lag before a ride. Told it is unsure, as boards
-     * are by default (100 ms), it keeps quiet in a group this size instead. */
-    const clocks_t careless = {.nmea_only = 1, .lag_us = 100000, .jitter_us = 5000, .told_err_us = 10000};
-    const scenario_t wrong = {20, 2000, 600 * SEC, 0, 7, 1, careless, 0, false};
-    o = run(&wrong, false);
-    const int wrong_within = o.within;
+    /* An L1 told nothing of its NMEA's lag sends 100 ms late, into the next rider's slot: why E0
+     * measures the lag. Told it is unsure, as boards are by default (100 ms), v3 kept it quiet in a
+     * group this size; now the packets of the riders on PPS set its clock, and it keeps its slot. */
     const clocks_t honest = {.nmea_only = 1, .lag_us = 100000, .jitter_us = 5000, .told_err_us = 100000};
     const scenario_t unsure = {20, 2000, 600 * SEC, 0, 7, 1, honest, 0, false};
     o = run(&unsure, false);
-    printf("sim: an L1 told nothing of its NMEA's lag, and sure of it, collides with the next rider in every "
-           "frame (%d packets); told it is unsure, it keeps quiet (%d silent, %d collisions)\n", wrong_within,
-           o.silent, o.within);
-    assert(wrong_within > 500 && o.silent == 1 && o.within == 0);
+    printf("sim: an L1 told nothing of its NMEA's lag, and unsure of it, among riders on PPS: %d silent, %d "
+           "collisions\n", o.silent, o.within);
+    assert(o.silent == 0 && o.within == 0);
 
     /* sim serve's boards take MODE as boards do (D15): the phone's command, through the same
      * handling as serve's, and their radios take the mode, so they go on sending, in it. */
@@ -1298,7 +1314,7 @@ int main(int argc, char **argv) {
         int64_t t = 0;
         for (; t < 10 * SEC; t += STEP_US) world_step(&q, t);
         node_set_help(&q.node[0], true);
-        for (; __builtin_popcount(q.node[0].help_heard_by) < 2; t += STEP_US) {
+        for (; __builtin_popcount(q.node[0].echo_by) < 2; t += STEP_US) {
             world_step(&q, t);
             assert(t < 30 * SEC);
         }
@@ -1311,8 +1327,8 @@ int main(int argc, char **argv) {
             close(phone[k][1]);
             s_boards[k].client = -1;
         }
-        const bool caller = strstr(got[0], "STATUS ") && strstr(got[0], " help=1 heard=");
-        const bool bystander = strstr(got[1], "RIDER slot=0 ") && strstr(got[1], " answered=2 ");
+        const bool caller = strstr(got[0], "STATUS ") && strstr(got[0], " heard=1 state=1 ");
+        const bool bystander = strstr(got[1], "RIDER slot=0 ") && strstr(got[1], " state=1 ");
         printf("sim: serve tells the phones of an answer to a call for help with the packet that brings it: the "
                "caller's in its status %s, a bystander's in the caller's line %s\n", caller ? "yes" : "NO",
                bystander ? "yes" : "NO");
@@ -1368,8 +1384,9 @@ int main(int argc, char **argv) {
         assert(pps->n > 30 && pps->max_us >= 0 && pps->max_us <= 1000 && lead->max_us <= 1000);
     }
 
-    /* "Need help", answered (01, help delivery): each of twenty riders calls in turn, with 10 % of
-     * packets lost; how long until one of the others answers, and until all of them have. */
+    /* "Need help" (01, help delivery): each of twenty riders calls in turn, with 10 % of packets
+     * lost; how long until the caller sees its call carried by another, and until every other
+     * rider has it, heard or told. */
     {
         static world_t h;
         const scenario_t helpers = {20, 2000, 0, 0.10, 9, 1, GOOD, 0, false};
@@ -1380,97 +1397,65 @@ int main(int argc, char **argv) {
         for (int k = 0; k < 20; k++) {
             node_set_help(&h.node[k], true);
             const int64_t asked = t;
-            int64_t answered = 0;
-            for (; __builtin_popcount(h.node[k].help_heard_by) < 19; t += STEP_US) {
+            int64_t carried = 0;
+            for (; know_of_call(&h, 20, k) < 19 || !carried; t += STEP_US) {
                 world_step(&h, t);
-                if (h.node[k].help_heard_by && !answered) answered = t;
+                if (h.node[k].echo_by && !carried) carried = t;
                 assert(t - asked < 60 * SEC);
             }
-            first[k] = (double)(answered - asked) / SEC;
+            first[k] = (double)(carried - asked) / SEC;
             all[k] = (double)(t - asked) / SEC;
             node_set_help(&h.node[k], false);
-            /* the next call at any moment of a frame */
-            for (const int64_t end = t + 4 * SEC + rnd(&h.rng) % 2000 * 1000; t < end; t += STEP_US) world_step(&h, t);
+            /* the next call at any moment of a frame, once this one is called off everywhere */
+            for (const int64_t end = t + 10 * SEC + rnd(&h.rng) % 2000 * 1000; t < end; t += STEP_US) world_step(&h, t);
         }
         qsort(first, 20, sizeof(double), by_value);
         qsort(all, 20, sizeof(double), by_value);
-        printf("sim: a call for help among 20 riders, 10 %% of packets lost: first answered within %.1f s, by "
-               "everyone within %.1f s (the median; at worst %.1f and %.1f s)\n", first[10], all[10], first[19],
-               all[19]);
-        assert(first[19] < 5 && all[19] < 20);
+        printf("sim: a call for help among 20 riders, 10 %% of packets lost: the caller sees it carried within "
+               "%.1f s, everyone has it within %.1f s (the median; at worst %.1f and %.1f s)\n", first[10], all[10],
+               first[19], all[19]);
+        assert(first[19] < 6 && all[19] < 10);
     }
 
-    /* Several calls for help at once (09): an answer names one call a packet, each in turn, so with
-     * h callers an answerer comes back to each every h frames. */
+    /* Several calls at once: a packet carries one changed state first, so h callers take turns in
+     * every other rider's packets. */
     for (int h = 1; h <= 4; h *= 2) {
         static world_t m;
         const scenario_t many = {20, 2000, 0, 0.10, 12, 1, GOOD, 0, false};
         world_init(&m, &many, 1792670400000ll);
-        double first[10 * 4], all[10 * 4];
+        double all[10 * 4];
         int n = 0;
         int64_t t = 0;
         for (; t < 20 * SEC; t += STEP_US) world_step(&m, t);
         for (int round = 0; round < 10; round++) {
             int callers[4];
-            int64_t answered[4] = {0}, done[4] = {0};
+            int64_t done[4] = {0};
             for (int c = 0; c < h; c++) node_set_help(&m.node[callers[c] = (round * 7 + c * 5) % 20], true);
             const int64_t asked = t;
             for (int left = h; left > 0; t += STEP_US) {
                 world_step(&m, t);
                 for (int c = 0; c < h; c++) {
-                    const uint32_t by = m.node[callers[c]].help_heard_by;
-                    if (by && !answered[c]) answered[c] = t;
-                    if (!done[c] && __builtin_popcount(by) >= 19) left -= (done[c] = t) > 0;
+                    if (!done[c] && know_of_call(&m, 20, callers[c]) >= 19) left -= (done[c] = t) > 0;
                 }
                 assert(t - asked < 120 * SEC);
             }
             for (int c = 0; c < h; c++) {
-                first[n] = (double)(answered[c] - asked) / SEC;
                 all[n++] = (double)(done[c] - asked) / SEC;
                 node_set_help(&m.node[callers[c]], false);
             }
-            for (const int64_t end = t + 4 * SEC + rnd(&m.rng) % 2000 * 1000; t < end; t += STEP_US) world_step(&m, t);
+            for (const int64_t end = t + 10 * SEC + rnd(&m.rng) % 2000 * 1000; t < end; t += STEP_US) world_step(&m, t);
         }
-        qsort(first, (size_t)n, sizeof(double), by_value);
         qsort(all, (size_t)n, sizeof(double), by_value);
-        printf("sim: %d call%s for help at once among 20 riders, 10 %% of packets lost: first answered within %.1f s, "
-               "by all 19 within %.1f s (the median; at worst %.1f and %.1f s)\n", h, h > 1 ? "s" : "", first[n / 2],
-               all[n / 2], first[n - 1], all[n - 1]);
-    }
-
-    /* A caller restarted during its call, calling again at once (09): its new call takes the old
-     * one's number once in seven, and the others' answers to the old one count for the new one
-     * before it has gone out at all. */
-    {
-        static world_t r;
-        const scenario_t again = {20, 2000, 0, 0, 13, 1, GOOD, 0, false};
-        world_init(&r, &again, 1792670400000ll);
-        int early = 0, restarts = 0;
-        int64_t t = 0;
-        for (; t < 20 * SEC; t += STEP_US) world_step(&r, t);
-        for (; restarts < 40; restarts++) {
-            const int i = restarts % 20;
-            node_set_help(&r.node[i], true);
-            for (const int64_t asked = t; __builtin_popcount(r.node[i].help_heard_by) < 19; t += STEP_US) {
-                world_step(&r, t);
-                assert(t - asked < 60 * SEC);
-            }
-            const node_config_t cfg = r.node[i].cfg;
-            node_init(&r.node[i], &cfg, splitmix(7000u + (uint32_t)restarts));
-            node_set_help(&r.node[i], true);
-            for (; r.node[i].sent == 0; t += STEP_US) world_step(&r, t);
-            early += r.node[i].help_heard_by != 0;
-            node_set_help(&r.node[i], false);
-            for (const int64_t end = t + 10 * SEC; t < end; t += STEP_US) world_step(&r, t);
-        }
-        printf("sim: a caller restarted during its call, and calling again at once: %d of %d new calls were answered "
-               "before they went out, by answers to the old one\n", early, restarts);
+        printf("sim: %d call%s for help at once among 20 riders, 10 %% of packets lost: all 19 have each within "
+               "%.1f s (the median; at worst %.1f s)\n", h, h > 1 ? "s" : "", all[n / 2], all[n - 1]);
+        assert(all[n - 1] < 10);
     }
 
     /* A column of twenty on one road, spreading out to some 9 km in 20 minutes, its radios in reach
      * for sure within 1 km, as in forest (06: out of range means stale, not lost). Rider 6 stops
-     * after ten minutes for five, and calls for help: those in reach answer at once, those behind as
-     * they come by, and those ahead not at all. */
+     * after ten minutes for five, and calls for help. v3: those in reach knew at once, those behind
+     * as they came by, those ahead never. Now each rider carries others along, so the call and
+     * the positions travel down the column past the radios' reach. */
     {
         static world_t c;
         const scenario_t road = {20, 2000, 1200 * SEC, 0, 10, 1, GOOD, 1000, true};
@@ -1481,9 +1466,9 @@ int main(int argc, char **argv) {
         for (int64_t t = 0; t < road.duration_us; t += STEP_US) {
             world_step(&c, t);
             if (t == STOP_FROM) node_set_help(&c.node[STOPPER], true);
-            if (t == STOP_FROM + 10 * SEC) quick = __builtin_popcount(c.node[STOPPER].help_heard_by);
+            if (t == STOP_FROM + 10 * SEC) quick = know_of_call(&c, 20, STOPPER);
             if (t == STOP_FROM + STOP_FOR) {
-                by_end = __builtin_popcount(c.node[STOPPER].help_heard_by);
+                by_end = know_of_call(&c, 20, STOPPER);
                 node_set_help(&c.node[STOPPER], false);
             }
             if (t % SEC != SEC / 2 || t < 20 * SEC) continue;
@@ -1493,7 +1478,7 @@ int main(int argc, char **argv) {
                 for (int j = 0; j < 20; j++) {
                     if (j == i) continue;
                     const rider_t *r = &c.node[i].riders[c.slot_of[j]];
-                    const double age = r->known ? (double)(utc - r->fix_utc_ms) / 1000 : 1e9, d = distance_m(&c, i, j);
+                    const double age = r->known ? (double)(utc - fix_ms(r)) / 1000 : 1e9, d = distance_m(&c, i, j);
                     if (d <= road.range_m) near[n_near++] = age;
                     if (d >= 1.5 * road.range_m) far[n_far++] = age;
                     every[n_every++] = age;
@@ -1509,13 +1494,14 @@ int main(int argc, char **argv) {
         qsort(far, n_far, sizeof(double), by_value);
         qsort(every, n_every, sizeof(double), by_value);
         printf("sim: a column of 20 spreading to %.1f km, radios reaching 1 km: in reach, fixes %.1f s old at the "
-               "95th percentile; out of it, the last fix stays, %.0f s old at the median. A call for help from a "
-               "stopped rider: %d answer within 10 s, %d of 19 before it rides on. Every pair, out of reach or not: "
+               "95th percentile; out of it, told by others, %.0f s old at the median. A call for help from a "
+               "stopped rider: %d have it within 10 s, %d of 19 before it rides on. Every pair, out of reach or not: "
                "%.0f s old at the median, %.0f s at the 95th percentile, over 30 s old %.0f %% of the time\n",
                spread / 1000, near[n_near * 95 / 100], far[n_far / 2], quick, by_end, every[n_every / 2],
                every[n_every * 95 / 100], 100.0 * (double)over30 / (double)n_every);
-        assert(spread > 7000 && near[n_near * 95 / 100] <= 3.5 && far[n_far / 2] > 30 && far[n_far / 2] < 1e9);
-        assert(quick >= 8 && by_end > quick && by_end < 19);
+        /* v3 had the far ones' last fix, minutes old, and the call with those in reach only */
+        assert(spread > 7000 && near[n_near * 95 / 100] <= 3.5 && far[n_far / 2] > 3.5 && far[n_far / 2] < 60);
+        assert(quick >= 15 && by_end >= quick);
     }
 
     /* Two riders given one invitation, so one slot: their packets meet every frame, nobody hears

@@ -1,11 +1,14 @@
 # Protocol
 
-**v3, 2026-10-23.** Positions go encrypted and authenticated under the group's key (M5), each
-rider in a slot of its own, timed by GPS (M6), and each packet answers a call for help it hears,
-naming the call (M7). Every part of it may change, together with the firmware and app that use it
-(D3): v0 had positions in clear, v1 no answers to calls for help, v2 answers that did not name the
-call, and boards with any of them are reflashed. The code is
-`firmware/src/phy.c`, `crypto.c`, `codec.c` and `node.c`, and the app's `Invitation.kt`.
+**v5, 2026-11-14.** Each rider in a slot of its own, timed by GPS (M6), sending when it has
+something to say: a move, a turn, a change, or a heartbeat; each packet encrypted and
+authenticated under the group's key, carrying the rider's own record and short records of other
+riders it has heard of (passengers), so a column reaches past its radios' range. A board without
+PPS sets its clock by the packets of boards with it. Decided with the owner on 2026-11-14
+([12](12-protocol-v5-proposal.md), what the owner's review changed). Every part of it may change,
+together with the firmware and app that use it (D3): v3 sent a position every frame and answered
+calls for help packet by packet; boards with it are reflashed. The code is `firmware/src/phy.c`,
+`crypto.c`, `codec.c` and `node.c`, and the app's `Invitation.kt`.
 
 ## Radio mode
 
@@ -30,7 +33,7 @@ PHY-notes). Whether other chips leave it alone is still to check on hardware (BA
 
 ## When a board sends
 
-Once a frame, in its own slot, by GPS time ([06](06-own-protocol.md), Timing).
+In its own slot, by GPS time ([06](06-own-protocol.md), Timing), when it has something to say.
 
 ```
 frame k: the interval (2 s), n riders, a spacing of interval / (n + 1); here n = 3, 500 ms
@@ -52,14 +55,21 @@ k x 2 s   + phase   slot 0            slot 1            slot 2            spare
   group key gives (`FD` "convoy-frame"), of the frame's number, modulo the spacing. Two groups on
   one channel then meet in some frames, never in all of them; the spare slot keeps the last packet
   of one frame a spacing clear of the first of the next, whatever their phases.
-- **Time.** A board's clock is set by marks. With a PPS line (the Heltec's kit), the edge is the
-  second that the next NMEA fix names, within 100 µs. Without one (the L1), the fix's arrival less
-  the GNSS's lag, as far off as the board's build tells it: 138 ms and 8.7 ms for each satellite the fix
-  used, give or take 50, measured on one L1 ([07](07-experiments.md)): a fixed lag was right on a
-  desk and 87 ms short under an open sky; nothing, give or take 100, on a board with none measured. The
-  L76K is told to send GGA and RMC only (`$PCAS03`): behind its other sentences the fix came later
-  with every satellite in view, by up to 0.8 s. A mark is taken to drift 50 ppm as it ages, and a
-  new one replaces it only when better.
+- **Time.** A board's clock is set by marks. With a PPS line (the Heltec's kit, the T-Echo), the
+  edge is the second that the next NMEA fix names, within 100 µs. Without one (the L1), the fix's
+  arrival less the GNSS's lag, as far off as the board's build tells it: 138 ms and 8.7 ms for
+  each satellite the fix used, give or take 100 ms ([07](07-experiments.md): ±50 ms held at a
+  window for days and failed on a balcony for an afternoon). The L76K is told to send GGA and RMC
+  only (`$PCAS03`). A mark is taken to drift 50 ppm as it ages, and a new one replaces it only
+  when better.
+- **Time from the group.** A board on PPS whose mark is within 5 ms says so in each packet
+  ("time precise"). A board that hears such a packet knows when that slot should have begun by its
+  own clock, and when it did: the median of the latest five such differences sets its clock, give
+  or take 10 ms (`time=group`), where that is better than what it has. It always sends by its own
+  clock, never on hearing a packet, so a lost packet costs nothing; its bound grows by drift until
+  the next one. It never says "precise" itself, so boards do not set each other in a circle. On the
+  desk, 2026-11-14, an L1 so set kept to its slot within 0.6 ms on the median, sd 0.8 ms, over
+  14,333 packets in 8 hours, judged by the Heltec on PPS; on its NMEA it had stood at −20 ms, sd 8.
 - **A budget for the time.** A board sends only while its time, plus 1 ms for waking and the
   radio's start, is within half the gap between two packets: the spacing, less the packet and 2 ms
   for receivers to read it out. Otherwise it passes the slot over, and counts it (`unsure=`); a
@@ -67,54 +77,67 @@ k x 2 s   + phase   slot 0            slot 1            slot 2            spare
   the radio its start-up before the slot, so its RF begins on the slot's moment: 8.0 ms on the
   Heltec, 7.1 ms on the L1, measured, and steady to 0.2 ms. Every 2 s:
 
-  | Riders | Spacing | Budget | A board with PPS keeps its slot without GNSS for | The L1, without PPS (±50 ms) |
-  |---|---|---|---|---|
-  | 3 | 500 ms | 233 ms | 77 min | sends; keeps its slot 61 min without GNSS |
-  | 7 | 250 ms | 108 ms | 36 min | sends; 19 min |
-  | 10 | 182 ms | 74 ms | 24 min | sends; 8 min |
-  | 13 | 143 ms | 55 ms | 18 min | sends; 1 min: the largest group it joins |
-  | 20 | 95 ms | 31 ms | 10 min | silent |
-  | 32 | 61 ms | 14 ms | 4 min | silent |
+  | Riders | Spacing | Budget | A board with PPS keeps its slot without GNSS for | Without PPS, on its NMEA (±100 ms) | Without PPS, set by the group (±10 ms), without hearing a PPS board for |
+  |---|---|---|---|---|---|
+  | 3 | 500 ms | 230 ms | 76 min | sends | 73 min |
+  | 7 | 250 ms | 105 ms | 35 min | sends | 31 min |
+  | 10 | 182 ms | 71 ms | 23 min | silent | 20 min |
+  | 13 | 143 ms | 51 ms | 17 min | silent | 13 min |
+  | 20 | 95 ms | 27 ms | 9 min | silent | 5 min |
+  | 32 | 61 ms | 10 ms | 3 min | silent | silent |
 
+  For a 34-byte packet (one passenger) at SF7/250, 38.5 ms; the slot is sized for the most
+  passengers the group carries.
 - **Listening in its own slot.** Once in 32 frames at random a board listens in its slot instead
   of sending. Two radios given one slot, as when an invitation is used twice, meet in every frame,
   so nobody hears either, and neither hears the other while both send; listening, they hear each
   other within half a minute on average, counted as `clash=`, and the app says so. It costs 3 % of
   the positions.
-- **Only what it knows.** Nothing before its GNSS has given a position and a time. After that, if
-  the fix is lost, the last good position goes on with its own fix time, and the GPS-ok bit clear,
-  so its age keeps growing on every map.
+- **When it speaks** (the send rule; numbers per group, `GROUP` and the bench's `BEAT`, `MOVE`):
+  in its slot it sends if it has moved 10 m from the position it last sent, or turned 30° once 5 m
+  on, or its state, stopped or current-fix fact changed (then in its next three slots, so that one
+  loss does not hide it), or another rider it carries has changed state (three slots), or it has
+  been silent for 2^beat frames: 8 by default, 16 s at 2 s. Otherwise it keeps the slot quiet, and
+  counts it (`quiet=`). The rider's GNSS wanders 3–5 m at a standstill, hence 10 m.
+- **Only what it knows.** Nothing before its GNSS has given a time. Before a first fix it says
+  "no position", with its state: a rider in trouble is heard before its fix. After a fix is lost
+  the last good position goes on with its true age and the "current" fact clear.
 - **Within the duty cycle.** The board books each packet's time on air against the last hour, a
   minute at a time, and skips a packet that would take it past the sub-band's duty cycle (10 %).
-  At one packet a frame it cannot get there: 30.8 ms in the shortest frame, 500 ms, is 6.2 %.
+  At one packet a frame it cannot get there: 38.5 ms in the shortest frame, 500 ms, is 7.7 %.
 
-## The position packet: 25 bytes
+## The packet: 25 bytes, and 9 for each rider carried
 
 | Bytes | Field | Encoding |
 |---|---|---|
-| 0 | version, type, flags | bits 7–6 version (3), bits 5–4 type (0, position), bits 3–0 flags (0) |
+| 0 | version, type | bits 7–4 version (5), bits 3–0 type (0, status) |
 | 1 | group tag | from the group key, below |
-| 2 | slot | the rider, 0–31 |
-| 3–6 | session | drawn at random at every start; big-endian |
-| 7–8 | counter | per session, from 0; big-endian |
-| 9–10 | fix time | UTC seconds of the fix, modulo 65 536; big-endian |
+| 2 | slot | the sender, 0–31 in bits 4–0; bits 7–5 zero |
+| 3–4 | session | drawn at random at every start, and again if the clock steps back; big-endian |
+| 5–8 | sent | UTC seconds of the slot it is sent in; big-endian |
+| 9 | count | packets of this session, modulo 256 |
+| 10 | age | of the fix when sent: seconds to 119, then 118 + minutes to two hours (120–239), 254 older, 255 no position |
 | 11–13 | latitude | signed, two's complement, 2^23 = 90°: steps of 1.07e-5°, 1.2 m |
 | 14–16 | longitude | signed, 2^23 = 180°: steps of 2.15e-5°, 2.4 m at the equator |
 | 17 | speed | km/h, 0–254; 255 unknown |
 | 18 | course | 2° steps from north, 0–179; 255 unknown |
-| 19 | status | bit 0 needs help, bit 1 stopped, bit 2 GPS ok, bit 3 battery low (not yet set); bits 6–4 the call for help's number, 1–7, 0 without a call |
-| 20 | help heard | a call for help the sender hears: bits 4–0 the caller's slot, bits 7–5 the call's number, 1–7. With bits 7–5 at 0 no call is heard, and bits 4–0 are the satellites the sender's fix used, to 31, 0 for unknown (since 2026-11-13, for the bench: a receiver tells them in `RIDER … sats=`; an older one reads no call and nothing else) |
-| 21–24 | tag | CCM's |
+| 19 | facts, state | bits 3–0 facts: 0 stopped, 1 battery low (not yet set), 2 time precise, 3 the fix is current; bits 7–4 the state its rider chose: 0 normal, 1 need help, 2 stop now, 3 a stop wanted when convenient (fuel, a snack, a rest), 4 helping; the rest free |
+| 20 | heartbeat, satellites | bits 2–0: it sends at least every 2^h frames; bits 6–3 the satellites its fix used, to 15, 0 with no current fix; bit 7 zero |
+| then, 9 each | passengers | slot (bits 4–0) and "has a position" (bit 5); latitude, longitude as above; how long ago it said so itself, as the age above; facts and state as byte 19 |
+| last 4 | tag | CCM's |
 
-Bytes 0–8 go in clear and are authenticated; bytes 9–20 are encrypted. Coordinates round to the
-nearest step, half away from zero, and +90° and +180° clamp to the largest code.
+Bytes 0–9 go in clear and are authenticated; the rest is encrypted. A packet carries none to three
+passengers, by its length. Coordinates round to the nearest step, half away from zero, and +90°
+and +180° clamp to the largest code.
 
 **The cipher.** AES-128-CCM (RFC 3610, NIST SP 800-38C), with a 13-byte nonce, a 4-byte tag, and
-bytes 0–8 as associated data. The nonce is bytes 2–8, the slot, session and counter, then six zero
-bytes. A board draws a new session at every start, and again before its counter wraps, so a nonce
-repeats only if two sessions of one slot draw the same 32 bits (BACKLOG T-nonce). The 4-byte tag
-lets a forgery through once in 2^32 tries: a transmitter sending nothing else, at 30.8 ms a try,
-needs four years on average, and what it lands is a position of random bytes (T-tag).
+bytes 0–9 as associated data. The nonce is bytes 2–9, the slot, session, second and count, then
+five zero bytes. A board never sends twice in one (second, count), and draws a new session when its
+clock steps back, so a nonce repeats only for two radios misconfigured onto one slot that draw the
+same 16-bit session and send in the same second with the same count. Protection is a shared
+password's, no more (owner, 2026-11-14): other groups kept off the map, positions unreadable to a
+passer-by, a recording refused; no claim against a determined attacker. The 4-byte tag lets a
+forgery through once in 2^32 tries.
 
 **From the group key.** The 16-byte key K encrypts three blocks and nothing else:
 
@@ -126,42 +149,36 @@ A receiver drops a packet with another tag before any cryptography, as another g
 share a tag once in 256, and then the CCM tag tells them apart. It drops a packet whose CCM tag
 does not check as forged.
 
-**Ages are honest.** A receiver unwraps the fix time to the nearest second of its own UTC, within
-half the range, 9 h 6 min (RFC 1982). A fix that then lies in the future is shown with a negative
-age, never as fresh. A receiver with no time of its own shows the age as unknown.
+**What a receiver keeps.** A packet of its group whose CCM tag checks, sent within 3 s of its own
+time where it has one, and later than the last it took from that rider by (second, count): an old
+packet played back is refused even by a receiver just restarted. A packet from its own slot is
+another radio misconfigured onto it, and is counted rather than taken. Each refusal is counted:
+foreign, forged, replay, clash. Per rider it counts the packets taken against those its count says
+were sent: the delivered share of [07](07-experiments.md).
 
-**What a receiver keeps.** Only v3 positions of 25 bytes, with its group's tag and a CCM tag that
-checks. A packet from its own slot is another radio misconfigured onto it, and is counted rather
-than taken. Per slot, within a session the counter only grows; a session it has not seen must
-bring a fix no more than 2 s older than the one it holds, or it is an old packet played again.
-After its own restart a receiver holds nothing, so it takes the first packet of any session
-([06](06-own-protocol.md), security rules). Each refusal is counted: foreign, forged, replay,
-clash. Per slot it counts the packets taken against the run of counters seen in the session: their
-ratio is the delivered share of [07](07-experiments.md).
+**Passengers.** Each rider is held as the latest record of it, from itself or carried by another:
+where it was, its state and facts, and the second it said so itself. A sender carries, first, a
+rider whose state has just changed (in its next three packets), then whoever it told longest ago,
+never one it last heard of over 10 minutes before. A receiver takes a carried record only if it is
+later than the one it holds, by more than the age's own step: a record never gets younger on its
+way, nothing loops and nothing floods, and the latest state of a rider travels down a column past
+its radios' reach. A sender seeing its own record carried by another, in the state it is in now,
+knows its packets got out (`heard=`, `echo=` in its status): the confirmation v3's answers gave, at
+no cost in air. In the simulator, a column of 20 spreading to 9.5 km with radios reaching 1 km:
+a call for help reaches all 19 within 10 s; riders out of reach are 26 s old at the median with one
+passenger, 12 s with two, 8 s with three.
 
-**Help, answered.** A rider's call for help sets the help bit in each of their packets, with the
-call's number: each new call takes the next, 1 to 7 and round again, and a board starts from where
-its session puts it, so a call after a restart seldom takes the number of the one before. A board
-that hears a call answers it in its own next packet, in byte 20: the slot of a rider it has heard
-calling within the last minute and the number of the call it heard, each in turn when several call.
-An answer counts only for the call it names, so an answer to a call called off is not one to the
-next, even one sent before the next was heard. The calling board counts the riders who answer
-its call (`heard=` in its status), and every board reports who has answered each rider's call
-(`answered=` in its RIDER lines), so every map can show who has heard it. A new key forgets the
-answers with the riders. In the simulator, among
-twenty riders with 10 % of packets lost, the first answer comes 1.1 s after the call and the
-last of the nineteen 5.4 s after it, at the median; 3.5 s and 10.4 s at worst.
-
-**Stopped.** The board sets the stopped bit after a minute under 5 km/h, so a red light is not a
+**Stopped.** The board sets the stopped fact after a minute under 5 km/h, so a red light is not a
 stop, and clears it over 10 km/h, so a GNSS wandering at a standstill does not start it.
 
-**Test vector.** Under the key `00 01 … 0f` (tag `86`): slot 3, session `0x01020304`, counter 5,
-a fix at 2026-10-22 12:00:05 UTC (64 197), 47.141° N 9.5215° E, 40 km/h, heading 270°, GPS ok,
-calling for help in its call 5, and hearing slot 7's call 2. From an independent implementation on
-OpenSSL (pyca/cryptography), which also gives v1's and v2's vectors:
+**Test vector.** Under the key `00 01 … 0f` (tag `86`): slot 3, session `0x0102`, sent at
+2026-10-22 12:00:05 UTC (1 792 670 405), count 5, a current fix 2 s old on PPS time,
+47.141° N 9.5215° E, 40 km/h, heading 270°, heartbeat 3, 12 satellites, calling for help; one
+passenger, slot 7 at 47.15° N 9.51° E, stopped and wanting a stop, as it said 12 minutes before.
+From an independent implementation on OpenSSL (pyca/cryptography):
 
 ```
-C0 86 03 01 02 03 04 00 05 EE 37 9D 2B 30 A8 88 6B 0E 6D 23 0D 03 40 86 0F
+50 86 03 01 02 6A D9 FA C5 05 60 E6 68 00 30 F3 70 89 EF BB 87 3F F3 08 40 9C C5 4E C1 8C 76 99 1C 4B
 ```
 
 ## The invitation
@@ -208,18 +225,19 @@ on three transports:
 | TCP | a simulated board and the app | `make -C firmware sim ARGS="serve 3"` serves board *i* on 127.0.0.1:4403+*i*, without a key, like a board fresh from flashing; an Android emulator reaches it at 10.0.2.2 |
 | USB console | a board and a person | the same commands, typed; `FORGET` there is a hand on the board, like the button |
 
-**Version.** `proto=` in the status line: 7 since a board's answer to `CLOCK` carries its GNSS time. An app refuses a board with another (D3).
+**Version.** `proto=` in the status line: 8 since v5's packet (states, passengers, the send rule). An app refuses a board with another (D3).
 
 | Phone to board | Board to phone |
 |---|---|
-| `STATUS` | `STATUS proto=7 board=… reset=… at=… slot=… slots=… keyed=… group=… fix=… stopped=… help=… heard=… … riders=… … power=… dbm=… kept=…` |
+| `STATUS` | `STATUS proto=8 board=… reset=… at=… slot=… slots=… keyed=… group=… fix=… stopped=… heard=… state=… echo=… send=… … riders=… … power=… dbm=… kept=…` |
 | `RIDERS` | a `RIDER` line for each rider known, then `RIDERS <n>` |
 | `CLOCK <t1>` | `CLOCK t1=<t1> boot=<run> rx=<µs> tx=<µs> utc=<ms>`: the phone's moment back, with the board's clock when the request came and when it made the answer, and its GNSS time then, `?` without one, which the app tells its riders' ages by rather than its own calendar. Exchanged three times as a link begins and every 10 s after; each gives the board's clock less the phone's, ((rx − t1) + (tx − t4)) / 2, to within half its round trip, and the quickest is believed, its error growing by 100 ppm of drift as it ages |
 | `TIME <ms> <utc ms> <err ms>` | `OK time=phone err=<ms>`: the phone's UTC at the board's `<ms>`, give or take `<err ms>`: a calendar for the riders' ages while the board has no GNSS time, kept apart from GNSS time and below it, and never opening a slot |
 | `GROUP <32 hex digits> <slot> <slots> <interval>` | `OK group=<id> slot=… slots=… interval=…`: a group's whole setup, from the invitation, checked whole and taken whole; or `ERR group: …`, and nothing changes |
 | `LEDGER` | `LEDGER minutes=60 limit_ms=… used_ms=… positions_ms=…`: the duty ledger, transmit time a minute at a time over the last hour, oldest first, by category |
-| `KEY <32 hex digits>` | `OK keyed group=<id>`; riders heard under another key are forgotten, and the answers to our call |
-| `HELP <0–1>` | `OK help=<0–1>`: our rider's call for help, off or on; each time on is a new call, and who answers starts afresh |
+| `KEY <32 hex digits>` | `OK keyed group=<id>`; riders heard under another key are forgotten |
+| `STATE <0–15>` | `OK state=<n>`: the state our rider chose (the packet's byte 19); a change goes out in our next three slots, and who carries it starts afresh. `HELP <0–1>` is states 1 and 0, for an app with that button only |
+| `BEAT <0–7>`, `MOVE <1–1000>`, `PASSENGERS <0–3>` | `OK <key>=<value>`: the send rule's heartbeat (every 2^n frames, 0 every frame) and distance in metres, and the riders carried in each packet; for the bench until the invitation carries a profile, not kept (3, 10 and 1 at start) |
 | `SLOT <0–31>`, `SLOTS <1–32>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |
 | `MODE <SF 7–12> <kHz 62, 125, 250, 500>` | `OK mode=<SF>/<kHz>`: another radio mode on the same frequency, for trying range (E2); kept over a restart. Every board of a group needs the same |
 | `TOUR <0–255>` | `OK tour=<s>`: for trying range (E2), the board changes its mode by the clock, SF7/250, SF9/250 and SF10/125 in turn, each for so many seconds of UTC, so a group's boards change together and one walk tries all three; 0 stops it, in the mode it is in. Kept over a restart |
@@ -235,44 +253,51 @@ person at the console. No command reads the key back: the
 status shows `keyed=` and the group's id, `00000000` without a key: the first four bytes of the
 block the tag comes from, so the tag first, `86c91c92` for the key `00 01 … 0f`. It counts the packets
 refused as `foreign=`, `forged=`, `replay=` and `clash=`. Of its time it shows where it comes from
-(`time=none`, `nmea` or `pps`), how far off it may be and the budget, in ms (`err=`, `budget=`),
+(`time=none`, `nmea`, `group` or `pps`), how far off it may be and the budget, in ms (`err=`, `budget=`),
 the calendar the riders' ages are told by and its error in ms (`cal=pps/0`, or `cal=phone/1020`
 on the phone's word alone),
-and the slots passed over (`late=`, `unsure=`, and `held=` while the radio has yet to take a mode
+and the slots passed over (`late=`, `unsure=`, `quiet=` with nothing to say, and `held=` while the radio has yet to take a mode
 asked for: `mode=` is the mode asked for, and until the radio has taken it the board sends nothing,
 ARCHITECTURE D15). A board with both PPS and NMEA measures E0's number
 for boards without PPS: `lag=` is the NMEA fix's lag behind its PPS edge, last, least and most, in
 ms. `txlead=` is how late its own packets' RF began after their slot's moment, least/mean/most in
 µs, by the radio's TxDone less the airtime (E0): what is left once the packet was handed over the
-radio's start-up early, near 0 on a board built with its own.
+radio's start-up early, near 0 on a board built with its own. `state=` is our rider's state;
+`heard=` how many riders carry it on as it is now, and `echo=` seconds since one last did, `-`
+before any; `send=` the heartbeat, metres and passengers. Our own position is not in the status
+(a line holds 511 characters): the app has it from the phone.
 
 Unasked, the board sends a `RIDER` line for every packet it takes, and its status every 10 s while
-a phone is connected; and, with the packet that brings a new answer to a call for help, the
-caller's `RIDER` line with its answerers, or its own status when the call is its own. The app sends `STATUS` every 10 s, which keeps the link from being dropped
+a phone is connected; and, with the packet that brings it, the `RIDER` line of a rider whose
+state has just changed when carried by another, or its own status when its own state is newly
+carried. The app sends `STATUS` every 10 s, which keeps the link from being dropped
 as silent. Commands are case-blind.
 
 ```
-RIDER slot=2 group=86c91c92 boot=1a2b3c4d at=70100 heard_at=69700 fix=64200 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 answered=- rssi=-71 snr=8.25 rx=13/14 offset=310/420/980
+RIDER slot=2 group=86c91c92 boot=1a2b3c4d at=70100 heard_at=69700 fix=64200 pos=1 lat=47.1500051 lon=9.5100064 fix_age=3 heard=0.4 speed=33 course=20 gps=1 help=0 stopped=0 answered=- state=0 via=- direct=0.4 rssi=-71 snr=8.25 rx=13/14 offset=310/420/980 late=402 sats=9
 ```
 
 `boot` is the board's run, drawn as it starts; `at` and `heard_at`, when the board made the line
-and when it heard the rider, on its own clock in ms since it started, which a later GNSS time
-does not change the meaning of; `fix` is the rider's fix time as its packet gave it, UTC seconds
-modulo 65 536. The app tells the fix's age by that time on the board's GNSS time where the board
+and when the rider's record came, by itself or carried, on its own clock in ms since it started, which a later GNSS time
+does not change the meaning of; `fix` is the rider's fix time, UTC seconds modulo 65 536: from its own
+packet the second it sent less the fix's age; carried by another, the second it said so itself.
+`pos=0` is a rider with no position yet, its `lat` and `lon` meaningless. The app tells the fix's age by that time on the board's GNSS time where the board
 has it (`CLOCK`'s `utc`), else on its own calendar, either way with no wait on the way in it, and the radio contact's by `heard_at`, which it places on
 its own monotonic clock by `CLOCK` exchanges, run by run: a better reckoning moves a rider kept
 long since, and a board restarted is a new run, its riders of before left where they were.
 `fix_age` is in whole seconds and can be negative (the sender's clock is wrong) or `?` (this board
-has no calendar yet, neither GNSS time nor the phone's `TIME`); `heard` is in tenths of a second; `answered` is, while the rider calls for
-help, the slots heard answering that call, as `3,5`, and `-` for none; `rx` is packets taken against the run of counters; `offset` is how late its packets began against their moment, in µs, least/mean/most, from their RxDone on this board's UTC less their airtime (E0, [BENCH](BENCH.md)). On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count
+has no calendar yet, neither GNSS time nor the phone's `TIME`); `heard` is in tenths of a second, since its record came; `direct` the same since we heard
+the rider itself, `-` if never; `via` the slot that carried the record, `-` from itself;
+`speed` and `course` are `?` for a carried record; `help=1` is `state=1`, and `answered=` stays
+`-` (v3's, for an app that reads it); `rx` is packets taken against those its count says were sent; `offset` is how late its packets began against their moment, in µs, least/mean/most, from their RxDone on this board's UTC less their airtime (E0, [BENCH](BENCH.md)), and `late`
+the last of them; `sats` the satellites its fix used. On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count
 from 0 here; the app shows riders from 1.
 
 ## What comes next
 
-- A nonce from a 64-bit session and its counter, unique whatever the clocks do, and the packet's
-  freshness apart from it, by an authenticated time of sending beside the fix's age (T-nonce,
-  T-fix-time, [09](09-protocol-next.md)).
-- Time for boards without a fix, from the packets they hear, and a clock disciplined against PPS
-  for longer holdover (T-timing); the L76K's lag, measured (E0).
+- The send rule's numbers, the passengers and the slot width per kind of group, in the invitation
+  (profiles, [12](12-protocol-v5-proposal.md)); the app's states, five buttons.
+- A per-board drift bound: a T-Echo's clock ran 102–115 ppm off without a fix (2026-11-14), past
+  the 50 ppm assumed.
 - The mode chosen for the group's size and freshness, carried in the invitation (T-phy).
 - A shorter packet: an implicit header, the CRC left to CCM (T-length).

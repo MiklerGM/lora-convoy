@@ -283,6 +283,29 @@ was, with less spread, on a line of its own (about 157 ms and 4.7 ms a satellite
 pieces of 15 minutes only. Next: the L1 on the balcony in one mode, GPS alone, three hours
 untouched.
 
+### v5 on three boards, 2026-11-14
+
+All [bench], on the desk indoors, 8 h 14 min (14:05–22:19): the Heltec (slot 3) and the T-Echo
+(slot 5) on PPS, the L1 (slot 4) without, a group of 10 at 2 s, every board sending every frame
+(`BEAT 0`), one passenger a packet, 14 dBm. Lateness rebuilt packet by packet from each judge's
+RIDER lines while the judge was on PPS (`lab/late.py`); working log `lab/2026-11-11-notes.md`.
+
+- **The L1, its clock set by the group** (`time=group` the whole run, ±10 ms claimed), judged by
+  the Heltec: 14,333 packets, median +0.6 ms, sd 0.8, from −24.0 to +14.6 ms, 33 beyond ±10 ms
+  and one beyond ±20. On its own NMEA on 2026-11-13 it had stood at −20 ms, sd 8. Not one packet
+  lost of 14,383 its count says were sent.
+- **Passengers and states, as built.** Each board carried the other two; the echo (`heard=2`)
+  came within a frame of the start.
+- **The T-Echo's clock runs 102–115 ppm off without a fix.** Indoors with 4–5 satellites it lost
+  its fix seven times; each time it went on in holdover, its error bound growing at the 50 ppm
+  assumed while it saw the Heltec later by 6.1, 6.9 and 6.5 ms a minute (three fitted
+  holdovers): 102, 115 and 109 ppm, the same each time, so a line, not noise. Its status claimed
+  ±9.9 ms when it was 27 ms off; at 10 ms it turned to the group's time, as built, and came back
+  to within a millisecond. The Heltec saw it up to 35 ms early. Meshtastic's board file says the
+  T-Echo has a 32 kHz crystal, and our build asks for it; why it runs so far off is not known.
+  The L1, the same chip, ran 24–29 ppm settled. A bound per board is the fix (PROTOCOL, what
+  comes next); the group's time limits the harm meanwhile.
+
 ### Earlier
 
 Measurements the documents already rely on:

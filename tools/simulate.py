@@ -82,7 +82,7 @@ def candidate_setups(path):
             not isinstance(data["candidates"],dict) or not data["candidates"]):
         raise ValueError("setups require schema 1 and a nonempty candidates object")
     integer_bounds={"interval_ms":(100,60000),"duty_permille":(1,1000),
-                    "listen_one_in":(0,65535),"relay_records":(0,8)}
+                    "listen_one_in":(0,65535),"relay_records":(0,3)}
     number_bounds={"relay_ttl_s":(0,86400),"tx_power_dbm":(-20,30)}
     allowed={*integer_bounds,*number_bounds,"phy"}
     for label,definition in data["candidates"].items():

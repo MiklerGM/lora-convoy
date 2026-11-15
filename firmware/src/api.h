@@ -11,7 +11,7 @@
  * app that does not know it refuses the board (D3).
  *
  *   phone -> board                 board -> phone
- *   STATUS                         STATUS proto=7 board=... kept=<0|1> (also sent unasked)
+ *   STATUS                         STATUS proto=8 board=... kept=<0|1> (also sent unasked)
  *   CLOCK <t1>                     CLOCK t1=<t1> boot=<run> rx=<us> tx=<us> utc=<ms|?>: our clock
  *                                  when the request came and when the answer was made, for the
  *                                  phone to reckon our clock against its own, and our GNSS time
@@ -23,7 +23,8 @@
  *                                  taken whole or not at all, from the invitation
  *   LEDGER                         LEDGER ...: transmit time a minute at a time, over the hour
  *   KEY <32 hex digits>            OK keyed group=<id>: the group's key, from the invitation
- *   HELP <0|1>                     OK help=<0|1>: our rider's call for help, off or on
+ *   STATE <0-15>                   OK state=<n>: what our rider chose (codec.h); HELP <0|1> is states 1 and 0
+ *   BEAT <0-7>, MOVE <m>, PASSENGERS <0-3>   the send rule and the records carried, for the bench; not kept
  *   SLOT <0-31>, SLOTS <1-32>,     OK <key>=<value>, or ERR <why>
  *   INTERVAL <ms>, POWER <0-3>
  *   MODE <SF 7-12> <kHz>           OK mode=<SF>/<kHz>: the radio mode, for trying range (E2)
@@ -33,7 +34,7 @@
  *
  * Commands are case-blind, so the console takes them as typed.
  */
-#define API_PROTO 7
+#define API_PROTO 8
 
 /* A buffer for the longest line either way, its NUL in and the newline aside: up to 511
  * characters, as the app takes up to 512 and Zephyr's queue 512 bytes (ble_nus.c). */

@@ -15,8 +15,6 @@
  */
 
 #define NODE_SLOTS 32
-/* Sessions remembered for each rider, with the highest counter taken in each. */
-#define NODE_SESSIONS 4
 
 typedef struct {
     bool keyed;              /* without a key the board sends nothing: v1 has no clear text */
@@ -39,6 +37,14 @@ typedef struct {
     /* Listen in our own slot instead of sending, once in this many frames at random; 0 never. Two
      * radios given one slot send together, and never hear each other otherwise (T-join). */
     uint16_t listen_one_in;
+    /* When a board sends (12, section 2): its slot comes every frame, and it speaks in it once it
+     * has moved this far from the position it last sent, has turned, has something changed to
+     * tell, or has been silent for 2^beat frames. beat 0 sends in every frame. */
+    uint16_t move_m;
+    uint8_t beat;
+    /* Records of other riders carried in each packet, 0 to PKT_PASSENGERS_MAX: the slot is sized
+     * for this many. */
+    uint8_t passengers;
 } node_config_t;
 
 /* E0's measures (07, 09): the least, the sum and the most of what was measured, and how often. */
@@ -49,21 +55,30 @@ typedef struct {
 
 typedef struct {
     bool known;
-    position_t last;
+    /* The latest told of it, by itself or by a rider that carried it: whichever says the later
+     * as_of wins, so a record never gets younger on its way. */
+    record_t rec;
+    uint32_t as_of;          /* UTC seconds when it said so itself */
+    uint32_t fix_utc;        /* UTC seconds of its fix, where it told us itself; 0 from a passenger */
+    uint8_t via;             /* who told us: its own slot when itself */
+    int64_t rec_us;          /* our clock when this record came */
+    uint8_t speed_kmh, course2, beat, sats; /* from its own packet; unknown and 0 from a passenger */
+    /* Heard itself: */
+    bool heard;
     int64_t heard_us;        /* our clock when its last packet arrived */
-    int64_t fix_utc_ms;      /* its fix in UTC, unwrapped against our time; 0 when we had none */
     int16_t rssi_dbm;
     int16_t snr_db4;         /* quarter dB */
+    uint16_t session;        /* of its last packet taken, with that packet's sent and count: a later */
+    uint32_t sent;           /* packet must bring a later (sent, count) */
+    uint8_t count;
     uint32_t received;       /* packets taken from it in this session */
-    uint16_t first_counter;  /* the session's first counter we took */
-    /* Its latest sessions, the newest first, and the highest counter taken in each: in any of
-     * them a packet must bring a higher one, whichever session was heard last. */
-    uint32_t session_seen[NODE_SESSIONS];
-    uint16_t counter_seen[NODE_SESSIONS];
-    uint8_t sessions_seen;
-    uint32_t answered_by;    /* while it calls for help: the slots heard answering this call */
+    uint32_t expected;       /* and how many it sent meanwhile, by its count */
     spread_t offset;         /* E0: how late its packets began, from their end on our UTC, less the
                                 airtime and their slot's moment */
+    int64_t late_us;         /* and the last of them */
+    /* Telling it on: */
+    int64_t told_us;         /* our clock when we last carried it; 0 never */
+    uint8_t news;            /* its state changed: our next packets carry it first, this many more */
 } rider_t;
 
 /* Transmit time over the last hour, a minute at a time. */
@@ -72,7 +87,10 @@ typedef struct {
     int64_t minute[60];      /* which minute of our clock each bucket holds */
 } duty_t;
 
-typedef enum { TIME_NONE, TIME_NMEA, TIME_PPS } time_source_t;
+/* Better downwards. TIME_GROUP: set by the packets of riders whose slots are kept by PPS. */
+typedef enum { TIME_NONE, TIME_NMEA, TIME_GROUP, TIME_PPS } time_source_t;
+
+#define NODE_SYNC 5
 
 typedef struct {
     node_config_t cfg;       /* its phy is the mode asked for ... */
@@ -83,8 +101,9 @@ typedef struct {
     gnss_fix_t held;         /* the last valid position */
     bool have_held;
     group_key_t group;       /* what the key gives: CCM key, tag, frame phases */
-    uint32_t session;        /* ours, drawn at start and when the counter wraps */
-    uint16_t counter;        /* the next packet's, within the session */
+    uint16_t session;        /* ours, drawn at start and when our clock steps back */
+    uint8_t count;           /* the next packet's */
+    uint32_t last_sent;      /* the second our last packet named */
     uint32_t sent;           /* packets handed over to send since start */
     uint32_t rng;
     /* Our UTC: at mark_us on our clock it was mark_utc_us, give or take mark_err_us, and less sure
@@ -102,14 +121,23 @@ typedef struct {
     uint32_t boot;           /* drawn at start: our clock's times belong to this run, for the phone */
     /* From a PPS edge to the NMEA fix of its second, where a board has both: E0's number. */
     int64_t lag_us, lag_min_us, lag_max_us;
-    bool help;               /* our rider asks for help (the app's HELP) ... */
-    uint8_t help_call;       /* ... in the call of this number ... */
-    uint32_t help_heard_by;  /* ... and these slots say they hear that call, a bit each */
-    /* News for the phone, at once rather than with the next status, for the platform to send and
-     * clear: a slot new to help_heard_by; a rider whose call another has newly answered, or -1. */
-    bool help_news;
-    int answered_news;
-    uint8_t help_next;       /* where the search for a call for help to answer starts */
+    uint8_t state;           /* what our rider chose (the app's STATE) */
+    /* Our own record seen in another's packet, with the state we are in: our packets get out, and
+     * these slots carry what we say now, a bit each. News for the phone when a slot is new. */
+    uint32_t echo_by;
+    int64_t echo_us;         /* our clock at the last such; 0 before one */
+    bool echo_news;
+    int state_news;          /* a rider whose state has newly changed, for the phone at once; -1 none */
+    /* How late the packets of riders with PPS began by our clock, the latest NODE_SYNC of them:
+     * their median is how far our clock is off (node_on_rx_done). */
+    int64_t sync_us[NODE_SYNC];
+    uint8_t sync_n, sync_at;
+    /* What we last sent, for the send rule. */
+    bool sent_any, sent_pos;
+    int32_t sent_lat_e7, sent_lon_e7;
+    uint8_t sent_course2, sent_told;
+    int64_t sent_frame;
+    uint8_t burst;           /* packets owed after a change of state or facts */
     bool stopped;            /* slower than walking for a minute */
     int64_t slow_since_us;   /* when it last went under 5 km/h; 0 while faster */
     int64_t last_frame;      /* the frame we last sent in, or passed over */
@@ -124,11 +152,12 @@ typedef struct {
     duty_t duty;
     rider_t riders[NODE_SLOTS];
     uint32_t rx_foreign;     /* another group's tag */
-    uint32_t rx_bad;         /* not a position of this version at all */
+    uint32_t rx_bad;         /* not a packet of this version at all */
     uint32_t rx_forged;      /* our tag, and an authentication tag that does not check */
     uint32_t rx_replay;      /* genuine, but older than what we have: a repeat or a replay */
     uint32_t rx_clash;       /* our own slot, from another radio: a configuration error */
-    uint32_t tx_skipped;     /* slots passed over without a position to send, or duty left */
+    uint32_t tx_skipped;     /* slots passed over for want of duty left */
+    uint32_t tx_quiet;       /* slots passed over with nothing new to say */
     uint32_t tx_unsure;      /* slots passed over: our time was too uncertain to keep to them */
     uint32_t tx_late;        /* slots missed: we were asked after the moment had gone */
     uint32_t tx_listened;    /* slots spent listening for another radio in ours */
@@ -144,23 +173,24 @@ void node_on_fix(node_t *n, const gnss_fix_t *fix, int64_t now_us);
 /* A PPS edge, at our clock when it came. The fix that follows names its second. */
 void node_on_pps(node_t *n, int64_t edge_us);
 
-/* A group key, from the app: the riders heard under another key are forgotten, and so are the
- * answers to our call for help. */
+/* A group key, from the app: the riders heard under another key are forgotten. */
 void node_set_key(node_t *n, const uint8_t key[16]);
 
 /* The phone's UTC at at_us on our clock, give or take err_us (the phone API's TIME): the calendar
  * the riders' ages are told by while we have no GNSS time. It opens no slot. */
 void node_set_phone_time(node_t *n, int64_t at_us, int64_t utc_us, int64_t err_us);
 
-/* Our rider's call for help, on or off. Each time it goes on it is a new call, with a number of its
- * own, and who has heard it starts afresh. */
-void node_set_help(node_t *n, bool on);
+/* What our rider chose, 0 to STATES - 1. A change goes out in our next three slots, and who carries
+ * it starts afresh. */
+void node_set_state(node_t *n, uint8_t state);
 
-/* True if the packet was ours to take: a genuine, fresh v1 position of our group from another slot. */
+/* True if the packet was ours to take: a genuine, fresh packet of our group from another slot. Its
+ * passengers are taken with it, each if later than what we hold of that rider. */
 bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int snr_db4, int64_t now_us);
 
 /* A packet to send now, its length returned, or 0: the radio's start-up (tx_lead_us) before our
- * slot, within TX_LATE_US of that moment.
+ * slot, within TX_LATE_US of that moment, when the send rule finds something to say. out holds
+ * PKT_MAX_LEN.
  * Its airtime is booked against the duty cycle when it is handed over, so a send that then fails
  * errs on the safe side. */
 size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap);
@@ -197,7 +227,7 @@ int64_t node_time_budget_us(const node_t *n);
 uint32_t node_duty_used_ms(const node_t *n, int64_t now_us);
 
 /* The duty ledger (01, requirements): transmit time a minute at a time over the last hour, oldest
- * first, by category. Positions are the only category so far. */
+ * first, by category. One category so far. */
 int node_format_ledger(const node_t *n, int64_t now_us, char *buf, size_t cap);
 
 /* One RIDER line, and the node's part of the status line: the phone API's words (api.h). */

@@ -24,9 +24,17 @@
 #define STOP_BELOW_KMH10 50
 #define MOVING_OVER_KMH10 100
 #define STOP_AFTER_US (60 * 1000000ll)
-/* A call for help heard this recently is answered: one heard longer ago may have been called off
- * out of our range. */
-#define HELP_FRESH_US (60 * 1000000ll)
+/* Time from the group (12, 2026-11-14): a rider on PPS no further off than this says "precise" ... */
+#define PRECISE_ERR_US 5000
+#define GROUP_ERR_US 10000 /* ... and a clock set by such packets is good to this */
+#define SYNC_MAX_US 300000 /* a packet further from its slot than this sets nothing */
+#define SYNC_MIN 3         /* packets before the first setting */
+/* A packet whose sent lies this far from our time is a recording played back, or a clock gone wrong. */
+#define SENT_SLACK_S 3
+#define RECORD_TTL_S 600   /* a record older than this is not carried on */
+#define NEWS_TIMES 3       /* packets a change is told in, so that one loss does not hide it */
+#define TURN_DEG2 15       /* a turn of 30 degrees ... */
+#define TURN_AFTER_M 5     /* ... once this far from the position last sent */
 
 static uint32_t next_random(node_t *n) {
     /* xorshift32: sessions only need to differ, the key keeps them secret */
@@ -43,15 +51,12 @@ void node_init(node_t *n, const node_config_t *cfg, uint32_t seed) {
     n->phy = cfg->phy;
     n->rng = seed ? seed : 0x9E3779B9u;
     /* The platform's seed is from the chip's own generator, so every start draws a new session. */
-    n->session = next_random(n);
-    n->boot = n->session;
-    /* Calls are numbered on from where the session puts them, so a call after a restart seldom
-     * takes the number of the one before it, which others may still be answering. */
-    n->help_call = (uint8_t)(n->session % HELP_CALLS);
+    n->boot = next_random(n);
+    n->session = (uint16_t)n->boot;
     if (cfg->keyed) group_key_init(&n->group, cfg->key);
     n->last_frame = n->phase_frame = -1;
     n->rx_slot = -1;
-    n->answered_news = -1;
+    n->state_news = -1;
 }
 
 void node_set_key(node_t *n, const uint8_t key[16]) {
@@ -62,7 +67,8 @@ void node_set_key(node_t *n, const uint8_t key[16]) {
     group_key_init(&n->group, key);
     n->phase_frame = -1;
     memset(n->riders, 0, sizeof(n->riders));
-    n->help_heard_by = 0;
+    n->echo_by = 0;
+    n->echo_us = 0;
 }
 
 void node_set_phone_time(node_t *n, int64_t at_us, int64_t utc_us, int64_t err_us) {
@@ -72,12 +78,10 @@ void node_set_phone_time(node_t *n, int64_t at_us, int64_t utc_us, int64_t err_u
     n->phone_err_us = err_us;
 }
 
-void node_set_help(node_t *n, bool on) {
-    if (on && !n->help) {
-        n->help_call = (uint8_t)(n->help_call % HELP_CALLS + 1);
-        n->help_heard_by = 0;
-    }
-    n->help = on;
+void node_set_state(node_t *n, uint8_t state) {
+    if (state >= STATES || state == n->state) return;
+    n->state = state;
+    n->echo_by = 0; /* who carried the state before has not carried this one */
 }
 
 /* ---- time ------------------------------------------------------------------------ */
@@ -100,7 +104,7 @@ bool node_utc_ms(const node_t *n, int64_t now_us, int64_t *utc_ms) {
 /* The calendar the riders' ages are told by: our GNSS time where we have it, else the phone's,
  * its error grown by our crystal's drift since; false with neither. */
 static bool calendar_us(const node_t *n, int64_t at_us, int64_t *utc_us, int64_t *err_us, const char **source) {
-    static const char *const SOURCE[] = {"none", "nmea", "pps"};
+    static const char *const SOURCE[] = {"none", "nmea", "group", "pps"};
     if (node_utc_us(n, at_us, utc_us, err_us)) {
         *source = SOURCE[n->time];
         return true;
@@ -114,26 +118,19 @@ static bool calendar_us(const node_t *n, int64_t at_us, int64_t *utc_us, int64_t
     return true;
 }
 
-/* A fix time, UTC seconds modulo 65536, unwrapped to the nearest second of utc_ms, past or future:
- * a future one is a clock gone wrong, kept as such rather than read as fresh. */
-static int64_t fix_utc_ms_of(uint16_t fix_time, int64_t utc_ms) {
-    const int64_t now_s = utc_ms / 1000;
-    const uint16_t behind = (uint16_t)((uint16_t)now_s - fix_time);
-    return (behind < 0x8000 ? now_s - behind : now_s + (0x10000 - behind)) * 1000;
-}
-
 /* A new mark for our clock, taken unless the one we have, carried to now, is still better. */
-static void set_time(node_t *n, time_source_t source, int64_t at_us, int64_t utc_us, int64_t err_us,
+static bool set_time(node_t *n, time_source_t source, int64_t at_us, int64_t utc_us, int64_t err_us,
                      int64_t now_us) {
     int64_t utc, err;
     const int64_t carried = err_us + (now_us - at_us) * DRIFT_PPM / 1000000;
-    if (node_utc_us(n, now_us, &utc, &err) && err < carried) return;
+    if (node_utc_us(n, now_us, &utc, &err) && err < carried) return false;
     /* The frame running when the time first comes is not ours: its slot may have gone already. */
     if (n->time == TIME_NONE) n->last_frame = utc_us / ((int64_t)n->cfg.interval_ms * 1000);
     n->time = source;
     n->mark_us = at_us;
     n->mark_utc_us = utc_us;
     n->mark_err_us = err_us;
+    return true;
 }
 
 void node_on_pps(node_t *n, int64_t edge_us) { n->pps_us = edge_us; }
@@ -215,7 +212,7 @@ static int64_t frame_us(const node_t *n) { return (int64_t)n->cfg.interval_ms * 
 static int64_t spacing_us(const node_t *n) { return frame_us(n) / (n->cfg.slots + 1); }
 
 int64_t node_time_budget_us(const node_t *n) {
-    const int64_t gap = spacing_us(n) - phy_airtime_us(&n->phy, PKT_POSITION_LEN) - RX_GAP_US;
+    const int64_t gap = spacing_us(n) - phy_airtime_us(&n->phy, PKT_LEN(n->cfg.passengers)) - RX_GAP_US;
     return gap > 0 ? gap / 2 : 0;
 }
 
@@ -247,20 +244,70 @@ static int64_t our_slot(node_t *n, int64_t k) {
 
 /* ---- sending ------------------------------------------------------------------- */
 
-/* A rider calling for help whom we hear, to answer in our packet, with the number of the call we
- * heard: each in turn, when several call. */
-static void help_to_answer(node_t *n, int64_t now_us, position_t *p) {
-    p->help_heard = HELP_HEARD_NONE;
-    for (int i = 0; i < NODE_SLOTS; i++) {
-        const int s = (n->help_next + i) % NODE_SLOTS;
-        const rider_t *r = &n->riders[s];
-        if (r->known && (r->last.status & ST_HELP) && now_us - r->heard_us <= HELP_FRESH_US) {
-            n->help_next = (uint8_t)((s + 1) % NODE_SLOTS);
-            p->help_heard = (uint8_t)s;
-            p->heard_call = r->last.call;
-            return;
-        }
+/* Whether two points lie this many metres apart or more, on a flat map around them: good to a
+ * percent or two, which the send rule does not notice. */
+static bool apart(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2, uint32_t metres) {
+    static const int16_t COS1024[10] = {1024, 1008, 962, 887, 784, 658, 512, 350, 178, 0}; /* every 10 degrees */
+    const int64_t a = lat1 < 0 ? -(int64_t)lat1 : lat1;
+    const int d = a >= 900000000 ? 8 : (int)(a / 100000000);
+    const int64_t cos1024 = COS1024[d] + (COS1024[d + 1] - COS1024[d]) * (a - d * 100000000ll) / 100000000;
+    const int64_t dy = (int64_t)lat2 - lat1, dx = ((int64_t)lon2 - lon1) * cos1024 / 1024;
+    const int64_t r = (int64_t)metres * 100000 / 1113; /* 1e-7 degrees of latitude are 11.13 mm */
+    if (llabs(dx) > 100000000 || llabs(dy) > 100000000) return true;
+    return dx * dx + dy * dy >= r * r;
+}
+
+static uint8_t course2_of(const gnss_fix_t *h) {
+    return h->course_deg10 < 0 ? COURSE_UNKNOWN : (uint8_t)(((h->course_deg10 + 10) / 20) % 180);
+}
+
+/* What of ours a change in is told at once: the state, and the facts a rider would act on. */
+static uint8_t told_of(const node_t *n, bool current) {
+    return (uint8_t)(n->state << 4 | (n->stopped ? FACT_STOPPED : 0) | (current ? FACT_CURRENT : 0));
+}
+
+/* The send rule (12, section 2): our slot in frame k is worth a packet. */
+static bool something_to_say(const node_t *n, int64_t k, bool current) {
+    if (!n->sent_any || n->burst || k - n->sent_frame >= 1ll << n->cfg.beat) return true;
+    /* another rider's changed state, where we carry riders at all */
+    for (int s = 0; n->cfg.passengers && s < NODE_SLOTS; s++) {
+        if (n->riders[s].known && n->riders[s].news) return true;
     }
+    if (!n->sent_pos) return n->have_held; /* our first position */
+    if (!current) return false;
+    const gnss_fix_t *h = &n->held;
+    if (apart(h->lat_e7, h->lon_e7, n->sent_lat_e7, n->sent_lon_e7, n->cfg.move_m)) return true;
+    const uint8_t course = course2_of(h);
+    if (course == COURSE_UNKNOWN || n->sent_course2 == COURSE_UNKNOWN) return false;
+    const int turn = abs((int)course - n->sent_course2);
+    return (turn > 90 ? 180 - turn : turn) >= TURN_DEG2 &&
+           apart(h->lat_e7, h->lon_e7, n->sent_lat_e7, n->sent_lon_e7, TURN_AFTER_M);
+}
+
+/* The riders to carry in this packet: one whose state has changed before any other, then whoever
+ * we told longest ago. Latest known state passed on, not packets forwarded: a receiver keeps the
+ * later record, so nothing loops and nothing floods. */
+static unsigned choose_passengers(node_t *n, uint32_t sent, int64_t now_us, record_t *out) {
+    unsigned count = 0;
+    bool taken[NODE_SLOTS] = {false};
+    while (count < n->cfg.passengers && count < PKT_PASSENGERS_MAX) {
+        int best = -1;
+        for (int s = 0; s < NODE_SLOTS; s++) {
+            const rider_t *r = &n->riders[s], *b = best < 0 ? NULL : &n->riders[best];
+            if (!r->known || taken[s] || s == n->cfg.slot || (sent > r->as_of && sent - r->as_of > RECORD_TTL_S)) continue;
+            if (!b || (r->news != 0) > (b->news != 0) || ((r->news != 0) == (b->news != 0) && r->told_us < b->told_us)) best = s;
+        }
+        if (best < 0) break;
+        rider_t *r = &n->riders[best];
+        taken[best] = true;
+        out[count] = r->rec;
+        out[count].slot = (uint8_t)best;
+        out[count].age = age_code(sent > r->as_of ? sent - r->as_of : 0);
+        r->told_us = now_us ? now_us : 1;
+        if (r->news) r->news--;
+        count++;
+    }
+    return count;
 }
 
 size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
@@ -292,6 +339,15 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
         n->tx_held++;
         return 0;
     }
+    /* The held position goes out with its own age; "current" says whether it is also the GNSS's
+     * fix of this moment. */
+    const bool current = n->fix.valid && now_us - n->fix_us <= FIX_FRESH_US;
+    const uint8_t told = told_of(n, current);
+    if (n->sent_any && told != n->sent_told) n->burst = NEWS_TIMES;
+    if (!something_to_say(n, k, current)) {
+        n->tx_quiet++;
+        return 0;
+    }
     /* Too unsure of the time, the packet could land on a neighbour's slot. */
     if (err + TX_ERR_US > node_time_budget_us(n)) {
         n->tx_unsure++;
@@ -302,39 +358,52 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
         n->tx_listened++;
         return 0;
     }
-    /* Nothing true to say before the first fix. */
-    const uint32_t air_ms = (phy_airtime_us(&n->phy, PKT_POSITION_LEN) + 999) / 1000;
+    /* The duty cycle, reckoned with the longest packet we may build. */
     const uint32_t limit_ms = 3600u * n->cfg.duty_permille;
-    if (!n->have_held || cap < PKT_POSITION_LEN || node_duty_used_ms(n, now_us) + air_ms > limit_ms) {
+    if (cap < PKT_MAX_LEN ||
+        node_duty_used_ms(n, now_us) + (phy_airtime_us(&n->phy, PKT_LEN(n->cfg.passengers)) + 999) / 1000 > limit_ms) {
         n->tx_skipped++;
         return 0;
     }
     const gnss_fix_t *h = &n->held;
-    /* The held position goes out with its own time, so it ages honestly; GPS_OK says whether it
-     * is also the GNSS's current fix. */
-    const bool current = n->fix.valid && now_us - n->fix_us <= FIX_FRESH_US;
-    position_t p = {
-        .slot = n->cfg.slot,
+    const uint32_t sent = (uint32_t)(at / 1000000);
+    /* The nonce must never repeat: a clock stepped back draws a new session. */
+    if (n->sent_any && sent < n->last_sent) n->session = (uint16_t)next_random(n);
+    const int64_t fix_s = h->utc_ms / 1000;
+    packet_t p = {
         .session = n->session,
-        .counter = n->counter,
-        .fix_time = (uint16_t)((h->utc_ms / 1000) & 0xFFFF),
-        .lat_e7 = h->lat_e7,
-        .lon_e7 = h->lon_e7,
-        .speed_kmh = h->speed_kmh10 < 0 ? SPEED_UNKNOWN
+        .sent = sent,
+        .count = n->count++,
+        .own = {.slot = n->cfg.slot,
+                .has_pos = n->have_held,
+                .lat_e7 = h->lat_e7,
+                .lon_e7 = h->lon_e7,
+                .age = age_code(sent > fix_s ? (uint32_t)(sent - fix_s) : 0),
+                .facts = (uint8_t)((n->stopped ? FACT_STOPPED : 0) | (current ? FACT_CURRENT : 0) |
+                                   (n->time == TIME_PPS && err <= PRECISE_ERR_US ? FACT_TIME_PRECISE : 0)),
+                .state = n->state},
+        .speed_kmh = !n->have_held || h->speed_kmh10 < 0 ? SPEED_UNKNOWN
                      : h->speed_kmh10 >= 2540 ? 254 : (uint8_t)((h->speed_kmh10 + 5) / 10),
-        .course2 = h->course_deg10 < 0 ? COURSE_UNKNOWN : (uint8_t)(((h->course_deg10 + 10) / 20) % 180),
-        .status = (uint8_t)((current ? ST_GPS_OK : 0) | (n->help ? ST_HELP : 0) | (n->stopped ? ST_STOPPED : 0)),
-        .call = n->help ? n->help_call : 0,
+        .course2 = n->have_held ? course2_of(h) : COURSE_UNKNOWN,
+        .beat = n->cfg.beat,
         .sats = current ? n->fix.sats : 0,
     };
-    help_to_answer(n, now_us, &p);
-    /* The nonce must never repeat: before the counter wraps, a new session. */
-    if (++n->counter == 0) n->session = next_random(n);
+    p.passengers = (uint8_t)choose_passengers(n, sent, now_us, p.passenger);
+    const size_t len = pkt_seal(out, &p, &n->group);
     n->sent++;
+    n->sent_any = true;
+    n->sent_pos = n->have_held;
+    n->sent_lat_e7 = h->lat_e7;
+    n->sent_lon_e7 = h->lon_e7;
+    n->sent_course2 = p.course2;
+    n->sent_told = told;
+    n->sent_frame = k;
+    n->last_sent = sent;
+    if (n->burst) n->burst--;
     n->tx_due_us = now_us - (utc - at) + n->cfg.tx_lead_us;
-    n->tx_air_us = phy_airtime_us(&n->phy, PKT_POSITION_LEN);
-    duty_book(&n->duty, now_us, air_ms);
-    return pkt_seal(out, &p, &n->group);
+    n->tx_air_us = phy_airtime_us(&n->phy, len);
+    duty_book(&n->duty, now_us, (n->tx_air_us + 999) / 1000);
+    return len;
 }
 
 int64_t node_next_tx_us(const node_t *n, int64_t now_us) {
@@ -367,7 +436,26 @@ void node_on_rx_done(node_t *n, int64_t done_us) {
         const int64_t off = start - slot_utc_us(n, f, phase_us(n, f), (unsigned)slot);
         if (llabs(off) < llabs(late)) late = off;
     }
-    spread_add(&n->riders[slot].offset, late);
+    rider_t *r = &n->riders[slot];
+    spread_add(&r->offset, late);
+    r->late_us = late;
+    /* A rider on PPS began in its slot to a fraction of a millisecond, so how late it seems is how
+     * far our clock is ahead: the median of the latest few sets it, where ours is no better. The
+     * packet is only ever a measure of our clock; we send by the clock, never on hearing one. */
+    if (!(r->rec.facts & FACT_TIME_PRECISE) || r->via != slot || llabs(late) > SYNC_MAX_US) return;
+    n->sync_us[n->sync_at] = late;
+    n->sync_at = (uint8_t)((n->sync_at + 1) % NODE_SYNC);
+    if (n->sync_n < NODE_SYNC) n->sync_n++;
+    if (n->sync_n < SYNC_MIN) return;
+    int64_t v[NODE_SYNC];
+    for (int i = 0; i < n->sync_n; i++) {
+        int j = i;
+        for (; j > 0 && v[j - 1] > n->sync_us[i]; j--) v[j] = v[j - 1];
+        v[j] = n->sync_us[i];
+    }
+    const int64_t ahead = v[n->sync_n / 2];
+    if (!set_time(n, TIME_GROUP, done_us, end_utc - ahead, GROUP_ERR_US, done_us)) return;
+    for (int i = 0; i < n->sync_n; i++) n->sync_us[i] -= ahead;
 }
 
 void node_phy_applied(node_t *n, const phy_t *phy) { n->phy = *phy; }
@@ -380,34 +468,22 @@ void node_on_tx_done(node_t *n, int64_t done_us) {
 
 /* ---- receiving ------------------------------------------------------------------- */
 
-/* How far back in time a new session's first fix may lie behind what we have and still be taken:
- * a rider's own clock and ours disagree by a second or so. */
-#define REPLAY_SLACK_MS 2000
-
-/* Where a session is among a rider's latest, or -1. */
-static int session_seen(const rider_t *r, uint32_t session) {
-    for (int i = 0; i < r->sessions_seen; i++) {
-        if (r->session_seen[i] == session) return i;
+/* A record of a rider, said by itself at as_of and told to us by via: the latest we hold now. */
+static void take_record(node_t *n, const record_t *q, uint32_t as_of, uint8_t via, int64_t now_us) {
+    rider_t *r = &n->riders[q->slot];
+    if (r->known ? q->state != r->rec.state : q->state != STATE_NORMAL) {
+        r->news = NEWS_TIMES;
+        n->state_news = q->slot;
     }
-    return -1;
-}
-
-/* The highest counter taken in a session; a session not among them goes in first, and the oldest
- * of them goes. */
-static void remember_session(rider_t *r, uint32_t session, uint16_t counter) {
-    int i = session_seen(r, session);
-    if (i < 0) {
-        const int keep = r->sessions_seen < NODE_SESSIONS ? r->sessions_seen++ : NODE_SESSIONS - 1;
-        memmove(&r->session_seen[1], &r->session_seen[0], (size_t)keep * sizeof(r->session_seen[0]));
-        memmove(&r->counter_seen[1], &r->counter_seen[0], (size_t)keep * sizeof(r->counter_seen[0]));
-        r->session_seen[0] = session;
-        i = 0;
-    }
-    r->counter_seen[i] = counter;
+    r->known = true;
+    r->rec = *q;
+    r->as_of = as_of;
+    r->via = via;
+    r->rec_us = now_us;
 }
 
 bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int snr_db4, int64_t now_us) {
-    position_t p;
+    packet_t p;
     n->rx_slot = -1;
     if (!n->cfg.keyed) {
         n->rx_foreign++;
@@ -419,63 +495,73 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
         case PKT_FORGED: n->rx_forged++; return false;
         default: n->rx_bad++; return false;
     }
-    if (p.slot >= NODE_SLOTS) {
-        n->rx_bad++;
-        return false;
-    }
-    if (p.slot == n->cfg.slot) {
+    const uint8_t from = p.own.slot;
+    if (from == n->cfg.slot) {
         /* Two radios on one slot: counted, not hidden. Their sessions keep the nonces apart. */
         n->rx_clash++;
         return false;
     }
-    /* the fix in UTC on our GNSS time, for telling a replay; 0 without one */
-    int64_t fix_utc_ms = 0;
+    rider_t *r = &n->riders[from];
+    const uint8_t ahead = (uint8_t)(p.count - r->count);
     int64_t utc;
-    if (node_utc_ms(n, now_us, &utc)) fix_utc_ms = fix_utc_ms_of(p.fix_time, utc);
-    rider_t *r = &n->riders[p.slot];
-    if (r->known) {
-        /* A repeat or a replay: in each of its latest sessions the counter only grows, whichever
-         * was heard last; and a packet of any session but the last must bring a fix no older than
-         * the one we hold, or it is an old one played again. ponytail: four sessions a rider, so a
-         * replay cycling through more of them, recorded close in time, gets through; the frame
-         * number in the nonce would end it (T-nonce). */
-        const int seen = session_seen(r, p.session);
-        if ((seen >= 0 && p.counter <= r->counter_seen[seen]) ||
-            (p.session != r->last.session && fix_utc_ms && r->fix_utc_ms &&
-             fix_utc_ms < r->fix_utc_ms - REPLAY_SLACK_MS)) {
-            n->rx_replay++;
-            return false;
-        }
-        if (p.session != r->last.session) r->received = 0;
+    /* A repeat or a replay: sent near our own time, where we have one, and each packet of a rider
+     * later than the last by (sent, count). */
+    if ((node_utc_ms(n, now_us, &utc) && llabs((int64_t)p.sent - utc / 1000) > SENT_SLACK_S) ||
+        (r->heard && (p.sent < r->sent || (p.sent == r->sent && (ahead == 0 || ahead > 127))))) {
+        n->rx_replay++;
+        return false;
     }
-    remember_session(r, p.session, p.counter);
-    /* Another call, or none: who answered the one before has not answered this one. */
-    if (r->known && p.call != r->last.call) r->answered_by = 0;
-    if (!r->known || p.session != r->last.session) r->first_counter = p.counter;
+    if (!r->heard || p.session != r->session) {
+        r->received = 0;
+        r->expected = 1;
+    } else {
+        r->expected += ahead ? ahead : 256;
+    }
     r->received++;
-    r->known = true;
-    r->last = p;
+    r->heard = true;
     r->heard_us = now_us;
     r->rssi_dbm = (int16_t)rssi_dbm;
     r->snr_db4 = (int16_t)snr_db4;
-    r->fix_utc_ms = fix_utc_ms;
-    n->rx_slot = p.slot;
+    r->session = p.session;
+    r->sent = p.sent;
+    r->count = p.count;
+    /* What a rider says itself is the latest there is of it. Its fix's time: beyond two minutes the
+     * age comes in whole minutes, rounded down, so while it stands on one held position the
+     * earliest reckoning is the truest, and the fix never seems to move in time. */
+    uint32_t fix = p.own.has_pos ? p.sent - age_seconds(p.own.age) : 0;
+    if (fix && r->known && r->via == from && r->fix_utc && r->fix_utc < fix && !(p.own.facts & FACT_CURRENT) &&
+        r->rec.lat_e7 == p.own.lat_e7 && r->rec.lon_e7 == p.own.lon_e7) {
+        fix = r->fix_utc;
+    }
+    take_record(n, &p.own, p.sent, from, now_us);
+    r->fix_utc = fix;
+    r->speed_kmh = p.speed_kmh;
+    r->course2 = p.course2;
+    r->beat = p.beat;
+    r->sats = p.sats;
+    n->rx_slot = from;
     n->rx_len = len;
-    /* It hears a call for help: ours, or another rider's, and the call it names, not one before.
-     * ponytail: an answer counts for the rest of the call, however long ago it came; the answerer's
-     * own heard= tells how long since we heard it at all. */
-    if (p.help_heard == n->cfg.slot) {
-        if (n->help && p.heard_call == n->help_call && !(n->help_heard_by & 1u << p.slot)) {
-            n->help_heard_by |= 1u << p.slot;
-            n->help_news = true;
+    for (unsigned i = 0; i < p.passengers; i++) {
+        const record_t *q = &p.passenger[i];
+        if (q->slot == from) continue;
+        if (q->slot == n->cfg.slot) {
+            /* ourselves, as this rider holds us: with the state we are in, it carries what we say */
+            if (q->state == n->state) {
+                n->echo_us = now_us ? now_us : 1;
+                if (!(n->echo_by & 1u << from)) n->echo_news = true;
+                n->echo_by |= 1u << from;
+            }
+            continue;
         }
-    } else if (p.help_heard < NODE_SLOTS) {
-        rider_t *caller = &n->riders[p.help_heard];
-        if (caller->known && (caller->last.status & ST_HELP) && caller->last.call == p.heard_call &&
-            !(caller->answered_by & 1u << p.slot)) {
-            caller->answered_by |= 1u << p.slot;
-            n->answered_news = p.help_heard;
-        }
+        /* later than what we hold, by more than the age's own step: seconds, then minutes */
+        const uint32_t ago = age_seconds(q->age), as_of = p.sent > ago ? p.sent - ago : 0;
+        rider_t *o = &n->riders[q->slot];
+        if (o->known && as_of <= o->as_of + (q->age < AGE_MINUTES_FROM ? 1 : 60)) continue;
+        take_record(n, q, as_of, from, now_us);
+        o->fix_utc = 0;
+        o->speed_kmh = SPEED_UNKNOWN;
+        o->course2 = COURSE_UNKNOWN;
+        o->beat = o->sats = 0;
     }
     return true;
 }
@@ -487,8 +573,11 @@ static const char *spread_text(char *s, size_t cap, const spread_t *v) {
     if (!v->n) {
         snprintf(s, cap, "?");
     } else {
-        snprintf(s, cap, "%lld/%lld/%lld", (long long)v->min_us, (long long)(v->sum_us / (int64_t)v->n),
-                 (long long)v->max_us);
+        /* ten seconds either way is as far as a measure of a slot means anything, and a status
+         * line has no room for more */
+        int64_t w[3] = {v->min_us, v->sum_us / (int64_t)v->n, v->max_us};
+        for (int i = 0; i < 3; i++) w[i] = w[i] > 9999999 ? 9999999 : w[i] < -9999999 ? -9999999 : w[i];
+        snprintf(s, cap, "%lld/%lld/%lld", (long long)w[0], (long long)w[1], (long long)w[2]);
     }
     return s;
 }
@@ -504,44 +593,53 @@ static const char *deg(char *s, size_t cap, int32_t e7) {
 int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf, size_t cap) {
     if (slot >= NODE_SLOTS || !n->riders[slot].known) return snprintf(buf, cap, "RIDER slot=%u none", slot);
     const rider_t *r = &n->riders[slot];
-    /* Its fix's age on the calendar we have now, its fix time unwrapped at the moment we heard it:
-     * so a stored rider's age comes, and grows truer, as our calendar does, with no new packet. */
-    char lat[16], lon[16], age[24] = "?";
-    int64_t heard_utc, now_utc, err;
+    /* Its fix where it told us itself, else when it last said anything: on the calendar we have
+     * now, so a stored rider's age comes, and grows truer, as our calendar does. */
+    const uint32_t fix = r->fix_utc ? r->fix_utc : r->as_of;
+    char lat[16], lon[16], age[24] = "?", via[8] = "-", direct[24] = "-";
+    int64_t now_utc, err;
     const char *source;
-    if (calendar_us(n, r->heard_us, &heard_utc, &err, &source) && calendar_us(n, now_us, &now_utc, &err, &source)) {
-        snprintf(age, sizeof(age), "%lld", (long long)((now_utc / 1000 - fix_utc_ms_of(r->last.fix_time, heard_utc / 1000)) / 1000));
+    if (r->rec.has_pos && calendar_us(n, now_us, &now_utc, &err, &source)) {
+        snprintf(age, sizeof(age), "%lld", (long long)(now_utc / 1000000 - fix));
     }
-    char speed[8] = "?", course[8] = "?", answered[96] = "-";
-    for (int s = 0, at = 0; s < NODE_SLOTS; s++) {
-        if (r->answered_by >> s & 1) at += snprintf(answered + at, sizeof(answered) - at, "%s%d", at ? "," : "", s);
-    }
-    if (r->last.speed_kmh != SPEED_UNKNOWN) snprintf(speed, sizeof(speed), "%u", r->last.speed_kmh);
-    if (r->last.course2 != COURSE_UNKNOWN) snprintf(course, sizeof(course), "%u", r->last.course2 * 2u);
-    const long long heard10 = (now_us - r->heard_us) / 100000;
+    char speed[8] = "?", course[8] = "?";
+    if (r->speed_kmh != SPEED_UNKNOWN) snprintf(speed, sizeof(speed), "%u", r->speed_kmh);
+    if (r->course2 != COURSE_UNKNOWN) snprintf(course, sizeof(course), "%u", r->course2 * 2u);
+    if (r->via != slot) snprintf(via, sizeof(via), "%u", r->via);
+    if (r->heard) snprintf(direct, sizeof(direct), "%lld.%lld", (long long)((now_us - r->heard_us) / 1000000), (long long)((now_us - r->heard_us) / 100000 % 10));
+    const long long heard10 = (now_us - r->rec_us) / 100000;
     const int snr = r->snr_db4 < 0 ? -r->snr_db4 : r->snr_db4;
     char offset[72];
+    /* heard= is since anything came of it, itself or told; direct= since itself. answered= is v3's,
+     * kept empty for the app until it speaks this version. */
     return snprintf(buf, cap,
-                    "RIDER slot=%u group=%08lx boot=%08lx at=%lld heard_at=%lld fix=%u lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
-                    "help=%d stopped=%d answered=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu offset=%s sats=%u",
+                    "RIDER slot=%u group=%08lx boot=%08lx at=%lld heard_at=%lld fix=%u pos=%d lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
+                    "help=%d stopped=%d answered=- state=%u via=%s direct=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu offset=%s late=%ld sats=%u",
                     slot, (unsigned long)n->group.id, (unsigned long)n->boot, (long long)(now_us / 1000),
-                    (long long)(r->heard_us / 1000), r->last.fix_time, deg(lat, sizeof(lat), r->last.lat_e7),
-                    deg(lon, sizeof(lon), r->last.lon_e7),
+                    (long long)(r->rec_us / 1000), (unsigned)(fix & 0xFFFF), r->rec.has_pos ? 1 : 0,
+                    deg(lat, sizeof(lat), r->rec.lat_e7), deg(lon, sizeof(lon), r->rec.lon_e7),
                     age, heard10 / 10, heard10 % 10, speed, course,
-                    (r->last.status & ST_GPS_OK) ? 1 : 0, (r->last.status & ST_HELP) ? 1 : 0,
-                    (r->last.status & ST_STOPPED) ? 1 : 0, answered, r->rssi_dbm, r->snr_db4 < 0 ? "-" : "",
-                    snr / 4, snr % 4 * 25, (unsigned long)r->received,
-                    (unsigned long)((uint16_t)(r->last.counter - r->first_counter) + 1u),
-                    spread_text(offset, sizeof(offset), &r->offset), r->last.sats);
+                    (r->rec.facts & FACT_CURRENT) ? 1 : 0, r->rec.state == STATE_HELP ? 1 : 0,
+                    (r->rec.facts & FACT_STOPPED) ? 1 : 0, r->rec.state, via, direct, r->rssi_dbm, r->snr_db4 < 0 ? "-" : "",
+                    snr / 4, snr % 4 * 25, (unsigned long)r->received, (unsigned long)r->expected,
+                    spread_text(offset, sizeof(offset), &r->offset),
+                    /* the packet this line is told for, where its RxDone was stamped: a bench reads
+                     * each one here, with no reckoning back from the mean */
+                    (long)(r->late_us > 9999999 ? 9999999 : r->late_us < -9999999 ? -9999999 : r->late_us), r->sats);
 }
 
 int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     const uint32_t used = node_duty_used_ms(n, now_us);
     int known = 0;
     for (int i = 0; i < NODE_SLOTS; i++) known += n->riders[i].known;
-    char lat[16], lon[16], err_ms[48] = "?", lag[48] = "?", txlead[72];
+    /* heard= riders who carry the state we are in; echo= seconds since one last did, 9999 at most;
+     * send= the send rule's heartbeat, metres and passengers. Our own position is not here: a line
+     * holds 511 characters, and nothing read it. */
+    char err_ms[48] = "?", lag[48] = "?", txlead[72], echo[24] = "-";
+    const int64_t echo_s = (now_us - n->echo_us) / 1000000;
+    if (n->echo_us) snprintf(echo, sizeof(echo), "%d", echo_s > 9999 ? 9999 : (int)echo_s);
     const bool current = n->fix.valid && now_us - n->fix_us <= FIX_FRESH_US;
-    static const char *const SOURCE[] = {"none", "nmea", "pps"};
+    static const char *const SOURCE[] = {"none", "nmea", "group", "pps"};
     int64_t utc, err;
     if (node_utc_us(n, now_us, &utc, &err)) {
         snprintf(err_ms, sizeof(err_ms), "%lld.%lld", (long long)(err / 1000), (long long)(err % 1000 / 100));
@@ -561,19 +659,19 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     }
     const int64_t budget = node_time_budget_us(n);
     return snprintf(buf, cap,
-                    "slot=%u slots=%u keyed=%d group=%08lx mode=%u/%lu fix=%d stopped=%d help=%d heard=%d lat=%s lon=%s sats=%u "
+                    "slot=%u slots=%u keyed=%d group=%08lx mode=%u/%lu fix=%d stopped=%d heard=%d state=%u echo=%s send=%u/%u/%u sats=%u "
                     "hdop=%u.%u time=%s err=%s cal=%s "
-                    "budget=%lld.%lld lag=%s txlead=%s tx=%lu late=%lu unsure=%lu skipped=%lu held=%lu duty=%lu.%02lu%% riders=%d "
+                    "budget=%lld.%lld lag=%s txlead=%s tx=%lu late=%lu unsure=%lu skipped=%lu quiet=%lu held=%lu duty=%lu.%02lu%% riders=%d "
                     "bad=%lu foreign=%lu forged=%lu replay=%lu clash=%lu",
                     n->cfg.slot, n->cfg.slots, n->cfg.keyed ? 1 : 0, (unsigned long)(n->cfg.keyed ? n->group.id : 0), n->cfg.phy.sf,
                     (unsigned long)(n->cfg.phy.bw_hz / 1000),
-                    current ? 1 : 0, n->stopped ? 1 : 0, n->help ? 1 : 0, __builtin_popcount(n->help_heard_by),
-                    deg(lat, sizeof(lat), n->held.lat_e7),
-                    deg(lon, sizeof(lon), n->held.lon_e7), n->fix.sats, n->fix.hdop10 / 10,
+                    current ? 1 : 0, n->stopped ? 1 : 0, __builtin_popcount(n->echo_by), n->state, echo,
+                    n->cfg.beat, n->cfg.move_m, n->cfg.passengers,
+                    n->fix.sats, n->fix.hdop10 / 10,
                     n->fix.hdop10 % 10, SOURCE[n->time], err_ms, cal, (long long)(budget / 1000),
                     (long long)(budget % 1000 / 100), lag, spread_text(txlead, sizeof(txlead), &n->tx_lead),
                     (unsigned long)n->sent, (unsigned long)n->tx_late,
-                    (unsigned long)n->tx_unsure, (unsigned long)n->tx_skipped, (unsigned long)n->tx_held,
+                    (unsigned long)n->tx_unsure, (unsigned long)n->tx_skipped, (unsigned long)n->tx_quiet, (unsigned long)n->tx_held,
                     (unsigned long)(used / 36000),
                     (unsigned long)(used % 36000 / 360), known, (unsigned long)n->rx_bad,
                     (unsigned long)n->rx_foreign, (unsigned long)n->rx_forged, (unsigned long)n->rx_replay,

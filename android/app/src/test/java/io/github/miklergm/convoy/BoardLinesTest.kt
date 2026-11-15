@@ -58,15 +58,17 @@ class BoardLinesTest {
         assertNull(BoardLines.rider("RIDER slot=1 lat=95 lon=2 heard=0", now))
         assertNull(BoardLines.rider("RIDER slot=x lat=1 lon=2 heard=0", now))
         assertNull(BoardLines.rider("TX counter=1 len=17 ok", now))
+        // told of before its first fix: its 0, 0 is no place, and must not be drawn in the Gulf of Guinea
+        assertNull(BoardLines.rider("RIDER slot=2 pos=0 lat=0.0000000 lon=0.0000000 fix_age=? heard=1.0 state=1 help=1", now))
     }
 
     @Test
     fun `the status line, and its version`() {
-        val s = BoardLines.status("STATUS proto=7 board=sim reset=poweron up=0 slot=0 slots=3 keyed=1 group=86c91c92 " +
-            "fix=1 stopped=0 help=1 heard=2 lat=47.1436949 lon=9.5215000 sats=9 hdop=0.9 time=pps err=0.1 " +
+        val s = BoardLines.status("STATUS proto=8 board=sim reset=poweron up=0 slot=0 slots=3 keyed=1 group=86c91c92 " +
+            "fix=1 stopped=0 heard=2 state=1 echo=3 send=3/10/1 sats=9 hdop=0.9 time=pps err=0.1 " +
             "budget=233.0 lag=112/98/131 tx=0 late=0 unsure=0 skipped=0 duty=0.43% riders=2 bad=0 foreign=0 " +
             "forged=0 replay=0 clash=0 power=3 dbm=16")!!
-        assertEquals(7, s.proto)
+        assertEquals(8, s.proto)
         assertTrue(s.help && !s.stopped)
         assertEquals(2, s.heard)
         assertEquals(0, s.clash)
@@ -82,12 +84,14 @@ class BoardLinesTest {
         assertEquals("0.43%", s.duty)
         assertEquals(16, s.dbm)
         assertTrue(s.kept)
-        assertFalse(BoardLines.status("STATUS proto=7 slot=0 group=86c91c92 kept=0")!!.kept)
+        assertFalse(BoardLines.status("STATUS proto=8 slot=0 group=86c91c92 kept=0")!!.kept)
+        // another state than a call for help is not one
+        assertFalse(BoardLines.status("STATUS proto=8 slot=0 group=86c91c92 state=3")!!.help)
         // without a version it is not a status this app can trust
         assertNull(BoardLines.status("STATUS slot=0 keyed=1 group=86c91c92"))
         assertEquals(7, BoardLines.status("STATUS proto=7 slot=0 group=00000007")!!.proto)
         // a board without a key, nor a time yet
-        val bare = BoardLines.status("STATUS proto=7 slot=4 keyed=0 group=00000000 time=none err=?")!!
+        val bare = BoardLines.status("STATUS proto=8 slot=4 keyed=0 group=00000000 time=none err=?")!!
         assertFalse(bare.keyed)
         assertNull(bare.timeErrMs)
     }

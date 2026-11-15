@@ -1,11 +1,11 @@
-/* Host ABI for the actual node/codec and an explicitly experimental forwarding adapter. */
+/* Host ABI for the actual node and codec, v5: the DES drives the same C a board runs. The
+ * candidates differ only in setup: "v3" carries no other riders, "relay" carries relay_records of
+ * them in each packet (passengers, 0 to PKT_PASSENGERS_MAX), as a board told PASSENGERS does. */
 #include "node.h"
 #include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 
-#define FRAME_HEADER 4
-#define MAX_FORWARD 8
 #define ACCESS_ATTEMPTS 3
 #define ACCESS_NEW_RECORD 256u
 
@@ -13,14 +13,15 @@ typedef struct {
     uint32_t version, slot, slots, interval_ms, duty_permille, listen_one_in;
     int32_t nmea_lag_us, nmea_err_us;
     uint32_t seed, sf, bandwidth_hz, coding_rate, preamble, frequency_hz, sync_word;
-    uint32_t experimental_relay, relay_records;
-    int64_t relay_ttl_us;
+    uint32_t experimental_relay, relay_records, beat, move_m;
     uint32_t implicit_header, crc;
     uint8_t key[16];
 } sim_config_t;
 
+/* One rider as told: by itself (via its own slot) or by another. as_of is the UTC second it said
+ * so itself; status keeps v3's bits for the host: 1 help, 2 stopped, 4 a current fix. */
 typedef struct {
-    uint32_t slot, session, counter, fix_time, status;
+    uint32_t slot, as_of, status, via;
     int32_t lat_e7, lon_e7, speed_kmh, course2, rssi_dbm, snr_db4;
     int64_t fix_utc_ms, heard_us;
 } sim_record_t;
@@ -28,14 +29,11 @@ typedef struct {
 typedef struct {
     sim_config_t config;
     node_t node;
-    uint8_t cache[NODE_SLOTS][PKT_POSITION_LEN];
-    bool cached[NODE_SLOTS];
     bool mode_pending;
-    int64_t cached_at[NODE_SLOTS], forwarded_at[NODE_SLOTS];
     bool access_enabled;
     unsigned access_state, access_attempts;
     uint32_t access_rng, access_cost_ms;
-    uint8_t access_bytes[255];
+    uint8_t access_bytes[PKT_MAX_LEN];
     size_t access_length;
     int64_t access_target_utc, access_retry_us, access_prepare_us;
     uint64_t access_stats[9];
@@ -50,7 +48,7 @@ static void access_drop(sim_node_t *s,unsigned reason) {
     s->access_state=0;
 }
 
-uint32_t sim_abi_version(void) { return 1; }
+uint32_t sim_abi_version(void) { return 2; }
 size_t sim_config_size(void) { return sizeof(sim_config_t); }
 size_t sim_record_size(void) { return sizeof(sim_record_t); }
 
@@ -70,14 +68,14 @@ static uint32_t airtime(const sim_node_t *s, size_t length) {
 }
 
 void *sim_node_create(const sim_config_t *c) {
-    if (!c || c->version!=1 || c->slots<1 || c->slots>NODE_SLOTS || c->slot>=c->slots ||
+    /* the core sends with an explicit header and a CRC, as a board does */
+    if (!c || c->version!=2 || c->slots<1 || c->slots>NODE_SLOTS || c->slot>=c->slots ||
         c->interval_ms<100 || c->interval_ms>60000 || c->duty_permille>1000 ||
-        c->listen_one_in>UINT16_MAX || c->relay_records>MAX_FORWARD || c->relay_ttl_us<=0 ||
-        c->implicit_header>1 || c->crc>1 || c->experimental_relay>1 || !c->seed ||
+        c->listen_one_in>UINT16_MAX || c->relay_records>PKT_PASSENGERS_MAX || c->beat>7 ||
+        c->move_m<1 || c->move_m>1000 || c->implicit_header || !c->crc || c->experimental_relay>1 || !c->seed ||
         c->nmea_lag_us<0 || c->nmea_err_us<0 || c->sf<7 || c->sf>12 ||
         c->coding_rate<5 || c->coding_rate>8 || c->preamble<6 || c->preamble>UINT16_MAX ||
-        c->sync_word>UINT16_MAX ||
-        (!c->experimental_relay && (c->implicit_header || !c->crc))) return NULL;
+        c->sync_word>UINT16_MAX) return NULL;
     phy_t p=mode(c);
     if (!phy_supported(&p)) return NULL;
     sim_node_t *s=calloc(1,sizeof(*s));
@@ -86,7 +84,8 @@ void *sim_node_create(const sim_config_t *c) {
     node_config_t cfg={.keyed=true, .slot=(uint8_t)c->slot, .slots=(uint8_t)c->slots,
         .interval_ms=c->interval_ms, .duty_permille=(uint16_t)c->duty_permille, .phy=p,
         .nmea_lag_us=c->nmea_lag_us, .nmea_err_us=c->nmea_err_us,
-        .listen_one_in=(uint16_t)c->listen_one_in};
+        .listen_one_in=(uint16_t)c->listen_one_in, .beat=(uint8_t)c->beat, .move_m=(uint16_t)c->move_m,
+        .passengers=(uint8_t)(c->experimental_relay ? c->relay_records : 0)};
     memcpy(cfg.key,c->key,sizeof(cfg.key));
     node_init(&s->node,&cfg,c->seed);
     return s;
@@ -94,7 +93,7 @@ void *sim_node_create(const sim_config_t *c) {
 
 void sim_node_destroy(void *p) { free(p); }
 void sim_node_pps(void *p,int64_t at) { node_on_pps(&((sim_node_t*)p)->node,at); }
-void sim_node_help(void *p,int on) { node_set_help(&((sim_node_t*)p)->node,on!=0); }
+void sim_node_help(void *p,int on) { node_set_state(&((sim_node_t*)p)->node,on ? STATE_HELP : STATE_NORMAL); }
 
 void sim_node_fix(void *p,int64_t at,int64_t utc_ms,int valid,int time_valid,
                   int32_t lat,int32_t lon,int32_t speed,int32_t course) {
@@ -112,11 +111,9 @@ void sim_node_tx_done(void *p,int64_t at) { node_on_tx_done(&((sim_node_t*)p)->n
 void sim_node_mode(void *p,const sim_config_t *c,int applied) {
     sim_node_t *s=p;
     phy_t phy=mode(c);
-    if (!phy_supported(&phy)) return;
+    if (!phy_supported(&phy) || c->implicit_header || !c->crc) return;
     if (!applied) access_drop(s,5);
     if (applied) {
-        s->config.implicit_header=c->implicit_header;
-        s->config.crc=c->crc;
         node_phy_applied(&s->node,&phy);
         s->mode_pending=false;
     } else {
@@ -125,64 +122,46 @@ void sim_node_mode(void *p,const sim_config_t *c,int applied) {
     }
 }
 
-static void export_record(const position_t *p,const rider_t *r,sim_record_t *out) {
-    *out=(sim_record_t){.slot=p->slot,.session=p->session,.counter=p->counter,.fix_time=p->fix_time,
-        .status=p->status,.lat_e7=p->lat_e7,.lon_e7=p->lon_e7,.speed_kmh=p->speed_kmh,
-        .course2=p->course2,.rssi_dbm=r?r->rssi_dbm:0,.snr_db4=r?r->snr_db4:0,
-        .fix_utc_ms=r?r->fix_utc_ms:0,.heard_us=r?r->heard_us:0};
+static uint32_t status_of(const record_t *r) {
+    return (r->state==STATE_HELP ? 1u : 0) | (r->facts&FACT_STOPPED ? 2u : 0) | (r->facts&FACT_CURRENT ? 4u : 0);
 }
 
 int sim_node_view(void *p,unsigned slot,sim_record_t *out) {
     sim_node_t *s=p;
     if (slot>=NODE_SLOTS || !out || !s->node.riders[slot].known) return 0;
     const rider_t *r=&s->node.riders[slot];
-    export_record(&r->last,r,out);
+    /* its fix where it told us itself; told by another, when it last said so */
+    *out=(sim_record_t){.slot=slot,.as_of=r->as_of,.status=status_of(&r->rec),.via=r->via,
+        .lat_e7=r->rec.lat_e7,.lon_e7=r->rec.lon_e7,.speed_kmh=r->speed_kmh,.course2=r->course2,
+        .rssi_dbm=r->rssi_dbm,.snr_db4=r->snr_db4,
+        .fix_utc_ms=(int64_t)(r->fix_utc ? r->fix_utc : r->as_of)*1000,.heard_us=r->heard_us};
     return 1;
 }
 
-static int frame_count(const uint8_t *b,size_t len) {
-    if (len==PKT_POSITION_LEN) return 1;
-    if (len<FRAME_HEADER || b[0]!='S' || b[1]!='R' || b[2]!=1 || b[3]<1 || b[3]>MAX_FORWARD+1 ||
-        len!=FRAME_HEADER+(size_t)b[3]*PKT_POSITION_LEN) return 0;
-    return b[3];
-}
-
+/* The records a packet carries: its sender's own first, then its passengers. */
 int sim_frame_record(void *p,const uint8_t *b,size_t len,unsigned index,sim_record_t *out) {
-    if (!p || !b || !out || index>=(unsigned)frame_count(b,len)) return 0;
-    const uint8_t *record=b+(len==PKT_POSITION_LEN ? 0 : FRAME_HEADER+index*PKT_POSITION_LEN);
-    position_t decoded;
-    if (pkt_open(record,PKT_POSITION_LEN,&((sim_node_t*)p)->node.group,&decoded)!=PKT_OK) return 0;
-    export_record(&decoded,NULL,out);
+    packet_t q;
+    if (!p || !b || !out || pkt_open(b,len,&((sim_node_t*)p)->node.group,&q)!=PKT_OK || index>q.passengers) return 0;
+    const record_t *r=index ? &q.passenger[index-1] : &q.own;
+    const uint32_t ago=index ? age_seconds(r->age) : 0;
+    *out=(sim_record_t){.slot=r->slot,.as_of=q.sent>ago ? q.sent-ago : 0,.status=status_of(r),.via=q.own.slot,
+        .lat_e7=r->lat_e7,.lon_e7=r->lon_e7,.speed_kmh=index ? SPEED_UNKNOWN : q.speed_kmh,
+        .course2=index ? COURSE_UNKNOWN : q.course2};
     return 1;
 }
 
+/* The slots whose record this packet changed, a bit each. */
 uint32_t sim_node_receive(void *p,const uint8_t *b,size_t len,int rssi,int snr,int64_t at,int64_t stamp) {
     sim_node_t *s=p;
-    const int count=frame_count(b,len);
-    if (!count || (!s->config.experimental_relay && len!=PKT_POSITION_LEN)) return 0;
-    if (!s->config.experimental_relay) {
-        if (!node_on_packet(&s->node,b,len,rssi,snr,at)) return 0;
-        position_t decoded;
-        if (pkt_open(b,len,&s->node.group,&decoded)!=PKT_OK) return 0;
-        if (stamp>=0) node_on_rx_done(&s->node,stamp);
-        return 1u<<decoded.slot;
+    int64_t before[NODE_SLOTS];
+    for (int i=0;i<NODE_SLOTS;i++) before[i]=s->node.riders[i].known ? s->node.riders[i].rec_us : INT64_MIN;
+    if (!node_on_packet(&s->node,b,len,rssi,snr,at)) return 0;
+    if (stamp>=0) node_on_rx_done(&s->node,stamp);
+    uint32_t changed=0;
+    for (int i=0;i<NODE_SLOTS;i++) {
+        if (s->node.riders[i].known && s->node.riders[i].rec_us!=before[i]) changed|=1u<<i;
     }
-    uint32_t accepted=0;
-    for (int i=0;i<count;i++) {
-        const uint8_t *record=b+(len==PKT_POSITION_LEN ? 0 : FRAME_HEADER+(size_t)i*PKT_POSITION_LEN);
-        position_t decoded;
-        if (pkt_open(record,PKT_POSITION_LEN,&s->node.group,&decoded)!=PKT_OK || decoded.slot>=s->node.cfg.slots)
-            continue;
-        if (s->config.experimental_relay && decoded.slot==s->node.cfg.slot) continue;
-        if (node_on_packet(&s->node,record,PKT_POSITION_LEN,rssi,snr,at)) {
-            accepted |= 1u<<decoded.slot;
-            memcpy(s->cache[decoded.slot],record,PKT_POSITION_LEN);
-            s->cached[decoded.slot]=true;
-            s->cached_at[decoded.slot]=at;
-            if (len==PKT_POSITION_LEN && stamp>=0) node_on_rx_done(&s->node,stamp);
-        }
-    }
-    return accepted;
+    return changed;
 }
 
 size_t sim_node_poll(void *p,int64_t at,uint8_t *out,size_t capacity) {
@@ -195,54 +174,7 @@ size_t sim_node_poll(void *p,int64_t at,uint8_t *out,size_t capacity) {
         }
         return 0;
     }
-    if (!s->config.experimental_relay) return node_poll_tx(&s->node,at,out,capacity);
-    unsigned chosen[MAX_FORWARD], count=0;
-    for (unsigned k=0;k<s->config.relay_records;k++) {
-        int best=-1;
-        for (unsigned slot=0;slot<s->node.cfg.slots;slot++) {
-            if (slot==s->node.cfg.slot || !s->cached[slot] || at-s->cached_at[slot]>s->config.relay_ttl_us) continue;
-            bool already=false;
-            for (unsigned j=0;j<count;j++) already |= chosen[j]==slot;
-            if (!already && (best<0 || s->forwarded_at[slot]<s->forwarded_at[best])) best=(int)slot;
-        }
-        if (best<0) break;
-        chosen[count++]=(unsigned)best;
-    }
-    int64_t utc,err;
-    if (!node_utc_us(&s->node,at,&utc,&err)) return 0;
-    size_t length;
-    uint32_t air_us;
-    for (;;) {
-        length=FRAME_HEADER+(1+count)*PKT_POSITION_LEN;
-        air_us=airtime(s,length);
-        const int64_t spacing=(int64_t)s->node.cfg.interval_ms*1000/(s->node.cfg.slots+1);
-        const uint32_t maximum_air=airtime(s,FRAME_HEADER+(1+s->config.relay_records)*PKT_POSITION_LEN);
-        const int64_t budget=(spacing-maximum_air-2000)/2;
-        const bool fits=length<=capacity && budget>=err+1000 &&
-            node_duty_used_ms(&s->node,at)+(air_us+999)/1000<=3600u*s->node.cfg.duty_permille;
-        if (fits) break;
-        if (!count) {
-            /* Consume an unworkable slot through the real core without booking an RF transmission. */
-            uint8_t ignored[PKT_POSITION_LEN];
-            node_poll_tx(&s->node,at,ignored,0);
-            return 0;
-        }
-        count--;
-    }
-    uint8_t own[PKT_POSITION_LEN];
-    if (!node_poll_tx(&s->node,at,own,sizeof(own))) return 0;
-    const int bucket=(int)((at/60000000)%60);
-    const uint32_t base_ms=(phy_airtime_us(&s->node.phy,PKT_POSITION_LEN)+999)/1000;
-    s->node.duty.used_ms[bucket]-=base_ms;
-    s->node.duty.used_ms[bucket]+=(air_us+999)/1000;
-    s->node.tx_air_us=air_us;
-    out[0]='S';out[1]='R';out[2]=1;out[3]=(uint8_t)(1+count);
-    memcpy(out+FRAME_HEADER,own,sizeof(own));
-    for (unsigned j=0;j<count;j++) {
-        memcpy(out+FRAME_HEADER+(j+1)*PKT_POSITION_LEN,s->cache[chosen[j]],PKT_POSITION_LEN);
-        s->forwarded_at[chosen[j]]=at;
-    }
-    return length;
+    return node_poll_tx(&s->node,at,out,capacity);
 }
 
 uint32_t sim_node_duty(void *p,int64_t now) { return node_duty_used_ms(&((sim_node_t*)p)->node,now); }
@@ -267,8 +199,7 @@ int sim_access_enable(void *p,int64_t preparation_us) {
 static bool access_fits(const sim_node_t *s,int64_t at) {
     int64_t utc,err,end_utc,end_err;
     const int64_t spacing=(int64_t)s->node.cfg.interval_ms*1000/(s->node.cfg.slots+1);
-    const size_t maximum=s->config.experimental_relay
-        ? FRAME_HEADER+(1+s->config.relay_records)*PKT_POSITION_LEN : PKT_POSITION_LEN;
+    const size_t maximum=PKT_LEN(s->node.cfg.passengers);
     const int64_t guard=(spacing-(int64_t)airtime(s,maximum)-2000)/2;
     const int64_t duration=s->access_prepare_us+(int64_t)airtime(s,s->access_length);
     if (!s->access_length || s->mode_pending || guard<0 || duration>spacing ||

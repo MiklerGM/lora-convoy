@@ -115,8 +115,10 @@ clique 0 1
             directory = Path(temporary)
             _, fix_run, fix_summary, fix_events = self.run_scenario(
                 directory, "holdover", text, "environment fix-only\nfix_outage 30 500 0\n")
+            # Alone: a rider on PPS in hearing would keep its clock set (v5, time from the group).
             _, _, dark_summary, dark_events = self.run_scenario(
-                directory, "holdover", text, "environment no-gnss\ngnss_outage 30 500 0\n")
+                directory, "holdover", text.replace("clique 0 1", "link 0 1"),
+                "environment no-gnss\ngnss_outage 30 500 0\n")
             clock_text = text.replace("interval_ms 200\n", "interval_ms 4000\n").replace(
                 "duration_s 600\n", "duration_s 120\n")
             _, _, wrong_clock, _ = self.run_scenario(
@@ -149,10 +151,13 @@ clique 0 1
         self.assertEqual(calibrated_clock["clock_error_max_us"], 0)
         self.assertEqual(calibrated_clock["clock_bound_exceeded"], 0)
         self.assertEqual(drifting_clock["contract_failures"], 0)
-        self.assertLess(drifting_clock["age_p50_ms"], 0)
-        self.assertLess(drifting_clock["age_p95_ms"], 0)
-        self.assertTrue(any(e["event"] == "sample" and e["receiver"] == 1 and
-                            e["age_ms"] is not None and e["age_ms"] < 0 for e in drifting_events))
+        # v3 showed fixes from the future here: an hour without GNSS on a crystal 1000 ppm off, twenty
+        # times what the core allows for. The packets of the rider on PPS it hears now keep its clock
+        # set (v5, time from the group), so the ages it shows stay true.
+        self.assertGreater(drifting_clock["age_p50_ms"], 0)
+        self.assertLess(drifting_clock["age_p95_ms"], 1500)
+        self.assertFalse(any(e["event"] == "sample" and e["receiver"] == 1 and
+                             e["age_ms"] is not None and e["age_ms"] < 0 for e in drifting_events))
 
     def test_directed_delivery_and_missing_states_are_not_hidden(self):
         text = """name directed

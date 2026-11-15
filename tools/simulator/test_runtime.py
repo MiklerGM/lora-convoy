@@ -56,15 +56,19 @@ class RuntimeTest(unittest.TestCase):
             self.assertEqual(receiver.receive(bytes(damaged),at,stamp_us=at),[])
             self.assertIsNone(receiver.view(0))
             self.assertEqual(receiver.receive(packet,at,stamp_us=at),[0])
-            self.assertEqual(receiver.view(0)["counter"],sender.records(packet)[0]["counter"])
+            self.assertEqual(receiver.view(0)["as_of"],sender.records(packet)[0]["as_of"])
+            self.assertEqual(receiver.view(0)["via"],0)
             self.assertEqual(receiver.receive(packet,at+1000,stamp_us=at+1000),[])
             with self.assertRaisesRegex(ValueError,"C GNSS interface"):
                 sender.fix(1200000,1792670400000,True,True,471410000,95215000,10**20,0)
-            relay=NativeNode(self.library,cfg|{"candidate":"relay"},2,b"k"*16,17)
+            relay=NativeNode(self.library,cfg|{"candidate":"relay","relay_records":1},2,b"k"*16,17)
             try:
                 relay.pps(1000000)
                 relay.fix(1100000,1792670400000,True,True,471410000,95215000,100,0)
-                changed=Phy(implicit_header=True)
+                # the core sends with an explicit header and a CRC only, as a board does
+                with self.assertRaisesRegex(ValueError,"implicit/no-CRC"):
+                    relay.mode(Phy(implicit_header=True),False)
+                changed=Phy(sf=8)
                 relay.mode(changed,False)
                 pending=relay.next(1100000)
                 self.assertEqual(relay.poll(pending),b"")
@@ -72,19 +76,23 @@ class RuntimeTest(unittest.TestCase):
                 relay.mode(changed,True)
                 emitted=relay.next(pending)
                 packet=relay.poll(emitted)
-                self.assertEqual(len(packet),29)
-                self.assertEqual(relay.records(packet)[0]["counter"],0)
+                # nobody heard yet, nobody to carry: its own record alone
+                self.assertEqual(len(packet),25)
+                self.assertEqual(len(relay.records(packet)),1)
                 foreign_due=receiver.next(emitted+1000)
                 foreign=receiver.poll(foreign_due)
                 received=foreign_due+Phy().airtime_ns(25)//1000
                 self.assertEqual(relay.receive(foreign,received,stamp_us=received),[1])
                 before=relay.statistics(received)["core_duty_used_ms"]
-                forwarding_due=relay.next(received)
-                forwarded=relay.poll(forwarding_due)
-                self.assertEqual(len(forwarded),54)
-                full_cost=(changed.airtime_ns(54)+999999)//1000000
-                self.assertEqual(relay.statistics(forwarding_due)["core_duty_used_ms"]-before,full_cost)
-                self.assertEqual(len(relay.poll(relay.next(received+31000000))),29)
+                carrying_due=relay.next(received)
+                carrying=relay.poll(carrying_due)
+                # the rider in slot 1 carried along, as it said itself, and booked at the full length
+                self.assertEqual(len(carrying),34)
+                own,passenger=relay.records(carrying)
+                self.assertEqual((own["slot"],passenger["slot"],passenger["via"]),(0,1,0))
+                self.assertEqual(passenger["as_of"],receiver.records(foreign)[0]["as_of"])
+                self.assertEqual(relay.statistics(carrying_due)["core_duty_used_ms"]-before,
+                                 (changed.airtime_ns(34)+999999)//1000000)
             finally:
                 relay.close()
         finally:

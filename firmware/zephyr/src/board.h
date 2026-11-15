@@ -89,7 +89,7 @@
 #define NODE_NMEA_LAG_SAT_US 8700
 #endif
 #ifndef NODE_NMEA_ERR_US
-#define NODE_NMEA_ERR_US 50000
+#define NODE_NMEA_ERR_US 100000
 #endif
 #ifndef NODE_TX_LEAD_US
 #define NODE_TX_LEAD_US 7100

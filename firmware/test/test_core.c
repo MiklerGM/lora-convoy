@@ -94,59 +94,76 @@ static const uint8_t KEY[16] = {0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07,
                                 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f};
 
 static void test_codec(void) {
-    /* The vector in docs/PROTOCOL.md, from an independent implementation on OpenSSL: slot 3,
-     * session 0x01020304, counter 5, a fix at 2026-10-22 12:00:05 UTC, calling for help in its call
-     * 5 and hearing slot 7's call 2, under the key 00 01 .. 0f. */
-    static const uint8_t want[PKT_POSITION_LEN] = {0xC0, 0x86, 0x03, 0x01, 0x02, 0x03, 0x04, 0x00, 0x05,
-                                                   0xEE, 0x37, 0x9D, 0x2B, 0x30, 0xA8, 0x88, 0x6B, 0x0E,
-                                                   0x6D, 0x23, 0x0D, 0x03, 0x40, 0x86, 0x0F};
+    /* The vector in docs/PROTOCOL.md, from an independent implementation on OpenSSL
+     * (pyca/cryptography): slot 3, session 0x0102, sent at 2026-10-22 12:00:05 UTC, count 5, a
+     * current fix 2 s old on PPS time, calling for help; one passenger, slot 7, stopped and
+     * wanting a stop, as it said 12 minutes ago; under the key 00 01 .. 0f. */
+    static const uint8_t want[PKT_LEN(1)] = {0x50, 0x86, 0x03, 0x01, 0x02, 0x6A, 0xD9, 0xFA, 0xC5, 0x05, 0x60, 0xE6,
+                                             0x68, 0x00, 0x30, 0xF3, 0x70, 0x89, 0xEF, 0xBB, 0x87, 0x3F, 0xF3, 0x08,
+                                             0x40, 0x9C, 0xC5, 0x4E, 0xC1, 0x8C, 0x76, 0x99, 0x1C, 0x4B};
     group_key_t g;
     group_key_init(&g, KEY);
     /* the group's id, which the phone tells groups apart by, its tag first: from OpenSSL */
     assert(g.tag == 0x86 && g.id == 0x86c91c92u);
-    const position_t p = {.slot = 3, .session = 0x01020304, .counter = 5, .fix_time = 64197,
-                          .lat_e7 = 471410000, .lon_e7 = 95215000, .speed_kmh = 40,
-                          .course2 = 135, .status = ST_GPS_OK | ST_HELP, .call = 5, .help_heard = 7,
-                          .heard_call = 2};
-    uint8_t b[PKT_POSITION_LEN];
-    assert(pkt_seal(b, &p, &g) == PKT_POSITION_LEN && memcmp(b, want, sizeof(want)) == 0);
+    const packet_t p = {.session = 0x0102, .sent = 1792670405u, .count = 5,
+                        .own = {.slot = 3, .has_pos = true, .lat_e7 = 471410000, .lon_e7 = 95215000, .age = 2,
+                                .facts = FACT_CURRENT | FACT_TIME_PRECISE, .state = STATE_HELP},
+                        .speed_kmh = 40, .course2 = 135, .beat = 3, .sats = 12, .passengers = 1,
+                        .passenger = {{.slot = 7, .has_pos = true, .lat_e7 = 471500000, .lon_e7 = 95100000,
+                                       .age = 130, .facts = FACT_STOPPED, .state = STATE_STOP_SOON}}};
+    uint8_t b[PKT_MAX_LEN];
+    assert(sizeof(want) == 34 && pkt_seal(b, &p, &g) == sizeof(want) && memcmp(b, want, sizeof(want)) == 0);
 
-    position_t q;
-    assert(pkt_open(b, sizeof(b), &g, &q) == PKT_OK);
-    assert(q.group == 0x86 && q.slot == 3 && q.session == 0x01020304 && q.counter == 5 && q.fix_time == 64197);
-    assert(q.speed_kmh == 40 && q.course2 == 135 && q.status == (ST_GPS_OK | ST_HELP) && q.call == 5);
-    assert(q.help_heard == 7 && q.heard_call == 2);
-    /* The satellites ride in that byte only while no help is heard, and are never read as a call
-     * heard: an answer nobody gave would tell a rider in trouble that help knows. */
-    position_t s = p, t;
-    s.sats = 40;
-    assert(pkt_seal(b, &s, &g) == PKT_POSITION_LEN && memcmp(b, want, sizeof(want)) == 0);
-    s.help_heard = HELP_HEARD_NONE;
-    pkt_seal(b, &s, &g);
-    assert(pkt_open(b, sizeof(b), &g, &t) == PKT_OK && t.help_heard == HELP_HEARD_NONE && t.sats == 31);
-    s.sats = 17;
-    pkt_seal(b, &s, &g);
-    assert(pkt_open(b, sizeof(b), &g, &t) == PKT_OK && t.help_heard == HELP_HEARD_NONE && t.sats == 17);
+    packet_t q;
+    assert(pkt_open(b, sizeof(want), &g, &q) == PKT_OK);
+    assert(q.group == 0x86 && q.own.slot == 3 && q.session == 0x0102 && q.sent == 1792670405u && q.count == 5);
+    assert(q.own.has_pos && q.own.age == 2 && q.own.facts == (FACT_CURRENT | FACT_TIME_PRECISE) && q.own.state == STATE_HELP);
+    assert(q.speed_kmh == 40 && q.course2 == 135 && q.beat == 3 && q.sats == 12 && q.passengers == 1);
+    assert(q.passenger[0].slot == 7 && q.passenger[0].has_pos && q.passenger[0].age == 130 &&
+           q.passenger[0].facts == FACT_STOPPED && q.passenger[0].state == STATE_STOP_SOON);
     /* half a step at most: 1.07e-5 degrees of latitude, 2.15e-5 of longitude */
-    assert(labs((long)q.lat_e7 - 471410000) <= 54 && labs((long)q.lon_e7 - 95215000) <= 108);
+    assert(labs((long)q.own.lat_e7 - 471410000) <= 54 && labs((long)q.own.lon_e7 - 95215000) <= 108);
+    assert(labs((long)q.passenger[0].lat_e7 - 471500000) <= 54 && labs((long)q.passenger[0].lon_e7 - 95100000) <= 108);
+
+    /* An age in a byte: seconds below two minutes, whole minutes to two hours, then "older"; read
+     * back as the least it can mean, so a record is never made younger than it is. */
+    static const uint32_t ages[][3] = {{0, 0, 0}, {119, 119, 119}, {120, 120, 120}, {179, 120, 120}, {180, 121, 180},
+                                       {7319, 239, 7260}, {7320, AGE_OLDER, 7320}, {4000000000u, AGE_OLDER, 7320}};
+    for (size_t i = 0; i < sizeof(ages) / sizeof(ages[0]); i++) {
+        assert(age_code(ages[i][0]) == ages[i][1] && age_seconds((uint8_t)ages[i][1]) == ages[i][2]);
+    }
+
+    /* No position at all is said, not sent as a place: a rider in trouble before its first fix. And
+     * a packet is as long as its passengers, none to three. */
+    for (uint8_t riders = 0; riders <= PKT_PASSENGERS_MAX; riders++) {
+        packet_t c = p;
+        c.own.has_pos = false;
+        c.passengers = riders;
+        c.passenger[2] = (record_t){.slot = 31, .state = STATE_HELP, .age = 9};
+        const size_t len = pkt_seal(b, &c, &g);
+        assert(len == 25u + 9u * riders && pkt_open(b, len, &g, &q) == PKT_OK && q.passengers == riders);
+        assert(!q.own.has_pos && q.own.state == STATE_HELP);
+        assert(riders < 3 || (q.passenger[2].slot == 31 && !q.passenger[2].has_pos && q.passenger[2].state == STATE_HELP));
+        assert(pkt_open(b, len - 1, &g, &q) == PKT_MALFORMED);
+    }
 
     /* the corners of the world, and a value just below zero */
     static const int32_t lats[] = {900000000, -900000000, -1, 0};
     static const int32_t lons[] = {1800000000, -1800000000, -1, 0};
     for (size_t i = 0; i < 4; i++) {
-        position_t c = p;
-        c.lat_e7 = lats[i];
-        c.lon_e7 = lons[i];
-        pkt_seal(b, &c, &g);
-        assert(pkt_open(b, sizeof(b), &g, &q) == PKT_OK);
-        assert(labs((long)q.lat_e7 - lats[i]) <= 108 && labs((long)q.lon_e7 - lons[i]) <= 215);
+        packet_t c = p;
+        c.own.lat_e7 = lats[i];
+        c.own.lon_e7 = lons[i];
+        const size_t len = pkt_seal(b, &c, &g);
+        assert(pkt_open(b, len, &g, &q) == PKT_OK);
+        assert(labs((long)q.own.lat_e7 - lats[i]) <= 108 && labs((long)q.own.lon_e7 - lons[i]) <= 215);
     }
 
     /* Every byte is covered: the clear header, the body and the tag. */
-    for (size_t i = 0; i < sizeof(b); i++) {
+    for (size_t i = 0; i < sizeof(want); i++) {
         pkt_seal(b, &p, &g);
         b[i] ^= 0x20;
-        const pkt_result_t r = pkt_open(b, sizeof(b), &g, &q);
+        const pkt_result_t r = pkt_open(b, sizeof(want), &g, &q);
         assert(i == 0 ? r == PKT_MALFORMED : i == 1 ? r == PKT_FOREIGN : r == PKT_FORGED);
     }
     /* Another group's key: its tag differs, and so would its authentication. */
@@ -156,11 +173,10 @@ static void test_codec(void) {
     group_key_t h;
     group_key_init(&h, other);
     pkt_seal(b, &p, &h);
-    assert(h.tag != g.tag && pkt_open(b, sizeof(b), &g, &q) == PKT_FOREIGN);
+    assert(h.tag != g.tag && pkt_open(b, sizeof(want), &g, &q) == PKT_FOREIGN);
     b[1] = g.tag; /* even wearing our tag */
-    assert(pkt_open(b, sizeof(b), &g, &q) == PKT_FORGED);
-    assert(pkt_open(b, sizeof(b) - 1, &g, &q) == PKT_MALFORMED);
-    printf("codec: the fixed vector, the world's corners, and every byte authenticated\n");
+    assert(pkt_open(b, sizeof(want), &g, &q) == PKT_FORGED);
+    printf("codec: the fixed vector, ages, passengers, the world's corners, and every byte authenticated\n");
 }
 
 /* ---- nmea ------------------------------------------------------------------------- */
@@ -257,7 +273,7 @@ static void test_tx_lead(void) {
     node_config_t slow = CFG;
     slow.tx_lead_us = 8000;
     node_t a, b;
-    uint8_t buf[32];
+    uint8_t buf[PKT_MAX_LEN];
     node_init(&a, &CFG, 12345);
     node_init(&b, &slow, 12345);
     int64_t at_a[40], at_b[40];
@@ -269,7 +285,7 @@ static void test_tx_lead(void) {
         const int64_t due = node_next_tx_us(&b, t);
         if (node_poll_tx(&b, t, buf, sizeof(buf))) {
             at_b[nb++] = t;
-            node_on_tx_done(&b, due + 8000 + phy_airtime_us(&b.cfg.phy, PKT_POSITION_LEN));
+            node_on_tx_done(&b, due + 8000 + phy_airtime_us(&b.cfg.phy, PKT_LEN(0)));
         }
         if (node_poll_tx(&a, t, buf, sizeof(buf))) at_a[na++] = t;
     }
@@ -283,7 +299,7 @@ static void test_tx_lead(void) {
 
 static void test_node_sends(void) {
     node_t n;
-    uint8_t b[32];
+    uint8_t b[PKT_MAX_LEN];
     group_key_t g;
     group_key_init(&g, KEY);
     node_init(&n, &CFG, 12345);
@@ -293,15 +309,17 @@ static void test_node_sends(void) {
 
     /* Then once a frame, from the frame after the time came, inside slot 1: a spacing on from the
      * frame's start plus its phase, which is under a spacing and differs from frame to frame. */
-    position_t p;
+    packet_t p;
     int sent = 0;
     int64_t t = T0, last_k = -1, phase_min = SEC, phase_max = 0;
     for (; t < 70 * SEC; t += 1000) {
         tick(&n, t);
         const size_t len = node_poll_tx(&n, t, b, sizeof(b));
         if (!len) continue;
-        assert(len == PKT_POSITION_LEN && pkt_open(b, len, &g, &p) == PKT_OK);
-        assert(p.counter == (uint16_t)sent && p.session == n.session && p.slot == 1 && (p.status & ST_GPS_OK));
+        assert(len == PKT_LEN(0) && pkt_open(b, len, &g, &p) == PKT_OK);
+        assert(p.count == (uint8_t)sent && p.session == n.session && p.own.slot == 1 && (p.own.facts & FACT_CURRENT));
+        /* it names the second of its slot, and its fix's age from there */
+        assert(p.sent == (uint32_t)((UTC0_MS * 1000 + (t - T0)) / 1000000) && p.own.age <= 1);
         const int64_t utc = UTC0_MS * 1000 + (t - T0), k = utc / 2000000, phase = utc % 2000000 - 400000;
         assert(last_k < 0 ? k == (UTC0_MS * 1000) / 2000000 + 1 : k == last_k + 1);
         assert(phase >= 0 && phase < 400000 + 1000);
@@ -321,10 +339,10 @@ static void test_node_sends(void) {
     assert(node_poll_tx(&n, due + 3000, b, sizeof(b)) == 0 && n.tx_late == 1);
     /* on whole milliseconds again, so the fixes keep coming on the second */
     for (t = (due / 1000 + 4) * 1000; (due = node_next_tx_us(&n, t)) > t + 1000; t += 1000) tick(&n, t);
-    assert(node_poll_tx(&n, due, b, sizeof(b)) == PKT_POSITION_LEN);
+    assert(node_poll_tx(&n, due, b, sizeof(b)) == PKT_LEN(0));
     /* E0: the radio's TxDone 1.5 ms after the slot's moment and the packet's airtime is RF that
      * started 1.5 ms late, as the status says. */
-    const int64_t air = phy_airtime_us(&n.cfg.phy, PKT_POSITION_LEN);
+    const int64_t air = phy_airtime_us(&n.cfg.phy, PKT_LEN(0));
     char e0[512];
     node_on_tx_done(&n, due + air + 1500);
     node_format_status(&n, due, e0, sizeof(e0));
@@ -334,34 +352,35 @@ static void test_node_sends(void) {
     node_t rx = n;
     rx.cfg.slot = 2;
     /* the packet taken when a poll found it: a poll's time is no measure, and none is said ... */
-    assert(node_on_packet(&rx, b, PKT_POSITION_LEN, -80, 0, due + air + 103000));
+    assert(node_on_packet(&rx, b, PKT_LEN(0), -80, 0, due + air + 103000));
     node_format_rider(&rx, 1, due + air + 103000, e0, sizeof(e0));
     assert(strstr(e0, " offset=?"));
     /* ... until its RxDone, as the radio's interrupt stamped it */
     node_on_rx_done(&rx, due + air + 100000);
     node_format_rider(&rx, 1, due + air + 103000, e0, sizeof(e0));
-    assert(strstr(e0, " offset=100000/100000/100000"));
+    assert(strstr(e0, " offset=100000/100000/100000 late=100000 "));
     t = due;
 
-    /* The fix is lost: the held position goes on, with its old time and without GPS_OK. */
+    /* The fix is lost: the held position goes on, with its true age and no longer "current". */
     t = (t / SEC + 1) * SEC;
     gnss_fix_t lost = fix_at(UTC0_MS + (t - T0) / 1000, false);
     node_on_fix(&n, &lost, t);
     const int64_t last_valid = UTC0_MS + (t - T0) / 1000 - 1000;
     for (const int64_t end = t + 10 * SEC; t < end; t += 1000) {
         if (node_poll_tx(&n, t, b, sizeof(b))) {
-            assert(pkt_open(b, PKT_POSITION_LEN, &g, &p) == PKT_OK && !(p.status & ST_GPS_OK));
-            assert(p.fix_time == (uint16_t)(last_valid / 1000));
+            assert(pkt_open(b, PKT_LEN(0), &g, &p) == PKT_OK && !(p.own.facts & FACT_CURRENT));
+            assert(p.sent - age_seconds(p.own.age) == (uint32_t)(last_valid / 1000));
         }
     }
 
-    /* The counter never wraps within a session: its last value, then a new session. */
-    n.counter = 0xFFFF;
-    const uint32_t before = n.session;
+    /* The nonce never repeats: a clock stepped back, which could name a second again, draws a new
+     * session. */
+    const uint16_t before = n.session;
     while (!node_poll_tx(&n, t, b, sizeof(b))) t += 1000;
-    assert(pkt_open(b, PKT_POSITION_LEN, &g, &p) == PKT_OK && p.counter == 0xFFFF && p.session == before);
+    assert(pkt_open(b, PKT_LEN(0), &g, &p) == PKT_OK && p.session == before);
+    n.last_sent += 3600;
     while (!node_poll_tx(&n, t, b, sizeof(b))) t += 1000;
-    assert(pkt_open(b, PKT_POSITION_LEN, &g, &p) == PKT_OK && p.counter == 0 && p.session != before);
+    assert(pkt_open(b, PKT_LEN(0), &g, &p) == PKT_OK && p.session != before);
 
     /* Without a key, nothing goes out at all: v1 has no clear text. */
     node_config_t bare = CFG;
@@ -471,7 +490,7 @@ static void test_node_duty(void) {
     cfg.duty_permille = 1;
     cfg.interval_ms = 1000;
     node_t n;
-    uint8_t b[32];
+    uint8_t b[PKT_MAX_LEN];
     node_init(&n, &cfg, 1);
     int sent = 0;
     for (int64_t t = T0; t < 30 * 60 * SEC; t += 1000) {
@@ -510,100 +529,102 @@ static void test_node_duty(void) {
     printf("node: the duty cycle stops it at the limit, and the budget returns after the hour\n");
 }
 
-static size_t packet(uint8_t *b, const group_key_t *g, uint8_t slot, uint32_t session, uint16_t counter,
-                     uint16_t fix_time) {
-    const position_t p = {.slot = slot, .session = session, .counter = counter, .fix_time = fix_time,
-                          .lat_e7 = 471500000, .lon_e7 = 95100000, .speed_kmh = 33, .course2 = 10,
-                          .status = ST_GPS_OK, .help_heard = HELP_HEARD_NONE};
+/* What rider slot would send in the second sent: its fix age seconds old, in session and count. */
+static size_t packet(uint8_t *b, const group_key_t *g, uint8_t slot, uint16_t session, uint32_t sent, uint8_t count,
+                     uint8_t age) {
+    const packet_t p = {.session = session, .sent = sent, .count = count,
+                        .own = {.slot = slot, .has_pos = true, .lat_e7 = 471500000, .lon_e7 = 95100000, .age = age,
+                                .facts = FACT_CURRENT},
+                        .speed_kmh = 33, .course2 = 10, .sats = 9};
     return pkt_seal(b, &p, g);
 }
 
 static void test_node_hears(void) {
     node_t n;
-    uint8_t b[PKT_POSITION_LEN];
+    uint8_t b[PKT_MAX_LEN];
     char line[400];
     group_key_t g, other;
     group_key_init(&g, KEY);
     uint8_t other_key[16] = {0};
     group_key_init(&other, other_key);
     node_init(&n, &CFG, 7);
-    const int64_t utc0 = 1792670405000ll; /* 12:00:05, 64197 modulo 65536 */
+    const int64_t utc0 = 1792670405000ll; /* 12:00:05 */
+    const uint32_t s0 = (uint32_t)(utc0 / 1000);
     gnss_fix_t f = fix_at(utc0, true);
     node_on_fix(&n, &f, 0);
 
-    /* Rider 2, its fix 5 s before ours, heard 3 s after our fix. */
-    assert(node_on_packet(&n, b, packet(b, &g, 2, 100, 10, 64192), -71, 33, 3 * SEC));
+    /* Rider 2, heard 3 s after our fix, its own fix 5 s old then. */
+    assert(node_on_packet(&n, b, packet(b, &g, 2, 100, s0 + 3, 10, 5), -71, 33, 3 * SEC));
     node_format_rider(&n, 2, 3 * SEC, line, sizeof(line));
-    assert(strstr(line, "fix_age=8 ") && strstr(line, "lat=47.15000") && strstr(line, "rssi=-71 "));
+    assert(strstr(line, " pos=1 lat=47.15000") && strstr(line, " fix_age=5 ") && strstr(line, "rssi=-71 "));
     assert(strstr(line, "snr=8.25 ") && strstr(line, "speed=33 course=20 gps=1"));
+    assert(strstr(line, " state=0 via=- direct=0.0 ") && strstr(line, " sats=9"));
+    /* and three seconds on with nothing new, its fix is three seconds older */
+    node_format_rider(&n, 2, 6 * SEC, line, sizeof(line));
+    assert(strstr(line, " fix_age=8 ") && strstr(line, " heard=3.0 "));
 
-    /* Delivered share: counters 10, 11, 13 make three of four; 11 again is a repeat. */
-    assert(node_on_packet(&n, b, packet(b, &g, 2, 100, 11, 64194), -70, 30, 5 * SEC));
-    assert(!node_on_packet(&n, b, packet(b, &g, 2, 100, 11, 64194), -70, 30, 5 * SEC) && n.rx_replay == 1);
-    assert(node_on_packet(&n, b, packet(b, &g, 2, 100, 13, 64198), -70, 30, 7 * SEC));
+    /* A held position beyond two minutes old comes with its age in whole minutes, rounded down: its
+     * fix must not seem to creep forward and jump back with each of them. Rider 5 lost its fix at
+     * s0 - 200; we never place it earlier than that, never later than we already knew, and within
+     * a few minutes to the second or two. */
+    uint32_t placed = s0;
+    for (uint32_t at = 0; at < 200; at += 7) {
+        packet_t held = {.session = 1, .sent = s0 + at, .count = (uint8_t)at,
+                         .own = {.slot = 5, .has_pos = true, .lat_e7 = 1, .lon_e7 = 2, .age = age_code(200 + at)}};
+        assert(node_on_packet(&n, b, pkt_seal(b, &held, &g), -70, 30, (int64_t)at * SEC));
+        assert(n.riders[5].fix_utc <= placed && n.riders[5].fix_utc >= s0 - 200);
+        placed = n.riders[5].fix_utc;
+    }
+    assert(placed <= s0 - 198);
+    memset(&n.riders[5], 0, sizeof(n.riders[5]));
+
+    /* Delivered share: counts 10, 11, 13 make three of four; 11 again is a repeat. */
+    assert(node_on_packet(&n, b, packet(b, &g, 2, 100, s0 + 5, 11, 0), -70, 30, 5 * SEC));
+    assert(!node_on_packet(&n, b, packet(b, &g, 2, 100, s0 + 5, 11, 0), -70, 30, 5 * SEC) && n.rx_replay == 1);
+    assert(node_on_packet(&n, b, packet(b, &g, 2, 100, s0 + 7, 13, 0), -70, 30, 7 * SEC));
     node_format_rider(&n, 2, 7 * SEC, line, sizeof(line));
     assert(strstr(line, "rx=3/4"));
-    /* It restarted: a new session, a fresh fix, and its run starts again. */
-    assert(node_on_packet(&n, b, packet(b, &g, 2, 200, 0, 64200), -70, 30, 9 * SEC));
+    /* Two packets in one second are told apart by their counts, in order only. */
+    assert(node_on_packet(&n, b, packet(b, &g, 2, 100, s0 + 7, 14, 0), -70, 30, 7 * SEC));
+    assert(!node_on_packet(&n, b, packet(b, &g, 2, 100, s0 + 7, 13, 0), -70, 30, 7 * SEC) && n.rx_replay == 2);
+    /* It restarted: a new session, and its run starts again. */
+    assert(node_on_packet(&n, b, packet(b, &g, 2, 200, s0 + 9, 0, 0), -70, 30, 9 * SEC));
     node_format_rider(&n, 2, 9 * SEC, line, sizeof(line));
     assert(strstr(line, "rx=1/1"));
-    /* The old session played back: its fix is older than the one we hold, so it is not taken. */
-    assert(!node_on_packet(&n, b, packet(b, &g, 2, 100, 14, 64199 - 3), -70, 30, 9 * SEC) && n.rx_replay == 2);
-
-    /* A rider that restarted within the second: both sessions' packets are genuine, and played
-     * back in turn, each would look like a new session to a receiver that remembered only the
-     * last one. Two hundred of them, and none is taken. */
-    node_t twice;
-    node_init(&twice, &CFG, 9);
-    node_on_fix(&twice, &f, 0);
-    uint8_t rec[4][PKT_POSITION_LEN];
-    packet(rec[0], &g, 6, 300, 10, 64197);
-    packet(rec[1], &g, 6, 300, 11, 64198);
-    packet(rec[2], &g, 6, 400, 0, 64198);
-    packet(rec[3], &g, 6, 400, 1, 64199);
-    for (int k = 0; k < 4; k++) assert(node_on_packet(&twice, rec[k], PKT_POSITION_LEN, -70, 30, k * SEC));
-    for (int k = 0; k < 200; k++) {
-        assert(!node_on_packet(&twice, rec[k % 2 ? 3 : 1], PKT_POSITION_LEN, -70, 30, (5 + k) * SEC));
-    }
-    assert(twice.rx_replay == 200);
-
-    /* A fix stamped in the future (its clock is wrong) shows as such, not as fresh. */
-    node_on_packet(&n, b, packet(b, &g, 3, 1, 0, 64197 + 20), -80, 0, 2 * SEC);
-    node_format_rider(&n, 3, 2 * SEC, line, sizeof(line));
-    assert(strstr(line, "fix_age=-18 "));
-    /* 65000 s ago reads as 536 s ahead: past half its range the nearest wins (RFC 1982). */
-    node_on_packet(&n, b, packet(b, &g, 4, 1, 0, (uint16_t)(64197 - 65000)), -80, 0, 0);
-    node_format_rider(&n, 4, 0, line, sizeof(line));
-    assert(strstr(line, "fix_age=65000 ") == NULL && strstr(line, "fix_age=-536 "));
+    /* The old session played back: it names an earlier second than the last we took. */
+    assert(!node_on_packet(&n, b, packet(b, &g, 2, 100, s0 + 8, 15, 0), -70, 30, 9 * SEC) && n.rx_replay == 3);
+    /* A recording of a rider we never heard, played ten seconds late: genuine, and refused by its
+     * time alone, where v3 took any first packet of a rider. */
+    assert(!node_on_packet(&n, b, packet(b, &g, 0, 7, s0 + 1, 0, 0), -70, 30, 11 * SEC) && n.rx_replay == 4);
+    assert(!n.riders[0].known);
 
     /* Another group, a forgery, our own slot and noise are counted and kept out. */
-    assert(!node_on_packet(&n, b, packet(b, &other, 5, 1, 0, 64197), -80, 0, 0) && n.rx_foreign == 1);
-    packet(b, &g, 5, 1, 0, 64197);
+    assert(!node_on_packet(&n, b, packet(b, &other, 3, 1, s0, 0, 0), -80, 0, 0) && n.rx_foreign == 1);
+    packet(b, &g, 3, 1, s0, 0, 0);
     b[12] ^= 0x01;
-    assert(!node_on_packet(&n, b, PKT_POSITION_LEN, -80, 0, 0) && n.rx_forged == 1);
-    assert(!node_on_packet(&n, b, packet(b, &g, 1, 1, 0, 64197), -80, 0, 0) && n.rx_clash == 1);
+    assert(!node_on_packet(&n, b, PKT_LEN(0), -80, 0, 0) && n.rx_forged == 1);
+    assert(!node_on_packet(&n, b, packet(b, &g, 1, 1, s0, 0, 0), -80, 0, 0) && n.rx_clash == 1);
     assert(!node_on_packet(&n, b, 5, -80, 0, 0) && n.rx_bad == 1);
-    assert(!n.riders[5].known && !n.riders[1].known);
+    assert(!n.riders[3].known && !n.riders[1].known);
 
     /* Without a time of our own, an age cannot be told: it says so ... */
     node_t blind;
     node_init(&blind, &CFG, 7);
-    node_on_packet(&blind, b, packet(b, &g, 2, 1, 0, 64192), -71, 33, 0);
+    node_on_packet(&blind, b, packet(b, &g, 2, 1, s0, 0, 5), -71, 33, 0);
     node_format_rider(&blind, 2, 0, line, sizeof(line));
     assert(strstr(line, "fix_age=? "));
     /* ... until the phone gives it a calendar: its UTC at our clock's 0, 12:00:05, give or take
-     * 250 ms. The fix of 12:00:00 heard at 0 is 5 s old then, with no new packet; the calendar is
-     * the phone's, apart from any GNSS time, and no slot opens on it. */
+     * 250 ms. The fix of 12:00:00 is 5 s old then, with no new packet; the calendar is the
+     * phone's, apart from any GNSS time, and no slot opens on it. */
     node_set_phone_time(&blind, 0, 1792670405000000ll, 250000);
     node_format_rider(&blind, 2, 0, line, sizeof(line));
     assert(strstr(line, " fix_age=5 "));
     node_format_status(&blind, 0, line, sizeof(line));
     assert(strstr(line, " time=none ") && strstr(line, " cal=phone/250 "));
-    uint8_t out[PKT_POSITION_LEN];
+    uint8_t out[PKT_MAX_LEN];
     assert(node_next_tx_us(&blind, 0) == INT64_MAX && node_poll_tx(&blind, 3 * SEC, out, sizeof(out)) == 0);
     /* Its GNSS comes, and says the phone was 2 s ahead: at our clock's 10 s it is 12:00:13, not
-     * 12:00:15. The fix heard at 0 is told by the better calendar now, the moment it was heard
-     * meaning the same: 12:00:03 then, so 3 s old there, 13 s at 10 s. */
+     * 12:00:15. The fix is told by the better calendar now: 13 s old. */
     gnss_fix_t late = fix_at(1792670413000ll, false);
     node_on_fix(&blind, &late, 10 * SEC);
     node_format_rider(&blind, 2, 10 * SEC, line, sizeof(line));
@@ -611,146 +632,282 @@ static void test_node_hears(void) {
     node_format_status(&blind, 10 * SEC, line, sizeof(line));
     assert(strstr(line, " time=nmea ") && strstr(line, " cal=nmea/"));
     node_format_status(&n, 9 * SEC, line, sizeof(line));
-    assert(starts(line, "slot=1 slots=4 keyed=1 group=86c91c92 mode=7/250 fix=0 ") && strstr(line, " riders=3 "));
+    assert(starts(line, "slot=1 slots=4 keyed=1 group=86c91c92 mode=7/250 fix=0 ") && strstr(line, " riders=1 "));
     assert(strstr(line, " time=nmea err=1.") && strstr(line, " budget=183.5 lag=? "));
-    assert(strstr(line, " foreign=1 forged=1 replay=2 clash=1"));
+    assert(strstr(line, " foreign=1 forged=1 replay=4 clash=1"));
     printf("node: ages honest, the delivered share, and forgeries, replays and strangers kept out\n");
 }
 
-static void test_node_help(void) {
-    uint8_t b[PKT_POSITION_LEN];
+/* Riders for a while: each fixes on the second and sends in its slot, heard at once by those
+ * hears[listener][sender] says. */
+static void ride(node_t *v[], int count, const bool hears[4][4], int64_t from, int64_t to) {
+    uint8_t b[PKT_MAX_LEN];
+    for (int64_t t = from; t < to; t += 1000) {
+        for (int i = 0; i < count; i++) {
+            tick(v[i], t);
+            const size_t len = node_poll_tx(v[i], t, b, sizeof(b));
+            for (int j = 0; len && j < count; j++) {
+                if (j != i && hears[j][i]) node_on_packet(v[j], b, len, -70, 30, t);
+            }
+        }
+    }
+}
+
+/* Passengers (12, 2026-11-14): a rider in the middle carries the two ends to each other. */
+static void test_node_passengers(void) {
+    uint8_t b[PKT_MAX_LEN];
     char line[400];
-    position_t p;
+    packet_t p;
     group_key_t g;
     group_key_init(&g, KEY);
-    node_t a, c, w;
-    node_config_t ca = CFG, cc = CFG, cw = CFG;
-    ca.slot = 1;
-    cc.slot = 2;
-    cw.slot = 3;
-    node_init(&a, &ca, 1);
-    node_init(&c, &cc, 2);
-    node_init(&w, &cw, 5);
-    /* A asks for help. C hears it, and answers in its next packet; A hears the answer, and so does
-     * W, which tells its phone who has answered A. */
-    node_set_help(&a, true);
-    int64_t t = T0;
-    size_t len = 0;
-    for (; !len; t += 1000) {
-        tick(&a, t);
-        tick(&c, t);
-        len = node_poll_tx(&a, t, b, sizeof(b));
-    }
-    assert(pkt_open(b, len, &g, &p) == PKT_OK && (p.status & ST_HELP) && p.help_heard == HELP_HEARD_NONE);
-    assert(node_on_packet(&c, b, len, -80, 0, t) && node_on_packet(&w, b, len, -80, 0, t));
-    for (len = 0; !len; t += 1000) {
-        tick(&c, t);
-        len = node_poll_tx(&c, t, b, sizeof(b));
-    }
-    assert(pkt_open(b, len, &g, &p) == PKT_OK && !(p.status & ST_HELP) && p.help_heard == 1);
-    assert(p.heard_call == a.help_call);
-    /* A new answerer is news, for the phone at once rather than with the next status: to A of its
-     * own call, to W of A's. The same answer heard again is none. */
-    assert(node_on_packet(&a, b, len, -80, 0, t) && a.help_heard_by == 1u << 2 && a.help_news);
-    a.help_news = false;
-    assert(node_on_packet(&w, b, len, -80, 0, t) && w.answered_news == 1);
-    w.answered_news = -1;
-    for (len = 0; !len; t += 1000) {
-        tick(&c, t);
-        len = node_poll_tx(&c, t, b, sizeof(b));
-    }
-    assert(node_on_packet(&a, b, len, -80, 0, t) && !a.help_news);
-    node_format_rider(&w, 1, t, line, sizeof(line));
-    assert(strstr(line, " help=1 stopped=0 answered=2 "));
-    /* An answer to another rider's call is not one to ours. */
-    const position_t other = {.slot = 4, .session = 77, .counter = 0, .fix_time = 64197, .lat_e7 = 1, .lon_e7 = 1,
-                              .status = ST_GPS_OK, .help_heard = 5, .heard_call = a.help_call};
-    pkt_seal(b, &other, &g);
-    assert(node_on_packet(&a, b, PKT_POSITION_LEN, -80, 0, t) && a.help_heard_by == 1u << 2);
-    node_format_status(&a, t, line, sizeof(line));
-    assert(strstr(line, " help=1 heard=1 "));
-    /* Called off and on again, it starts afresh: C's next packet, sent before C has heard the new
-     * call, answers the one called off and does not count; C's answer after hearing it does. */
-    node_set_help(&a, false);
-    node_set_help(&a, true);
-    assert(a.help_heard_by == 0);
-    for (len = 0; !len; t += 1000) {
-        tick(&c, t);
-        len = node_poll_tx(&c, t, b, sizeof(b));
-    }
-    assert(node_on_packet(&a, b, len, -80, 0, t) && a.help_heard_by == 0);
-    for (len = 0; !len; t += 1000) {
-        tick(&a, t);
-        len = node_poll_tx(&a, t, b, sizeof(b));
-    }
-    /* W too: the new call has no answer yet. */
-    assert(node_on_packet(&c, b, len, -80, 0, t) && node_on_packet(&w, b, len, -80, 0, t));
-    node_format_rider(&w, 1, t, line, sizeof(line));
-    assert(strstr(line, " help=1 stopped=0 answered=- "));
-    for (len = 0; !len; t += 1000) {
-        tick(&c, t);
-        len = node_poll_tx(&c, t, b, sizeof(b));
-    }
-    assert(node_on_packet(&a, b, len, -80, 0, t) && a.help_heard_by == 1u << 2);
-    assert(node_on_packet(&w, b, len, -80, 0, t));
-    node_format_rider(&w, 1, t, line, sizeof(line));
-    assert(strstr(line, " help=1 stopped=0 answered=2 "));
-    /* A new key is another group: no one in it has answered yet. */
-    static const uint8_t key2[16] = {0x0f, 0x0e};
-    node_set_key(&a, key2);
-    node_format_status(&a, t, line, sizeof(line));
-    assert(strstr(line, " help=1 heard=0 "));
+    node_t far, mid, end;
+    node_t *v[] = {&far, &mid, &end};
+    node_config_t c = CFG;
+    c.passengers = 1;
+    c.slot = 0;
+    node_init(&far, &c, 1);
+    c.slot = 1;
+    node_init(&mid, &c, 2);
+    c.slot = 2;
+    node_init(&end, &c, 3);
+    /* the middle hears both, and each end only the middle */
+    static const bool BRIDGE[4][4] = {{0, 1, 0}, {1, 0, 1}, {0, 1, 0}};
+    int64_t t = T0 + 20 * SEC;
+    ride(v, 3, BRIDGE, T0, t);
+    /* Each end has the other, told by the middle, and no older than the middle's turn allows: one
+     * passenger a packet and two riders to carry is every second frame, so 6 s at most. */
+    const uint32_t now_s = (uint32_t)((UTC0_MS * 1000 + (t - T0)) / 1000000);
+    assert(end.riders[0].known && end.riders[0].via == 1 && !end.riders[0].heard);
+    assert(far.riders[2].known && far.riders[2].via == 1 && now_s - far.riders[2].as_of <= 6);
+    node_format_rider(&end, 0, t, line, sizeof(line));
+    assert(strstr(line, " pos=1 lat=47.14100") && strstr(line, " via=1 direct=- ") && strstr(line, " speed=? course=? "));
+    /* Each sees itself in the packets of those who hear it: its own packets get out. */
+    assert(far.echo_by == 1u << 1 && end.echo_by == 1u << 1 && far.echo_news && mid.echo_by == (1u << 0 | 1u << 2));
 
-    /* Two calling at once are answered in turn; a call not heard for a minute is not answered. */
-    node_t q;
-    node_init(&q, &cc, 3);
-    tick(&q, T0);
-    const position_t call1 = {.slot = 1, .session = 9, .counter = 0, .fix_time = 64197, .lat_e7 = 1, .lon_e7 = 1,
-                              .status = ST_HELP | ST_GPS_OK, .call = 1, .help_heard = HELP_HEARD_NONE};
-    position_t call5 = call1;
-    call5.slot = 5;
-    pkt_seal(b, &call1, &g);
-    assert(node_on_packet(&q, b, PKT_POSITION_LEN, -80, 0, T0));
-    pkt_seal(b, &call5, &g);
-    assert(node_on_packet(&q, b, PKT_POSITION_LEN, -80, 0, T0));
-    int answered[2] = {0, 0}, n_sent = 0;
-    for (t = T0; n_sent < 4; t += 1000) {
-        tick(&q, t);
-        if (!(len = node_poll_tx(&q, t, b, sizeof(b)))) continue;
-        assert(pkt_open(b, len, &g, &p) == PKT_OK && (p.help_heard == 1 || p.help_heard == 5));
-        answered[p.help_heard == 5]++;
-        n_sent++;
+    /* The far end calls for help. The middle's next three packets carry that, whoever's turn it
+     * was, and the other end has it within two frames, told to its phone at once. */
+    node_set_state(&far, STATE_HELP);
+    end.state_news = -1;
+    int carried = 0;
+    for (const int64_t until = t + 8 * SEC; t < until; t += 1000) {
+        for (int i = 0; i < 3; i++) {
+            tick(v[i], t);
+            const size_t len = node_poll_tx(v[i], t, b, sizeof(b));
+            for (int j = 0; len && j < 3; j++) {
+                if (j != i && BRIDGE[j][i]) node_on_packet(v[j], b, len, -70, 30, t);
+            }
+            if (len && i == 1 && mid.riders[0].rec.state == STATE_HELP && carried < 3) {
+                assert(pkt_open(b, len, &g, &p) == PKT_OK && p.passengers == 1);
+                assert(p.passenger[0].slot == 0 && p.passenger[0].state == STATE_HELP);
+                carried++;
+                assert(end.riders[0].rec.state == STATE_HELP && end.state_news == 0);
+            }
+        }
     }
-    assert(answered[0] == 2 && answered[1] == 2);
-    for (; t < T0 + 62 * SEC; t += 1000) tick(&q, t), node_poll_tx(&q, t, b, sizeof(b));
-    for (len = 0; !len; t += 1000) {
-        tick(&q, t);
-        len = node_poll_tx(&q, t, b, sizeof(b));
-    }
-    assert(pkt_open(b, len, &g, &p) == PKT_OK && p.help_heard == HELP_HEARD_NONE);
+    assert(carried == 3);
+    /* The caller sees its call carried: the state it is in now, not the one before. */
+    node_format_status(&far, t, line, sizeof(line));
+    assert(strstr(line, " heard=1 state=1 echo=") && !strstr(line, " echo=- "));
 
-    /* Stopped: under 5 km/h for a minute; not at 7 km/h after that; moving again over 10 km/h. */
-    node_t s;
-    node_init(&s, &CFG, 4);
+    /* Only the state it is in now counts as carried: a rider still telling of it as it was before
+     * the call must not tell its rider that the call is out. */
+    node_t solo;
+    node_init(&solo, &c, 4); /* slot 2 */
     gnss_fix_t f = fix_at(UTC0_MS, true);
-    f.speed_kmh10 = 20;
-    for (t = T0; t < T0 + 59 * SEC; t += SEC) node_on_fix(&s, &f, t);
-    assert(!s.stopped);
-    node_on_fix(&s, &f, T0 + 60 * SEC);
-    assert(s.stopped);
-    f.speed_kmh10 = 70;
-    node_on_fix(&s, &f, T0 + 61 * SEC);
-    assert(s.stopped);
-    f.speed_kmh10 = 110;
-    node_on_fix(&s, &f, T0 + 62 * SEC);
-    assert(!s.stopped);
-    printf("node: a call for help answered by those who hear it, each in turn; stopped after a minute\n");
+    node_on_fix(&solo, &f, T0);
+    node_set_state(&solo, STATE_HELP);
+    packet_t tells = {.session = 1, .sent = (uint32_t)(UTC0_MS / 1000), .own = {.slot = 3}, .passengers = 1,
+                      .passenger = {{.slot = 2, .state = STATE_NORMAL}}};
+    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, T0) && solo.echo_by == 0 && !solo.echo_news);
+    tells.count = 1;
+    tells.passenger[0].state = STATE_HELP;
+    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, T0) && solo.echo_by == 1u << 3 && solo.echo_news);
+
+    /* A record never gets younger on its way: an older one of the caller, from a rider who met it
+     * a minute ago, does not put the newer one out; a later one does. */
+    const uint32_t s = (uint32_t)((UTC0_MS * 1000 + (t - T0)) / 1000000);
+    packet_t old = {.session = 9, .sent = s, .count = 0, .own = {.slot = 3, .has_pos = true, .age = 0}, .passengers = 1,
+                    .passenger = {{.slot = 0, .has_pos = true, .age = 60, .state = STATE_NORMAL}}};
+    assert(node_on_packet(&end, b, pkt_seal(b, &old, &g), -70, 30, t));
+    assert(end.riders[0].rec.state == STATE_HELP && end.riders[0].via == 1);
+    old.count = 1;
+    old.passenger[0].age = 0;
+    old.passenger[0].state = STATE_STOP_NOW;
+    old.sent = s + 2;
+    assert(node_on_packet(&end, b, pkt_seal(b, &old, &g), -70, 30, t + 2 * SEC));
+    assert(end.riders[0].rec.state == STATE_STOP_NOW && end.riders[0].via == 3);
+
+    /* The far end goes out of reach. Its last record is carried on for ten minutes, growing older
+     * honestly, and then no longer: a rider long gone takes no room from the present ones. */
+    static const bool CUT[4][4] = {{0, 0, 0}, {0, 0, 1}, {0, 1, 0}};
+    ride(v, 3, CUT, t, t + 300 * SEC);
+    t += 300 * SEC;
+    int late_carried = 0;
+    for (const int64_t until = t + 400 * SEC; t < until; t += 1000) {
+        for (int i = 1; i < 3; i++) {
+            tick(v[i], t);
+            const size_t len = node_poll_tx(v[i], t, b, sizeof(b));
+            if (!len) continue;
+            node_on_packet(v[3 - i], b, len, -70, 30, t);
+            assert(pkt_open(b, len, &g, &p) == PKT_OK);
+            if (i == 1 && p.passengers && p.passenger[0].slot == 0) {
+                /* as it said then: its age from that second, never from when it was passed on */
+                const uint32_t said = mid.riders[0].as_of;
+                assert(p.sent - age_seconds(p.passenger[0].age) - said < 60 && p.sent - said <= 600);
+                late_carried++;
+            }
+        }
+    }
+    /* every third packet of the middle's, which has three riders to carry by now, for the five
+     * minutes that were left of the ten */
+    assert(late_carried > 40 && late_carried < 60 && mid.riders[0].known);
+    printf("node: passengers carry the ends to each other, a changed state first, never younger, and not for ever\n");
+}
+
+/* The send rule (12, section 2): a board speaks when it has something to say. */
+static void test_send_rule(void) {
+    uint8_t b[PKT_MAX_LEN];
+    node_t n;
+    node_config_t c = CFG;
+    c.beat = 3;
+    c.move_m = 10;
+    c.passengers = 1;
+    node_init(&n, &c, 5);
+    int64_t t = T0;
+    int32_t north = 0;
+    int course = 2700;
+    /* runs for some frames at this place and heading; how many packets went */
+    #define FRAMES(count) __extension__ ({ \
+        int sent_ = 0; \
+        for (const int64_t until_ = t + (count) * 2 * SEC; t < until_; t += 1000) { \
+            if (t % SEC == 0) { \
+                gnss_fix_t f_ = fix_at(UTC0_MS + (t - T0) / 1000, true); \
+                f_.lat_e7 += north; \
+                f_.course_deg10 = course; \
+                node_on_fix(&n, &f_, t); \
+            } \
+            sent_ += node_poll_tx(&n, t, b, sizeof(b)) != 0; \
+        } \
+        sent_; })
+    /* Standing: its first position, then one packet in eight frames; the rest of its slots pass in
+     * silence, counted as such. */
+    assert(FRAMES(1) == 1);
+    assert(FRAMES(32) == 4 && n.tx_quiet == 28);
+    /* on to just after its next heartbeat, which comes within eight frames */
+    int waited = 0;
+    while (FRAMES(1) == 0) assert(++waited < 8);
+    /* 6 m is a GNSS's wander: nothing. 12 m is a move: the next slot says so, once. */
+    north = 540;
+    assert(FRAMES(3) == 0);
+    north = 1080;
+    assert(FRAMES(1) == 1 && FRAMES(3) == 0);
+    /* A turn of 40 degrees, 6 m on. */
+    north = 1620;
+    course = 3100;
+    assert(FRAMES(1) == 1 && FRAMES(3) == 0);
+    /* A change of state goes out in three slots running, so that one loss does not hide it. */
+    node_set_state(&n, STATE_STOP_SOON);
+    assert(FRAMES(3) == 3 && FRAMES(2) == 0);
+    /* And another rider's changed state, which it carries: three slots again. */
+    group_key_t g;
+    group_key_init(&g, KEY);
+    packet_t other = {.session = 1, .sent = (uint32_t)((UTC0_MS * 1000 + (t - T0)) / 1000000), .own = {.slot = 3, .state = STATE_HELP}};
+    assert(node_on_packet(&n, b, pkt_seal(b, &other, &g), -70, 30, t));
+    assert(FRAMES(3) == 3 && FRAMES(2) == 0);
+    #undef FRAMES
+    printf("node: silent while nothing changes; a move, a turn, a state and a heartbeat each speak\n");
+}
+
+/* Time from the group (12, 2026-11-14): a board without PPS sets its clock by the packets of one
+ * with it. Ten riders every 2 s leave 74 ms for a clock; the follower's NMEA is good to 100 ms and
+ * comes 30 ms late, so alone it must stay silent. */
+static void test_time_from_group(void) {
+    uint8_t b[PKT_MAX_LEN];
+    char line[600];
+    packet_t p;
+    group_key_t g;
+    group_key_init(&g, KEY);
+    node_config_t c = CFG;
+    c.slots = 10;
+    c.nmea_err_us = 100000;
+    c.slot = 2;
+    node_t lead, follower, third;
+    node_init(&lead, &c, 1);
+    c.slot = 1;
+    node_init(&follower, &c, 2);
+    c.slot = 3;
+    node_init(&third, &c, 3);
+    const int64_t air = phy_airtime_us(&c.phy, PKT_LEN(0));
+    int64_t t = T0, worst = 0;
+    bool lead_on = true;
+    int lead_sent = 0;
+    #define TRUE_UTC(at) (UTC0_MS * 1000 + ((at) - T0))
+    #define RUN(seconds, step) \
+        for (const int64_t until_ = t + (seconds) * SEC; t < until_; t += (step)) { \
+            if (t % SEC == 0) node_on_pps(&lead, t); \
+            if (t % SEC == 100000) { gnss_fix_t f_ = fix_at((TRUE_UTC(t) - 100000) / 1000, true); node_on_fix(&lead, &f_, t); } \
+            if (t % SEC == 30000) { \
+                gnss_fix_t f_ = fix_at((TRUE_UTC(t) - 30000) / 1000, true); \
+                node_on_fix(&follower, &f_, t); \
+                node_on_fix(&third, &f_, t); \
+            } \
+            size_t len_ = lead_on ? node_poll_tx(&lead, t, b, sizeof(b)) : 0; \
+            if (len_) { \
+                lead_sent++; \
+                assert(pkt_open(b, len_, &g, &p) == PKT_OK && (p.own.facts & FACT_TIME_PRECISE)); \
+                if (node_on_packet(&follower, b, len_, -70, 30, t + air)) node_on_rx_done(&follower, t + air); \
+            } \
+            len_ = node_poll_tx(&follower, t, b, sizeof(b)); \
+            if (len_) { \
+                /* it never calls its own time precise, and the third rider hears nobody else */ \
+                assert(pkt_open(b, len_, &g, &p) == PKT_OK && !(p.own.facts & FACT_TIME_PRECISE)); \
+                if (node_on_packet(&lead, b, len_, -70, 30, t + air)) node_on_rx_done(&lead, t + air); \
+                if (node_on_packet(&third, b, len_, -70, 30, t + air)) node_on_rx_done(&third, t + air); \
+            } \
+            int64_t utc_, err_; \
+            if (follower.time == TIME_GROUP && node_utc_us(&follower, t, &utc_, &err_) && llabs(utc_ - TRUE_UTC(t)) > worst) { \
+                worst = llabs(utc_ - TRUE_UTC(t)); \
+            } \
+        }
+    /* Before the leader's third packet nothing is set, and the follower keeps silent, unsure. */
+    while (lead_sent < 2) { RUN(1, 250) }
+    assert(follower.time == TIME_NMEA && follower.sent == 0 && follower.tx_unsure > 0);
+    RUN(30, 250)
+    /* Set: its clock within a millisecond of the truth it was 30 ms from, it says so, and sends. */
+    int64_t utc, err;
+    assert(follower.time == TIME_GROUP && node_utc_us(&follower, t, &utc, &err) && err >= 10000 && err < 10100);
+    assert(worst < 1000 && follower.sent > 10);
+    node_format_status(&follower, t, line, sizeof(line));
+    assert(strstr(line, " time=group err=10.0 "));
+    /* The leader, judging it by PPS, finds its packets in their slot to a millisecond; and is not
+     * itself moved by anything it hears. */
+    assert(lead.time == TIME_PPS && lead.riders[1].offset.n > 10);
+    assert(lead.riders[1].offset.min_us > -1000 && lead.riders[1].offset.max_us < 1000);
+    /* The third rider hears only the follower, whose time is borrowed: that sets nothing. */
+    assert(third.riders[1].heard && third.time == TIME_NMEA && third.sent == 0);
+
+    /* The leader falls silent. The follower goes on by its own clock, less sure by 3 ms a minute:
+     * still sending after ten minutes ... */
+    lead_on = false;
+    const uint32_t sent_before = follower.sent;
+    RUN(600, 1000)
+    assert(follower.time == TIME_GROUP && node_utc_us(&follower, t, &utc, &err) && err > 39000 && err < 41000);
+    assert(follower.sent > sent_before + 250);
+    /* ... and back on its NMEA, and silent in this group, once that is the better of the two. */
+    RUN(1300, 1000)
+    assert(follower.time == TIME_NMEA);
+    const uint32_t sent_after = follower.sent;
+    RUN(20, 1000)
+    assert(follower.sent == sent_after);
+    #undef RUN
+    #undef TRUE_UTC
+    printf("node: a board without PPS set by one with it, to a millisecond; alone again, it drifts and says so\n");
 }
 
 static void test_node_mode(void) {
     /* D15: the mode in use is the mode applied. A node sending on v0's SF7/250 ... */
     node_t n;
-    uint8_t b[32];
+    uint8_t b[PKT_MAX_LEN];
     char line[512];
     node_init(&n, &CFG, 21);
     int64_t t = T0;
@@ -774,7 +931,7 @@ static void test_node_mode(void) {
     node_phy_applied(&n, &slow);
     const int64_t due = node_next_tx_us(&n, t);
     for (; t < due; t += 1000) tick(&n, t);
-    assert(node_poll_tx(&n, due, b, sizeof(b)) == PKT_POSITION_LEN && node_duty_used_ms(&n, due) == booked + 371);
+    assert(node_poll_tx(&n, due, b, sizeof(b)) == PKT_LEN(0) && node_duty_used_ms(&n, due) == booked + 371);
     /* Its TxDone reckons with the airtime it went with, though v0's mode is asked for meanwhile:
      * RF 1.5 ms late, not 341 ms. */
     n.cfg.phy = PHY_V0;
@@ -841,21 +998,21 @@ static void test_tour(void) {
 
 static void test_api(void) {
     node_t n;
-    uint8_t b[PKT_POSITION_LEN];
+    uint8_t b[PKT_MAX_LEN];
     group_key_t g;
     group_key_init(&g, KEY);
     node_init(&n, &CFG, 7);
     gnss_fix_t f = fix_at(1792670405000ll, true);
     node_on_fix(&n, &f, 0);
-    node_on_packet(&n, b, packet(b, &g, 2, 1, 10, 64192), -71, 33, 3 * SEC);
+    node_on_packet(&n, b, packet(b, &g, 2, 1, 1792670405u + 3, 10, 8), -71, 33, 3 * SEC);
     api_t api = {.node = &n, .board = "test", .reset = "poweron", .power = 3, .tx_dbm = dbm};
 
     ask(&api, "STATUS");
     /* each line says when it was made on the board's own clock, in ms: a moment a later GNSS
      * time, or a better reckoning of that clock against the phone's, leaves meaning the same */
-    assert(n_replies == 1 && starts(replies[0], "STATUS proto=7 board=test reset=poweron at=10000 slot=1 "
+    assert(n_replies == 1 && starts(replies[0], "STATUS proto=8 board=test reset=poweron at=10000 slot=1 "
                                                 "slots=4 keyed=1 group=86c91c92 "));
-    assert(strstr(replies[0], " stopped=0 help=0 heard=0 "));
+    assert(strstr(replies[0], " stopped=0 heard=0 state=0 echo=- send=0/0/0 "));
     assert(strstr(replies[0], " power=3 dbm=16"));
     ask(&api, "riders"); /* the console types it in lower case */
     /* each rider line names the group it was heard in: one from before a new key is told apart */
@@ -863,14 +1020,14 @@ static void test_api(void) {
      * the packet gave it: what the phone reckons the rider's ages from, again whenever it knows
      * the clocks better */
     char want[160];
-    snprintf(want, sizeof(want), "RIDER slot=2 group=86c91c92 boot=%08lx at=10000 heard_at=3000 fix=64192 ",
+    snprintf(want, sizeof(want), "RIDER slot=2 group=86c91c92 boot=%08lx at=10000 heard_at=3000 fix=64192 pos=1 ",
              (unsigned long)n.boot);
     assert(n_replies == 2 && starts(replies[0], want) && strcmp(replies[1], "RIDERS 1") == 0);
     assert(strstr(replies[0], " gps=1 help=0 stopped=0 "));
     /* A line that came at 9 s and waited for the node's lock while the rider was heard again, at
      * 9.5 s: its answer is told as of when it is made, so no rider is heard in the future, which
      * the phone could not read. Only CLOCK answers with when the line came. */
-    assert(node_on_packet(&n, b, packet(b, &g, 2, 1, 11, 64193), -71, 33, 9 * SEC + SEC / 2));
+    assert(node_on_packet(&n, b, packet(b, &g, 2, 1, 1792670405u + 9, 11, 13), -71, 33, 9 * SEC + SEC / 2));
     char waited[16] = "RIDERS";
     n_replies = 0;
     api_command(&api, waited, 9 * SEC, 10 * SEC, collect, NULL);
@@ -932,11 +1089,19 @@ static void test_api(void) {
     ask(&api, "LEDGER");
     assert(n_replies == 1 && starts(replies[0], "LEDGER minutes=60 limit_ms=360000 used_ms=0 positions_ms=0,"));
     ask(&api, "HELP 1");
-    assert(strcmp(replies[0], "OK help=1") == 0 && n.help);
+    assert(strcmp(replies[0], "OK help=1") == 0 && n.state == STATE_HELP);
     ask(&api, "HELP 2");
-    assert(starts(replies[0], "ERR ") && n.help);
+    assert(starts(replies[0], "ERR ") && n.state == STATE_HELP);
     ask(&api, "help 0");
-    assert(strcmp(replies[0], "OK help=0") == 0 && !n.help);
+    assert(strcmp(replies[0], "OK help=0") == 0 && n.state == STATE_NORMAL);
+    ask(&api, "STATE 3");
+    assert(strcmp(replies[0], "OK state=3") == 0 && n.state == STATE_STOP_SOON);
+    ask(&api, "STATE 16");
+    assert(starts(replies[0], "ERR ") && n.state == STATE_STOP_SOON);
+    ask(&api, "STATE 0");
+    /* more passengers than a packet holds would write past it */
+    ask(&api, "PASSENGERS 4");
+    assert(starts(replies[0], "ERR ") && n.cfg.passengers == 0);
     ask(&api, "SLOTS 5");
     assert(strcmp(replies[0], "OK slots=5") == 0 && n.cfg.slots == 5);
     ask(&api, "SLOTS 0");
@@ -1003,13 +1168,17 @@ static void test_api(void) {
     assert(n_replies == 1 && starts(replies[0], "ERR "));
 
     /* The longest status there can be still fits a line. */
-    n.sent = n.tx_late = n.tx_unsure = n.tx_skipped = n.tx_held = n.rx_bad = n.rx_foreign = n.rx_forged = 4294967295u;
+    n.sent = n.tx_late = n.tx_unsure = n.tx_skipped = n.tx_quiet = n.tx_held = n.rx_bad = n.rx_foreign = n.rx_forged = 4294967295u;
     n.rx_replay = n.rx_clash = 4294967295u;
     n.cfg.slot = 31;
     n.held.lat_e7 = -900000000;
     n.held.lon_e7 = -1800000000;
     n.lag_us = n.lag_min_us = n.lag_max_us = 999999;
-    n.help_heard_by = 0xFFFFFFFFu;
+    n.echo_by = 0xFFFFFFFFu;
+    n.echo_us = 1;
+    n.state = 15;
+    n.cfg.move_m = 1000;
+    n.cfg.beat = 7;
     n.tx_lead = (spread_t){.min_us = -99999999, .max_us = 999999999, .sum_us = -99999999, .n = 1};
     n.mark_err_us = 999999999;
     char line[API_LINE + 64];
@@ -1017,12 +1186,12 @@ static void test_api(void) {
     /* whole, to its last field: a length alone would pass a line cut short inside */
     static const char tail[] = " replay=4294967295 clash=4294967295 power=0 dbm=22 kept=0";
     assert(len > 300 && len < API_LINE && strcmp(line + len - (int)strlen(tail), tail) == 0);
-    /* And the longest rider line: each field at its widest, and every other rider answering. */
-    n.riders[0] = (rider_t){.known = true, .fix_utc_ms = 1, .rssi_dbm = -32768, .snr_db4 = -32767,
-                            .received = 4294967295u, .answered_by = 0xFFFFFFFEu,
-                            .offset = {.min_us = -99999999, .max_us = 999999999, .sum_us = -99999999, .n = 1},
-                            .last = {.lat_e7 = -900000000, .lon_e7 = -1800000000, .speed_kmh = 254,
-                                     .course2 = 179, .status = 0x0F, .call = 7, .counter = 65535}};
+    /* And the longest rider line: each field at its widest. */
+    n.riders[0] = (rider_t){.known = true, .heard = true, .via = 31, .as_of = 1, .rssi_dbm = -32768, .snr_db4 = -32767,
+                            .received = 4294967295u, .expected = 4294967295u, .speed_kmh = 254, .course2 = 179, .sats = 15,
+                            .offset = {.min_us = -99999999, .max_us = 999999999, .sum_us = -99999999, .n = 1}, .late_us = -99999999,
+                            .rec = {.has_pos = true, .lat_e7 = -900000000, .lon_e7 = -1800000000, .facts = 0x0F,
+                                    .state = 15}};
     const int rider_len = node_format_rider(&n, 0, 99999999 * SEC, line, sizeof(line));
     assert(rider_len > 250 && rider_len < API_LINE);
     printf("api: status, riders, the key, settings, and what it leaves to the caller\n");
@@ -1038,7 +1207,9 @@ int main(void) {
     test_node_time();
     test_node_duty();
     test_node_hears();
-    test_node_help();
+    test_node_passengers();
+    test_send_rule();
+    test_time_from_group();
     test_node_mode();
     test_tour();
     test_api();

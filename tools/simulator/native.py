@@ -16,13 +16,13 @@ class Config(C.Structure):
     _fields_ += [("nmea_lag_us", C.c_int32), ("nmea_err_us", C.c_int32)]
     _fields_ += [(name, C.c_uint32) for name in
                 ("seed", "sf", "bandwidth_hz", "coding_rate", "preamble", "frequency_hz", "sync_word",
-                 "experimental_relay", "relay_records")]
-    _fields_ += [("relay_ttl_us", C.c_int64), ("implicit_header", C.c_uint32),
-                ("crc", C.c_uint32), ("key", C.c_uint8 * 16)]
+                 "experimental_relay", "relay_records", "beat", "move_m", "implicit_header", "crc")]
+    _fields_ += [("key", C.c_uint8 * 16)]
 
 
 class NativeRecord(C.Structure):
-    _fields_ = [(name, C.c_uint32) for name in ("slot", "session", "counter", "fix_time", "status")]
+    # One rider as told, by itself (via its own slot) or carried by another (v5 passengers).
+    _fields_ = [(name, C.c_uint32) for name in ("slot", "as_of", "status", "via")]
     _fields_ += [(name, C.c_int32) for name in
                 ("lat_e7", "lon_e7", "speed_kmh", "course2", "rssi_dbm", "snr_db4")]
     _fields_ += [("fix_utc_ms", C.c_int64), ("heard_us", C.c_int64)]
@@ -66,7 +66,7 @@ class NativeLibrary:
         for name, (result, args) in signatures.items():
             function = getattr(self.lib, name)
             function.restype, function.argtypes = result, args
-        if (self.lib.sim_abi_version() != 1 or self.lib.sim_config_size() != C.sizeof(Config) or
+        if (self.lib.sim_abi_version() != 2 or self.lib.sim_config_size() != C.sizeof(Config) or
                 self.lib.sim_record_size() != C.sizeof(NativeRecord)):
             raise RuntimeError("native simulator ABI does not match the host adapter")
         self.sha256 = hashlib.sha256(LIBRARY.read_bytes()).hexdigest()
@@ -79,7 +79,7 @@ class NativeNode:
         self.cad_enabled = config["candidate"].endswith("-cad")
         self.lib = library.lib
         self.config = Config()
-        self.config.version = 1
+        self.config.version = 2
         self.config.slot, self.config.slots = config["slot"], group_size
         self.config.interval_ms = config["interval_ms"]
         self.config.duty_permille = config.get("duty_permille", 100)
@@ -88,14 +88,18 @@ class NativeNode:
         gnss = config["gnss"]
         self.config.nmea_lag_us = round(gnss["nmea_told_lag_ms"] * 1000)
         self.config.nmea_err_us = round(gnss["nmea_error_ms"] * 1000)
+        # "relay": the v5 core carrying relay_records other riders a packet; "v3": carrying none.
+        # Sending every frame unless told a heartbeat (beat), as before the send rule.
         self.config.experimental_relay = config["candidate"].startswith("relay")
         self.config.relay_records = config.get("relay_records", 2)
-        self.config.relay_ttl_us = round(config.get("relay_ttl_s", 30) * 1e6)
+        self.config.beat = config.get("beat", 0)
+        self.config.move_m = config.get("move_m", 10)
         self.config.key[:] = group_key
         self._set_phy(Phy(**config["phy"]))
         self.handle = self.lib.sim_node_create(C.byref(self.config))
         if not self.handle:
-            raise ValueError("native node rejected its setup (v3 requires explicit header and CRC)")
+            raise ValueError("native node rejected its setup (the core requires explicit header and CRC, "
+                             "and at most 3 relay records)")
         if self.cad_enabled and not self.lib.sim_access_enable(self.handle, preparation_us):
             self.close()
             raise ValueError("invalid declared TX preparation bound for CAD")
@@ -137,7 +141,7 @@ class NativeNode:
         return None if value == (1 << 63) - 1 else value
 
     def poll(self, local_us):
-        output = C.create_string_buffer(255)
+        output = C.create_string_buffer(64)
         size = self.lib.sim_node_poll(self.handle, local_us, output, len(output))
         return output.raw[:size]
 
@@ -150,7 +154,7 @@ class NativeNode:
         self.lib.sim_access_result(self.handle, local_us, -1 if clear is None else int(clear))
 
     def receive(self, payload, local_us, rssi_dbm=None, snr_db=None, stamp_us=None):
-        # The v3 logic does not select records using signal levels. Preserve unknown in the host
+        # The core does not select records using signal levels. Preserve unknown in the host
         # observation; use an explicit sentinel only at its mandatory integer C boundary.
         rssi = -32768 if rssi_dbm is None else round(rssi_dbm)
         snr = -32768 if snr_db is None else round(snr_db * 4)
@@ -166,7 +170,7 @@ class NativeNode:
 
     def records(self, payload):
         result = []
-        for index in range(9):
+        for index in range(4):
             value = NativeRecord()
             if not self.lib.sim_frame_record(self.handle, payload, len(payload), index, C.byref(value)):
                 break
@@ -180,8 +184,8 @@ class NativeNode:
         return self.lib.sim_node_target_utc(self.handle)
 
     def mode(self, phy, applied):
-        if not self.config.experimental_relay and (phy.implicit_header or not phy.crc):
-            raise ValueError("native v3 does not implement implicit/no-CRC mode")
+        if phy.implicit_header or not phy.crc:
+            raise ValueError("the native core does not implement implicit/no-CRC mode")
         self._set_phy(phy)
         self.lib.sim_node_mode(self.handle, C.byref(self.config), applied)
 

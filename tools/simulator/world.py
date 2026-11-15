@@ -135,7 +135,7 @@ class World:
             _integer(node.setdefault("interval_ms", 4000), f"{name}.interval_ms", 100, 60000)
             _integer(node.setdefault("duty_permille", 100), f"{name}.duty_permille", 1, 1000)
             _integer(node.setdefault("listen_one_in", 32), f"{name}.listen_one_in", 0, 65535)
-            _integer(node.setdefault("relay_records", 2), f"{name}.relay_records", 0, 8)
+            _integer(node.setdefault("relay_records", 2), f"{name}.relay_records", 0, 3)
             if _number(node.setdefault("relay_ttl_s", 30), f"{name}.relay_ttl_s", 0, 86400) <= 0:
                 raise ValueError("relay_ttl_s must be positive")
             _number(node.setdefault("tx_power_dbm", 14), f"{name}.tx_power_dbm", -20, 30)

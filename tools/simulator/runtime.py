@@ -109,7 +109,10 @@ class Simulation:
 
     def _record_key(self, receiver, value):
         group = self.world.nodes[receiver]["group"]
-        return f"{group}/{value['slot']}/{value['session']:08x}/{value['counter']}"
+        # v5 records carry no packet identity once passed on: a rider's record is what it said in a
+        # second, where and in which state, the same whoever tells it.
+        return (f"{group}/{value['slot']}/{value['as_of']}/{value['lat_e7']}/{value['lon_e7']}/"
+                f"{value['status'] & 1}")
 
     def _position(self, value):
         return self.world.metric(value["lat_e7"] / 1e7, value["lon_e7"] / 1e7)
@@ -121,6 +124,10 @@ class Simulation:
             if value["slot"] != cfg["slot"]:
                 continue
             key = self._record_key(node, value)
+            if key in self.records:
+                # sent again within its second, from the same place in the same state: the first
+                # packet's record stands, the earliest fix behind that view
+                continue
             record = Record(key, node, self.boots[node], self.engine.now_ns, self.held[node],
                             self.state_events[node], self._position(value), "help" if value["status"] & 1 else "normal")
             if key in self.records and self.records[key] != record:
@@ -361,13 +368,14 @@ class Simulation:
                                    "expired/cancelled pending packets are not refunded; released bytes "
                                    "may still fail or be cancelled by the platform; actual RF is separate",
                     "scope": "local CAD before the node's own slot, not asynchronous CSMA or Meshtastic"},
-                "candidate_capabilities": {"v3": {"core":"production C node and codec", "states":["normal","help"],
-                    "automatic_help_answers":True, "before_first_position":False},
-                    "relay":{"core":"research C framing and forwarding around v3", "selection":"least recently forwarded",
-                             "cache_expiry":"since acceptance of a new authenticated source packet",
-                             "source_authentication":True,"envelope_authentication":False,
-                             "wire_relay_peer_identity":False,"states":["normal","help"],
-                             "automatic_help_answers":True,"before_first_position":False},
+                "candidate_capabilities": {"v3": {"core":"production C node and codec, protocol v5, no riders carried",
+                    "states":["normal","help"], "automatic_help_answers":False, "before_first_position":False},
+                    "relay":{"core":"production C node and codec, protocol v5, relay_records riders carried a packet",
+                             "selection":"a changed state first, then least recently told",
+                             "cache_expiry":"10 minutes since the rider said it",
+                             "source_authentication":True,"envelope_authentication":True,
+                             "wire_relay_peer_identity":True,"states":["normal","help"],
+                             "automatic_help_answers":False,"before_first_position":False},
                     "v3-cad":{"base_candidate":"v3", "access_policy":"access_policy", "framing_unchanged":True},
                     "relay-cad":{"base_candidate":"relay", "access_policy":"access_policy", "framing_unchanged":True}},
                 "contact_reference": contact_reference(self.events) if contact_diagnostic else
