@@ -269,8 +269,8 @@ before any; `send=` the heartbeat, metres and passengers; `deaf=` the slots it d
 (a line holds 511 characters): the app has it from the phone.
 
 Unasked, the board sends a `RIDER` line for every packet it takes, and its status every 10 s while
-a phone is connected; and, with the packet that brings it, the `RIDER` line of a rider whose
-state has just changed when carried by another, or its own status when its own state is newly
+a phone is connected, and a `RIDER` line for each rider it carried a newer record of, after
+the sender's; with the packet that brings it, its own status when its own state is newly
 carried. The app sends `STATUS` every 10 s, which keeps the link from being dropped
 as silent. Commands are case-blind.
 

@@ -700,7 +700,6 @@ static void test_node_passengers(void) {
     /* The far end calls for help. The middle's next three packets carry that, whoever's turn it
      * was, and the other end has it within two frames, told to its phone at once. */
     node_set_state(&far, STATE_HELP);
-    end.state_news = -1;
     int carried = 0;
     for (const int64_t until = t + 8 * SEC; t < until; t += 1000) {
         for (int i = 0; i < 3; i++) {
@@ -713,7 +712,8 @@ static void test_node_passengers(void) {
                 assert(pkt_open(b, len, &g, &p) == PKT_OK && p.passengers == 1);
                 assert(p.passenger[0].slot == 0 && p.passenger[0].state == STATE_HELP);
                 carried++;
-                assert(end.riders[0].rec.state == STATE_HELP && end.state_news == 0);
+                /* news for its phone of both: the middle itself and the caller it carried */
+                assert(end.riders[0].rec.state == STATE_HELP && end.rx_changed == (1u << 1 | 1u << 0));
             }
         }
     }

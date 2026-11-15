@@ -324,8 +324,9 @@ static void radio_task(void *arg) {
         port_sleep_ms(5000);
     }
     int64_t next_verify = port_uptime_us() + VERIFY_US;
-    char text[API_LINE];   /* a RIDER line is up to that, a group of 32 answering a call included */
-    char news[API_LINE];
+    char text[API_LINE];
+    /* a packet's sender and the riders it carried: static, as the task's stack has no room for them */
+    static char rider_lines[1 + PKT_PASSENGERS_MAX][API_LINE];
     for (;;) {
         port_wdt_feed(watch);
         uint8_t buf[256];
@@ -344,24 +345,28 @@ static void radio_task(void *arg) {
             const bool taken = node_on_packet(&s_node, buf, n, rssi, snr, now);
             /* E0's offset from its RxDone, where DIO1 stamped it; a poll's time is no measure */
             if (taken && rx_at) node_on_rx_done(&s_node, rx_at);
-            if (taken) node_format_rider(&s_node, buf[2] & 0x1F, now, text, sizeof(text));
-            /* A rider whose state has changed, told by this packet as a passenger, goes to the phone
-             * now; our own state newly carried, with the status, which the status task sends in its
-             * order with the commands. */
-            int caller = s_node.state_news;
-            s_node.state_news = -1;
-            if (!taken || caller == (buf[2] & 0x1F)) caller = -1;
-            if (caller >= 0) node_format_rider(&s_node, (unsigned)caller, now, news, sizeof(news));
+            /* A line to the phone for every rider the packet brought a newer record of: its sender,
+             * first, and those it carried; our own state newly carried goes with the status, which
+             * the status task sends in its order with the commands. */
+            int lines = 0;
+            const unsigned sender = buf[2] & 0x1F;
+            for (unsigned i = 0; taken && i <= NODE_SLOTS && lines < (int)(sizeof(rider_lines) / sizeof(rider_lines[0])); i++) {
+                const unsigned s = i == 0 ? sender : i - 1;
+                if ((i == 0 || s != sender) && (s_node.rx_changed >> s & 1)) {
+                    node_format_rider(&s_node, s, now, rider_lines[lines++], API_LINE);
+                }
+            }
             if (s_node.echo_news) atomic_store(&s_status_now, true);
             s_node.echo_news = false;
             port_mutex_give(s_lock);
-            if (taken) {
-                if (ble_nus_connected()) ble_nus_send_line(text);
-                if (caller >= 0 && ble_nus_connected()) ble_nus_send_line(news);
-            } else {
-                snprintf(text, sizeof(text), "RX dropped len=%u rssi=%d", (unsigned)n, rssi);
+            for (int i = 0; i < lines; i++) {
+                if (ble_nus_connected()) ble_nus_send_line(rider_lines[i]);
+                console_line(rider_lines[i]);
             }
-            console_line(text);
+            if (!taken) {
+                snprintf(text, sizeof(text), "RX dropped len=%u rssi=%d", (unsigned)n, rssi);
+                console_line(text);
+            }
         }
         /* The last stretch to our slot spun out, so the packet starts within a tick of its moment. */
         port_mutex_lock(s_lock);

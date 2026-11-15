@@ -1060,25 +1060,23 @@ static void serve_line(board_t *b, char *line, int64_t now_us) {
     b->api.forget = b->api.restart = b->api.bootloader = b->api.radio_changed = false;
 }
 
-/* A packet a board took: its rider's line to the phone, and the news it brought, at once, as a
- * board sends them (run.c): a call newly answered with its caller's line, an answer to our own call
- * with the status (D16). */
+/* A packet a board took: a line to the phone for each rider it brought a newer record of, its
+ * sender first, and our own state newly carried with the status, at once, as a board sends them
+ * (run.c, D16). */
 static void on_taken(void *ctx, int node, unsigned slot, int64_t t) {
     world_t *w = ctx;
     board_t *b = &s_boards[node];
     node_t *n = &w->node[node];
-    int caller = n->state_news;
     const bool status = n->echo_news;
-    n->state_news = -1;
     n->echo_news = false;
-    if (caller == (int)slot) caller = -1;
     if (b->client < 0) return;
     char line[API_LINE];
-    node_format_rider(n, slot, t, line, sizeof(line));
-    send_line(b, line);
-    if (caller >= 0) {
-        node_format_rider(n, (unsigned)caller, t, line, sizeof(line));
-        send_line(b, line);
+    for (unsigned i = 0; i <= NODE_SLOTS; i++) {
+        const unsigned s = i == 0 ? slot : i - 1;
+        if ((i == 0 || s != slot) && (n->rx_changed >> s & 1)) {
+            node_format_rider(n, s, t, line, sizeof(line));
+            send_line(b, line);
+        }
     }
     if (status) {
         api_status(&b->api, t, line, sizeof(line));

@@ -153,15 +153,9 @@ int sim_frame_record(void *p,const uint8_t *b,size_t len,unsigned index,sim_reco
 /* The slots whose record this packet changed, a bit each. */
 uint32_t sim_node_receive(void *p,const uint8_t *b,size_t len,int rssi,int snr,int64_t at,int64_t stamp) {
     sim_node_t *s=p;
-    int64_t before[NODE_SLOTS];
-    for (int i=0;i<NODE_SLOTS;i++) before[i]=s->node.riders[i].known ? s->node.riders[i].rec_us : INT64_MIN;
     if (!node_on_packet(&s->node,b,len,rssi,snr,at)) return 0;
     if (stamp>=0) node_on_rx_done(&s->node,stamp);
-    uint32_t changed=0;
-    for (int i=0;i<NODE_SLOTS;i++) {
-        if (s->node.riders[i].known && s->node.riders[i].rec_us!=before[i]) changed|=1u<<i;
-    }
-    return changed;
+    return s->node.rx_changed;
 }
 
 size_t sim_node_poll(void *p,int64_t at,uint8_t *out,size_t capacity) {

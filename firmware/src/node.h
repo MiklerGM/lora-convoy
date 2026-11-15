@@ -133,7 +133,8 @@ typedef struct {
     uint32_t echo_by;
     int64_t echo_us;         /* our clock at the last such; 0 before one */
     bool echo_news;
-    int state_news;          /* a rider whose state has newly changed, for the phone at once; -1 none */
+    uint32_t rx_changed;     /* the riders the packet taken last brought a newer record of, a bit
+                                each, its sender's among them: their lines go to the phone at once */
     /* How late the packets of riders with PPS began by our clock, the latest NODE_SYNC of them:
      * their median is how far our clock is off (node_on_rx_done). */
     int64_t sync_us[NODE_SYNC];

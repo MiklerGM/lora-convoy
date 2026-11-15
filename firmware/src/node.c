@@ -56,7 +56,6 @@ void node_init(node_t *n, const node_config_t *cfg, uint32_t seed) {
     if (cfg->keyed) group_key_init(&n->group, cfg->key);
     n->last_frame = n->phase_frame = -1;
     n->rx_slot = -1;
-    n->state_news = -1;
 }
 
 void node_set_key(node_t *n, const uint8_t key[16]) {
@@ -473,10 +472,8 @@ void node_on_tx_done(node_t *n, int64_t done_us) {
 /* A record of a rider, said by itself at as_of and told to us by via: the latest we hold now. */
 static void take_record(node_t *n, const record_t *q, uint32_t as_of, uint8_t via, int64_t now_us) {
     rider_t *r = &n->riders[q->slot];
-    if (r->known ? q->state != r->rec.state : q->state != STATE_NORMAL) {
-        r->news = NEWS_TIMES;
-        n->state_news = q->slot;
-    }
+    if (r->known ? q->state != r->rec.state : q->state != STATE_NORMAL) r->news = NEWS_TIMES;
+    n->rx_changed |= 1u << q->slot;
     r->known = true;
     r->rec = *q;
     r->as_of = as_of;
@@ -487,6 +484,7 @@ static void take_record(node_t *n, const record_t *q, uint32_t as_of, uint8_t vi
 bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int snr_db4, int64_t now_us) {
     packet_t p;
     n->rx_slot = -1;
+    n->rx_changed = 0;
     if (!n->cfg.keyed) {
         n->rx_foreign++;
         return false;
