@@ -24,6 +24,22 @@ static bool number(const char *s, long lo, long hi, long *out) {
     return true;
 }
 
+/* Slots as "3" or "3,4,17", a bit each; "-" for none. */
+static bool slot_list(const char *s, uint32_t *mask) {
+    if (!s) return false;
+    *mask = 0;
+    if (strcmp(s, "-") == 0) return true;
+    for (;;) {
+        char *end;
+        const long v = strtol(s, &end, 10);
+        if (end == s || v < 0 || v >= NODE_SLOTS) return false;
+        *mask |= 1u << v;
+        if (!*end) return true;
+        if (*end != ',') return false;
+        s = end + 1;
+    }
+}
+
 /* 32 hex digits, either case, into 16 bytes. */
 static bool hex_key(const char *s, uint8_t key[16]) {
     if (!s || strlen(s) != 32) return false;
@@ -90,6 +106,7 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
     if (arg) *arg++ = '\0';
     node_config_t *cfg = &api->node->cfg;
     long v;
+    uint32_t mask;
     if (strcasecmp(line, "status") == 0) {
         api_status(api, now_us, out, sizeof(out));
     } else if (strcasecmp(line, "riders") == 0) {
@@ -155,6 +172,9 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
     } else if (strcasecmp(line, "passengers") == 0 && number(arg, 0, PKT_PASSENGERS_MAX, &v)) {
         cfg->passengers = (uint8_t)v;
         snprintf(out, sizeof(out), "OK passengers=%ld", v);
+    } else if (strcasecmp(line, "deaf") == 0 && slot_list(arg, &mask)) {
+        cfg->deaf = mask;
+        snprintf(out, sizeof(out), "OK deaf=%lx", (unsigned long)mask);
     } else if (strcasecmp(line, "slot") == 0 && number(arg, 0, NODE_SLOTS - 1, &v)) {
         cfg->slot = (uint8_t)v;
         api->setup_changed = true;
@@ -193,7 +213,7 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
         api->gnss_systems = (uint8_t)v;
         snprintf(out, sizeof(out), "OK systems=%ld", v);
     } else {
-        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, CLOCK <t1>, TIME <ms> <utc ms> <err ms>, LEDGER, GROUP <32 hex> <slot> <slots> <ms>, KEY <32 hex>, STATE 0-15, BEAT 0-7, MOVE <m>, PASSENGERS 0-3, SLOT 0-%d, SLOTS 1-%d, "
+        snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, CLOCK <t1>, TIME <ms> <utc ms> <err ms>, LEDGER, GROUP <32 hex> <slot> <slots> <ms>, KEY <32 hex>, STATE 0-15, BEAT 0-7, MOVE <m>, PASSENGERS 0-3, DEAF <slots>|-, SLOT 0-%d, SLOTS 1-%d, "
                  "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, TOUR 0-255, GNSS 0-1, SYSTEMS 1-8, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
                  NODE_SLOTS);
     }

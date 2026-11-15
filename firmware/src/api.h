@@ -25,6 +25,7 @@
  *   KEY <32 hex digits>            OK keyed group=<id>: the group's key, from the invitation
  *   STATE <0-15>                   OK state=<n>: what our rider chose (codec.h); HELP <0|1> is states 1 and 0
  *   BEAT <0-7>, MOVE <m>, PASSENGERS <0-3>   the send rule and the records carried, for the bench; not kept
+ *   DEAF <3,4|->                   OK deaf=<hex>: slots not taken directly, as if out of reach; the bench's, not kept
  *   SLOT <0-31>, SLOTS <1-32>,     OK <key>=<value>, or ERR <why>
  *   INTERVAL <ms>, POWER <0-3>
  *   MODE <SF 7-12> <kHz>           OK mode=<SF>/<kHz>: the radio mode, for trying range (E2)

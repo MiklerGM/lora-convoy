@@ -48,6 +48,9 @@ typedef struct {
     /* Records of other riders carried in each packet, 0 to PKT_PASSENGERS_MAX: the slot is sized
      * for this many. */
     uint8_t passengers;
+    /* The bench's DEAF: slots whose own packets this board does not take, a bit each, as if they
+     * were out of its reach; what others carry of them still comes. Not kept. */
+    uint32_t deaf;
 } node_config_t;
 
 /* E0's measures (07, 09): the least, the sum and the most of what was measured, and how often. */

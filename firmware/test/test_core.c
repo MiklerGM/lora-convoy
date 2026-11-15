@@ -736,6 +736,24 @@ static void test_node_passengers(void) {
     tells.passenger[0].state = STATE_HELP;
     assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, T0) && solo.echo_by == 1u << 3 && solo.echo_news);
 
+    /* A board deaf to a rider (the bench's DEAF) takes nothing from it directly, yet has it from
+     * those who carry it: a chain on one desk. */
+    node_t deaf;
+    node_config_t cd = c;
+    cd.slot = 5;
+    cd.deaf = 1u << 0;
+    node_init(&deaf, &cd, 6);
+    node_on_fix(&deaf, &f, T0);
+    const uint32_t s0 = (uint32_t)(UTC0_MS / 1000);
+    packet_t direct = {.session = 1, .sent = s0, .own = {.slot = 0, .has_pos = true, .state = STATE_HELP}};
+    packet_t told = {.session = 1, .sent = s0, .own = {.slot = 3, .has_pos = true}, .passengers = 1,
+                     .passenger = {{.slot = 0, .has_pos = true, .age = 0, .state = STATE_HELP}}};
+    assert(!node_on_packet(&deaf, b, pkt_seal(b, &direct, &g), -70, 30, T0) && !deaf.riders[0].known);
+    assert(deaf.rx_replay == 0 && deaf.rx_forged == 0 && deaf.rx_bad == 0);
+    assert(node_on_packet(&deaf, b, pkt_seal(b, &told, &g), -70, 30, T0));
+    assert(deaf.riders[0].known && deaf.riders[0].via == 3 && !deaf.riders[0].heard &&
+           deaf.riders[0].rec.state == STATE_HELP);
+
     /* A record never gets younger on its way: an older one of the caller, from a rider who met it
      * a minute ago, does not put the newer one out; a later one does. */
     const uint32_t s = (uint32_t)((UTC0_MS * 1000 + (t - T0)) / 1000000);
@@ -1025,7 +1043,7 @@ static void test_api(void) {
      * time, or a better reckoning of that clock against the phone's, leaves meaning the same */
     assert(n_replies == 1 && starts(replies[0], "STATUS proto=8 board=test reset=poweron at=10000 slot=1 "
                                                 "slots=4 keyed=1 group=86c91c92 "));
-    assert(strstr(replies[0], " stopped=0 heard=0 state=0 echo=- send=0/0/0 "));
+    assert(strstr(replies[0], " stopped=0 heard=0 state=0 echo=- send=0/0/0 deaf=0 "));
     assert(strstr(replies[0], " power=3 dbm=16"));
     ask(&api, "riders"); /* the console types it in lower case */
     /* each rider line names the group it was heard in: one from before a new key is told apart */
@@ -1112,6 +1130,14 @@ static void test_api(void) {
     ask(&api, "STATE 16");
     assert(starts(replies[0], "ERR ") && n.state == STATE_STOP_SOON);
     ask(&api, "STATE 0");
+    ask(&api, "DEAF 3,17");
+    assert(strcmp(replies[0], "OK deaf=20008") == 0 && n.cfg.deaf == (1u << 3 | 1u << 17));
+    ask(&api, "DEAF 32");
+    assert(starts(replies[0], "ERR ") && n.cfg.deaf == (1u << 3 | 1u << 17));
+    ask(&api, "DEAF 3,");
+    assert(starts(replies[0], "ERR "));
+    ask(&api, "DEAF -");
+    assert(strcmp(replies[0], "OK deaf=0") == 0 && n.cfg.deaf == 0);
     /* more passengers than a packet holds would write past it */
     ask(&api, "PASSENGERS 4");
     assert(starts(replies[0], "ERR ") && n.cfg.passengers == 0);
@@ -1191,6 +1217,7 @@ static void test_api(void) {
     n.echo_us = 1;
     n.state = 15;
     n.cfg.move_m = 1000;
+    n.cfg.deaf = 0xFFFFFFFFu;
     n.cfg.beat = 7;
     n.tx_lead = (spread_t){.min_us = -99999999, .max_us = 999999999, .sum_us = -99999999, .n = 1};
     n.mark_err_us = 999999999;

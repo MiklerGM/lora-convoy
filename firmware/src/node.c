@@ -491,6 +491,8 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
         n->rx_foreign++;
         return false;
     }
+    /* out of our reach on the bench: as if never heard, so nothing is counted */
+    if (len > 2 && (n->cfg.deaf >> (buf[2] & 0x1F) & 1)) return false;
     switch (pkt_open(buf, len, &n->group, &p)) {
         case PKT_OK: break;
         case PKT_FOREIGN: n->rx_foreign++; return false;
@@ -644,13 +646,14 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     static const char *const SOURCE[] = {"none", "nmea", "group", "pps"};
     int64_t utc, err;
     if (node_utc_us(n, now_us, &utc, &err)) {
+        if (err > 99999999) err = 99999999; /* 100 s: past any budget, and the line has no room for more */
         snprintf(err_ms, sizeof(err_ms), "%lld.%lld", (long long)(err / 1000), (long long)(err % 1000 / 100));
     }
     /* the calendar the riders' ages are told by, and how far off it may be, in ms */
     char cal[48];
     const char *source;
     if (calendar_us(n, now_us, &utc, &err, &source)) {
-        snprintf(cal, sizeof(cal), "%s/%lld", source, (long long)(err / 1000));
+        snprintf(cal, sizeof(cal), "%s/%lld", source, (long long)((err > 99999999 ? 99999999 : err) / 1000));
     } else {
         snprintf(cal, sizeof(cal), "none");
     }
@@ -661,16 +664,15 @@ int node_format_status(const node_t *n, int64_t now_us, char *buf, size_t cap) {
     }
     const int64_t budget = node_time_budget_us(n);
     return snprintf(buf, cap,
-                    "slot=%u slots=%u keyed=%d group=%08lx mode=%u/%lu fix=%d stopped=%d heard=%d state=%u echo=%s send=%u/%u/%u sats=%u "
-                    "hdop=%u.%u time=%s err=%s cal=%s "
+                    "slot=%u slots=%u keyed=%d group=%08lx mode=%u/%lu fix=%d stopped=%d heard=%d state=%u echo=%s send=%u/%u/%u deaf=%lx sats=%u "
+                    "time=%s err=%s cal=%s "
                     "budget=%lld.%lld lag=%s txlead=%s tx=%lu late=%lu unsure=%lu skipped=%lu quiet=%lu held=%lu duty=%lu.%02lu%% riders=%d "
                     "bad=%lu foreign=%lu forged=%lu replay=%lu clash=%lu",
                     n->cfg.slot, n->cfg.slots, n->cfg.keyed ? 1 : 0, (unsigned long)(n->cfg.keyed ? n->group.id : 0), n->cfg.phy.sf,
                     (unsigned long)(n->cfg.phy.bw_hz / 1000),
                     current ? 1 : 0, n->stopped ? 1 : 0, __builtin_popcount(n->echo_by), n->state, echo,
-                    n->cfg.beat, n->cfg.move_m, n->cfg.passengers,
-                    n->fix.sats, n->fix.hdop10 / 10,
-                    n->fix.hdop10 % 10, SOURCE[n->time], err_ms, cal, (long long)(budget / 1000),
+                    n->cfg.beat, n->cfg.move_m, n->cfg.passengers, (unsigned long)n->cfg.deaf,
+                    n->fix.sats, SOURCE[n->time], err_ms, cal, (long long)(budget / 1000),
                     (long long)(budget % 1000 / 100), lag, spread_text(txlead, sizeof(txlead), &n->tx_lead),
                     (unsigned long)n->sent, (unsigned long)n->tx_late,
                     (unsigned long)n->tx_unsure, (unsigned long)n->tx_skipped, (unsigned long)n->tx_quiet, (unsigned long)n->tx_held,

@@ -238,6 +238,7 @@ on three transports:
 | `KEY <32 hex digits>` | `OK keyed group=<id>`; riders heard under another key are forgotten |
 | `STATE <0–15>` | `OK state=<n>`: the state our rider chose (the packet's byte 19); a change goes out in our next three slots, and who carries it starts afresh. `HELP <0–1>` is states 1 and 0, for an app with that button only |
 | `BEAT <0–7>`, `MOVE <1–1000>`, `PASSENGERS <0–3>` | `OK <key>=<value>`: the send rule's heartbeat (every 2^n frames, 0 every frame) and distance in metres, and the riders carried in each packet; for the bench until the invitation carries a profile, not kept (3, 10 and 1 at start) |
+| `DEAF <3,4 or ->` | `OK deaf=<hex mask>`: for the bench, the board takes nothing directly from these slots, as if they were out of its reach, and still has them from riders who carry them: a chain on one desk. `-` hears everyone; not kept |
 | `SLOT <0–31>`, `SLOTS <1–32>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |
 | `MODE <SF 7–12> <kHz 62, 125, 250, 500>` | `OK mode=<SF>/<kHz>`: another radio mode on the same frequency, for trying range (E2); kept over a restart. Every board of a group needs the same |
 | `TOUR <0–255>` | `OK tour=<s>`: for trying range (E2), the board changes its mode by the clock, SF7/250, SF9/250 and SF10/125 in turn, each for so many seconds of UTC, so a group's boards change together and one walk tries all three; 0 stops it, in the mode it is in. Kept over a restart |
@@ -264,7 +265,7 @@ ms. `txlead=` is how late its own packets' RF began after their slot's moment, l
 µs, by the radio's TxDone less the airtime (E0): what is left once the packet was handed over the
 radio's start-up early, near 0 on a board built with its own. `state=` is our rider's state;
 `heard=` how many riders carry it on as it is now, and `echo=` seconds since one last did, `-`
-before any; `send=` the heartbeat, metres and passengers. Our own position is not in the status
+before any; `send=` the heartbeat, metres and passengers; `deaf=` the slots it does not hear. Our own position is not in the status
 (a line holds 511 characters): the app has it from the phone.
 
 Unasked, the board sends a `RIDER` line for every packet it takes, and its status every 10 s while
