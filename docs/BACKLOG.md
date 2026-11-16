@@ -341,6 +341,22 @@ A later task [owner, 2026-10-24]: a screen on some boards, and a button to switc
 state. Not now: no display support and no new use of the buttons; the first iteration needs no
 button for help ([ARCHITECTURE](ARCHITECTURE.md), D17).
 
+Something useful on the screen [owner, 2026-11-16]: all three bench boards have one, and none of
+them shows anything yet.
+
+- Heltec V4: a 0.96" OLED, 128×64, SSD1306 on I2C [vendor's docs; our firmware does not touch it].
+- L1: a 1.3" OLED, 128×64, SH1106 on I2C; our firmware turns it off at start, since it otherwise
+  keeps the last firmware's picture (`firmware/zephyr/src/main.c`).
+- T-Echo: a 1.54" e-paper, 200×200 [vendor's docs]; it keeps its picture unpowered, and a full
+  redraw takes seconds, so it can only show what changes slowly. Our board file does not describe it yet.
+
+Candidates to show, the owner to choose: whether the board works without a phone or cable
+(fix and satellites, time ok or not, riders heard and how long ago); the state the rider chose,
+and another rider's need help or stop now in large type; the group, the rider's slot, Bluetooth
+connected or not, and the battery. Open: what fits 128×64; how long an OLED stays lit (power, and
+burn-in over a ride); an e-paper redraw no more often than its state changes. Needed by no
+milestone yet.
+
 ### T-power: power
 
 Battery-only nRF52 boards, receive duty cycling, the GNSS in standby; bike power and the dips of an
