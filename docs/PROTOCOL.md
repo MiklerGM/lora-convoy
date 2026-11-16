@@ -239,6 +239,7 @@ on three transports:
 | `STATE <0–15>` | `OK state=<n>`: the state our rider chose (the packet's byte 19); a change goes out in our next three slots, and who carries it starts afresh. `HELP <0–1>` is states 1 and 0, for an app with that button only |
 | `BEAT <0–7>`, `MOVE <1–1000>`, `PASSENGERS <0–3>` | `OK <key>=<value>`: the send rule's heartbeat (every 2^n frames, 0 every frame) and distance in metres, and the riders carried in each packet; kept over a restart with the group, as `POWER` is, so a board with no phone rides as it was set (3, 10 and 1 as built). The app's Board settings sends them |
 | `DEAF <3,4 or ->` | `OK deaf=<hex mask>`: for the bench, the board takes nothing directly from these slots, as if they were out of its reach, and still has them from riders who carry them: a chain on one desk. `-` hears everyone; not kept |
+| `LOG <boot> <n>` | `OK log boot=<run> from=<n> next=<n>`, then the board's own console lines, those only the cable had (`TX`, `RX dropped`, `GNSS`, `WARN`, `BOOT`), as `LOG n=<number> at=<our ms> <line>`: first those it still keeps from `<n>` on if `<boot>` is its run, else all it keeps, then each as it comes, until the link goes. It keeps the last 128, each to 79 characters; a number skipped is a line no longer kept. The app asks once per link from where its log ends, and writes everything to and from the board in a file a day (Share log) |
 | `SLOT <0–31>`, `SLOTS <1–32>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |
 | `MODE <SF 7–12> <kHz 62, 125, 250, 500>` | `OK mode=<SF>/<kHz>`: another radio mode on the same frequency, for trying range (E2); kept over a restart. Every board of a group needs the same |
 | `TOUR <0–255>` | `OK tour=<s>`: for trying range (E2), the board changes its mode by the clock, SF7/250, SF9/250 and SF10/125 in turn, each for so many seconds of UTC, so a group's boards change together and one walk tries all three; 0 stops it, in the mode it is in. Kept over a restart |
@@ -291,7 +292,7 @@ has no calendar yet, neither GNSS time nor the phone's `TIME`); `heard` is in te
 the rider itself, `-` if never; `via` the slot that carried the record, `-` from itself;
 `speed` and `course` are `?` for a carried record; `help=1` is `state=1`, and `answered=` stays
 `-` (v3's, for an app that reads it); `rx` is packets taken against those its count says were sent; `offset` is how late its packets began against their moment, in µs, least/mean/most, from their RxDone on this board's UTC less their airtime (E0, [BENCH](BENCH.md)), and `late`
-the last of them; `sats` the satellites its fix used. On the console the board also prints `TX`, `RX dropped` and `GNSS` lines. Slots count
+the last of them; `sats` the satellites its fix used. On the console the board also prints `TX`, `RX dropped`, `GNSS`, `WARN` and `BOOT` lines, which `LOG` gives the phone too. Slots count
 from 0 here; the app shows riders from 1.
 
 ## What comes next

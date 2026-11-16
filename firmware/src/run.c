@@ -91,6 +91,14 @@ static const char *s_reset = "other";
 /* Console lines start with a word a bench script can look for: TX, RX, RIDER, STATUS, GNSS. */
 static void console_line(const char *text) { port_console_line(text); }
 
+/* A console line of our own, which only the cable had: kept for the phone's log too (LOG). */
+static void note(const char *text) {
+    console_line(text);
+    port_mutex_lock(s_lock);
+    api_log(&s_api, port_uptime_us(), text);
+    port_mutex_give(s_lock);
+}
+
 /* ---- why the board last started ------------------------------------------------ */
 
 const char *run_reset_name(void) {
@@ -211,7 +219,8 @@ static void on_ble_line(const char *line, size_t len) {
      * phone would take for the whole of it. */
     for (int i = 0; i < replies.n; i++) {
         if (!ble_nus_send_line(replies.line[i])) {
-            LOGW(TAG, "reply cut short: line %d of %d not sent", i + 1, replies.n);
+            snprintf(buf, sizeof(buf), "WARN reply cut short: line %d of %d not sent", i + 1, replies.n);
+            note(buf);
             break;
         }
     }
@@ -303,7 +312,7 @@ static void gnss_task(void *arg) {
             char text[96];
             snprintf(text, sizeof(text), "GNSS fix=%d time=%d sats=%u hdop=%u.%u bad=%lu", fix.valid,
                      fix.time_valid, fix.sats, fix.hdop10 / 10, fix.hdop10 % 10, (unsigned long)nmea.bad);
-            console_line(text);
+            note(text);
             was_valid = fix.valid;
             logged = now;
         }
@@ -331,7 +340,7 @@ static void radio_task(void *arg) {
     const int watch = port_wdt_watch();
     radio_init();
     while (!apply_radio()) {
-        LOGE(TAG, "the radio will not take its configuration; trying again");
+        note("WARN the radio will not take its configuration; trying again");
         port_wdt_feed(watch);
         port_sleep_ms(5000);
     }
@@ -377,7 +386,7 @@ static void radio_task(void *arg) {
             }
             if (!taken) {
                 snprintf(text, sizeof(text), "RX dropped len=%u rssi=%d", (unsigned)n, rssi);
-                console_line(text);
+                note(text);
             }
         }
         /* The last stretch to our slot spun out, so the packet starts within a tick of its moment. */
@@ -401,7 +410,7 @@ static void radio_task(void *arg) {
             }
             snprintf(text, sizeof(text), "TX counter=%lu len=%u %s", (unsigned long)counter, (unsigned)len,
                      sent ? "ok" : "FAILED");
-            console_line(text);
+            note(text);
         }
         now = port_uptime_us();
         port_mutex_lock(s_lock);
@@ -433,6 +442,22 @@ static void service_task(void *arg) {
                 port_restart(RESTART_NOTE_MAGIC | RESTART_FOR_BLE);
             }
         }
+        /* LOG: the kept console lines to the phone, a few a tick, so a backlog leaves the link room
+         * for the riders; under the command lock, so a LOG asked meanwhile starts where it says */
+        port_mutex_lock(s_command_lock);
+        port_mutex_lock(s_lock);
+        if (!ble_nus_connected()) s_api.log_on = false;
+        port_mutex_give(s_lock);
+        for (int i = 0; i < 8; i++) {
+            port_mutex_lock(s_lock);
+            const bool more = api_log_peek(&s_api, text, sizeof(text));
+            port_mutex_give(s_lock);
+            if (!more || !ble_nus_send_line(text)) break;
+            port_mutex_lock(s_lock);
+            api_log_sent(&s_api);
+            port_mutex_give(s_lock);
+        }
+        port_mutex_give(s_command_lock);
         if ((status_ms += 100) >= STATUS_PUSH_MS || atomic_exchange(&s_status_now, false)) {
             status_ms = 0;
             if (ble_nus_connected()) {
@@ -517,13 +542,22 @@ void run_start(const char *board, const char *reset) {
     s_lock = port_mutex_create();
     s_command_lock = port_mutex_create();
     node_init(&s_node, &cfg, port_random() ^ h);
-    s_api = (api_t){.node = &s_node, .board = board, .reset = s_reset, .power = power,
-                    .tx_dbm = radio_tx_dbm, .tour_s = tour_s};
+    /* field by field: a compound literal of the whole, its log with it, would be built on this
+     * task's small stack first */
+    s_api.node = &s_node;
+    s_api.board = board;
+    s_api.reset = s_reset;
+    s_api.power = power;
+    s_api.tx_dbm = radio_tx_dbm;
+    s_api.tour_s = tour_s;
     LOGI(TAG, "LoRa Convoy, protocol v%d, phone API %d, on %s after %s: %s, slot %u of %u%s, every %u ms, %d dBm",
          PKT_VERSION, API_PROTO, board, s_reset,
          cfg.keyed ? "keyed" : "no key yet: silent until the app or KEY gives one", cfg.slot, cfg.slots,
          kept ? " (kept)" : " (from the chip's ID; SLOT N changes it)", (unsigned)cfg.interval_ms,
          radio_tx_dbm(s_api.power));
+    char boot[64];
+    snprintf(boot, sizeof(boot), "BOOT board=%s reset=%s", board, s_reset);
+    note(boot);
     ble_nus_init(on_ble_line, on_ble_revoke, on_ble_bonds_cleared);
     port_task_create(gnss_task, "gnss", 4096, 4);
     port_task_create(radio_task, "radio", 6144, 5);

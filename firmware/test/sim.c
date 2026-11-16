@@ -1084,6 +1084,14 @@ static void on_taken(void *ctx, int node, unsigned slot, int64_t t) {
     }
 }
 
+/* A packet sent, kept for LOG as a board's console line is (run.c). */
+static void serve_tx(void *ctx, const transmission_t *x) {
+    world_t *w = ctx;
+    char text[48];
+    snprintf(text, sizeof(text), "TX counter=%u len=%u ok", x->bytes[9], (unsigned)x->len);
+    api_log(&s_boards[x->from].api, local_us(w, x->from, x->start), text);
+}
+
 /* How many of the others hold rider k as calling for help: heard from itself, or told. */
 static int know_of_call(const world_t *w, int nodes, int k) {
     int count = 0;
@@ -1115,6 +1123,7 @@ static void serve(int n, int port) {
     /* on a whole second, as GNSS time is, so the PPS edges and the fixes pair up */
     world_init(&w, &sc, (int64_t)now.tv_sec * 1000);
     w.on_taken = on_taken;
+    w.on_tx = serve_tx;
     w.ctx = &w;
     s_n_boards = n;
     for (int i = 0; i < n; i++) {
@@ -1167,9 +1176,15 @@ static void serve(int n, int port) {
             if (b->in_len == sizeof(b->in) - 1) drop(b, i); /* a line too long to be ours */
         }
     status:
-        /* the status unasked, as a board sends it: on connecting and every 10 s */
+        /* the status unasked, as a board sends it: on connecting and every 10 s; LOG's lines as they come */
         for (int i = 0; i < n; i++) {
             board_t *b = &s_boards[i];
+            char logged[API_LINE];
+            if (b->client < 0) b->api.log_on = false;
+            while (b->client >= 0 && api_log_peek(&b->api, logged, sizeof(logged))) {
+                send_line(b, logged);
+                api_log_sent(&b->api);
+            }
             if (b->client < 0 || t < b->next_status) continue;
             char line[API_LINE];
             api_status(&b->api, local_us(&w, i, t), line, sizeof(line));

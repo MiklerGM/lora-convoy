@@ -995,6 +995,58 @@ static void ask(api_t *api, const char *command) {
     api_command(api, line, 10 * SEC, 10 * SEC, collect, NULL);
 }
 
+/* LOG: the console's own lines for the phone's log, kept, numbered, and given again from where the
+ * phone's log ends; those no longer kept passed over, seen in the numbers. */
+static void test_api_log(void) {
+    static node_t n;
+    static api_t api;
+    node_init(&n, &CFG, 7);
+    api = (api_t){.node = &n, .board = "test", .reset = "poweron", .power = 3, .tx_dbm = dbm};
+    char line[API_LINE], boot[16], cmd[48];
+    snprintf(boot, sizeof(boot), "%08lx", (unsigned long)n.boot);
+    assert(!api_log_peek(&api, line, sizeof(line)));   /* nothing until asked */
+    for (int i = 0; i < 3; i++) {
+        snprintf(line, sizeof(line), "TX counter=%d len=34 ok", i);
+        api_log(&api, (5 + i) * SEC, line);
+    }
+    assert(!api_log_peek(&api, line, sizeof(line)));
+    /* a phone with no log of this run: all kept */
+    ask(&api, "LOG 0 0");
+    assert(strcmp(replies[0] + strlen("OK log boot=") + 8, " from=0 next=3") == 0 && starts(replies[0], "OK log boot="));
+    assert(api_log_peek(&api, line, sizeof(line)) && strcmp(line, "LOG n=0 at=5000 TX counter=0 len=34 ok") == 0);
+    /* the link could not take it: the same again */
+    assert(api_log_peek(&api, line, sizeof(line)) && starts(line, "LOG n=0 "));
+    api_log_sent(&api);
+    assert(api_log_peek(&api, line, sizeof(line)) && starts(line, "LOG n=1 at=6000 "));
+    /* the phone's log of this run ends at 2: from there */
+    snprintf(cmd, sizeof(cmd), "LOG %s 2", boot);
+    ask(&api, cmd);
+    assert(strstr(replies[0], " from=2 next=3"));
+    assert(api_log_peek(&api, line, sizeof(line)) && starts(line, "LOG n=2 "));
+    api_log_sent(&api);
+    assert(!api_log_peek(&api, line, sizeof(line)));
+    /* a line as it comes, while on; one too long cut, not run over */
+    char lng[200];
+    memset(lng, 'x', sizeof(lng) - 1);
+    lng[sizeof(lng) - 1] = '\0';
+    api_log(&api, 9 * SEC, lng);
+    assert(api_log_peek(&api, line, sizeof(line)) && strlen(line) == strlen("LOG n=3 at=9000 ") + API_LOG_TEXT - 1);
+    api_log_sent(&api);
+    /* past what is kept: the oldest kept next, and a phone asking from before them gets those */
+    for (int i = 0; i < API_LOG_LINES + 10; i++) api_log(&api, 10 * SEC, "GNSS fix=1");
+    assert(api_log_peek(&api, line, sizeof(line)) && starts(line, "LOG n=14 "));
+    snprintf(cmd, sizeof(cmd), "LOG %s 5", boot);
+    ask(&api, cmd);
+    assert(strstr(replies[0], " from=14 next=142"));
+    /* another run's numbers, or past ours: all kept */
+    snprintf(cmd, sizeof(cmd), "LOG %s 500", boot);
+    ask(&api, cmd);
+    assert(strstr(replies[0], " from=14 "));
+    ask(&api, "LOG 12345678");
+    assert(starts(replies[0], "ERR "));
+    printf("api: LOG keeps the console's own lines and gives them again from where the phone's log ends\n");
+}
+
 static const char *api_status_of(const api_t *api) {
     static char line[API_LINE];
     api_status(api, 10 * SEC, line, sizeof(line));
@@ -1268,5 +1320,6 @@ int main(void) {
     test_node_mode();
     test_tour();
     test_api();
+    test_api_log();
     return 0;
 }

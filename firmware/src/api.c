@@ -97,6 +97,35 @@ static bool mode(const char *s, phy_t now, phy_t *out) {
     return phy_supported(out);
 }
 
+void api_log(api_t *api, int64_t now_us, const char *text) {
+    api_log_line_t *l = &api->log[api->log_next++ % API_LOG_LINES];
+    l->at_ms = (uint32_t)(now_us / 1000);
+    snprintf(l->text, sizeof(l->text), "%s", text);
+}
+
+static uint32_t log_oldest(const api_t *api) {
+    return api->log_next > API_LOG_LINES ? api->log_next - API_LOG_LINES : 0;
+}
+
+bool api_log_peek(api_t *api, char *buf, size_t cap) {
+    if (!api->log_on || api->log_sent >= api->log_next) return false;
+    if (api->log_sent < log_oldest(api)) api->log_sent = log_oldest(api);
+    const api_log_line_t *l = &api->log[api->log_sent % API_LOG_LINES];
+    snprintf(buf, cap, "LOG n=%lu at=%lu %s", (unsigned long)api->log_sent, (unsigned long)l->at_ms, l->text);
+    return true;
+}
+
+void api_log_sent(api_t *api) { api->log_sent++; }
+
+/* "<boot, hex> <n>": where the phone's log of us ends. */
+static bool log_from(const char *s, uint32_t boot, uint32_t next, uint32_t *from) {
+    unsigned long b, n;
+    char extra;
+    if (!s || sscanf(s, "%lx %lu%c", &b, &n, &extra) != 2) return false;
+    *from = b == boot && n <= next ? (uint32_t)n : 0;
+    return true;
+}
+
 void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_reply_fn reply, void *ctx) {
     char out[API_LINE];
     phy_t phy;
@@ -106,7 +135,7 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
     if (arg) *arg++ = '\0';
     node_config_t *cfg = &api->node->cfg;
     long v;
-    uint32_t mask;
+    uint32_t mask, from;
     if (strcasecmp(line, "status") == 0) {
         api_status(api, now_us, out, sizeof(out));
     } else if (strcasecmp(line, "riders") == 0) {
@@ -194,6 +223,11 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
         api->power = (uint8_t)v;
         api->radio_changed = api->setup_changed = true;
         snprintf(out, sizeof(out), "OK power=%ld dbm=%d", v, api->tx_dbm((uint8_t)v));
+    } else if (strcasecmp(line, "log") == 0 && log_from(arg, api->node->boot, api->log_next, &from)) {
+        api->log_sent = from < log_oldest(api) ? log_oldest(api) : from;
+        api->log_on = true;
+        snprintf(out, sizeof(out), "OK log boot=%08lx from=%lu next=%lu", (unsigned long)api->node->boot,
+                 (unsigned long)api->log_sent, (unsigned long)api->log_next);
     } else if (strcasecmp(line, "forget") == 0 && !arg) {
         api->forget = true;
         return; /* answered by whoever can forget: FORGOTTEN, or an ERR */
@@ -217,7 +251,7 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
         snprintf(out, sizeof(out), "OK systems=%ld", v);
     } else {
         snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, CLOCK <t1>, TIME <ms> <utc ms> <err ms>, LEDGER, GROUP <32 hex> <slot> <slots> <ms>, KEY <32 hex>, STATE 0-15, BEAT 0-7, MOVE <m>, PASSENGERS 0-3, DEAF <slots>|-, SLOT 0-%d, SLOTS 1-%d, "
-                 "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, TOUR 0-255, GNSS 0-1, SYSTEMS 1-8, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
+                 "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, TOUR 0-255, GNSS 0-1, SYSTEMS 1-8, LOG <boot> <n>, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
                  NODE_SLOTS);
     }
     reply(ctx, out);
