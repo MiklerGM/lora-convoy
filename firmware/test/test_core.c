@@ -1138,6 +1138,21 @@ static void test_api(void) {
     assert(starts(replies[0], "ERR "));
     ask(&api, "DEAF -");
     assert(strcmp(replies[0], "OK deaf=0") == 0 && n.cfg.deaf == 0);
+    /* the app's board screen: each knob kept with the setup; the bench's DEAF and a state are not */
+    api.setup_changed = false;
+    ask(&api, "STATE 0");
+    ask(&api, "DEAF 3");
+    ask(&api, "DEAF -");
+    assert(!api.setup_changed);
+    static const struct { const char *ask, *ok; } KEPT[] = {
+        {"BEAT 4", "OK beat=4"}, {"MOVE 25", "OK move=25"}, {"PASSENGERS 2", "OK passengers=2"}, {"POWER 2", "OK power=2 dbm=18"}};
+    for (size_t i = 0; i < sizeof(KEPT) / sizeof(KEPT[0]); i++) {
+        api.setup_changed = false;
+        ask(&api, KEPT[i].ask);
+        assert(strcmp(replies[0], KEPT[i].ok) == 0 && api.setup_changed);
+    }
+    assert(n.cfg.beat == 4 && n.cfg.move_m == 25 && n.cfg.passengers == 2 && api.power == 2);
+    ask(&api, "PASSENGERS 0");
     /* more passengers than a packet holds would write past it */
     ask(&api, "PASSENGERS 4");
     assert(starts(replies[0], "ERR ") && n.cfg.passengers == 0);

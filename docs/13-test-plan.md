@@ -22,8 +22,8 @@ Two boards can still stand as neighbours in a large group: given slots 3 and 4 o
 ## Rules for every run
 
 - **An antenna on each board before power.** The Heltec's amplifier reaches 28 dBm.
-- **On the desk:** `POWER 3`, the weakest: 14 dBm, as `dbm=` in `STATUS` shows, sent after every
-  restart, since a board starts at `POWER 1` (24 or 20 dBm) from 2026-11-14 [owner]. `POWER 0` is the strongest, not the least [code]. Boards a metre or more apart, the SDR
+- **On the desk:** `POWER 3`, the weakest: 14 dBm, as `dbm=` in `STATUS` shows, sent once: a board keeps it
+  from 2026-11-16, and is built to start at `POWER 1` (24 or 20 dBm) from 2026-11-14 [owner]. `POWER 0` is the strongest, not the least [code]. Boards a metre or more apart, the SDR
   without an antenna and at low gain; a capture whose bursts clip is redone.
 - **Logs:** one file per board per run, with the computer's time on every line:
   `pio device monitor -p <port> -b 115200 --filter time --filter log2file`. No script is needed

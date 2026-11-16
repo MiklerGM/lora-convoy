@@ -22,7 +22,7 @@ calls for help packet by packet; boards with it are reflashed. The code is `firm
 | Header and CRC | explicit header, CRC on |
 | Low data rate optimisation | off; on in any mode with symbols of 16.38 ms or more |
 | Sync word | SX1262 registers 0x0740 and 0x0741 = `0x64 0x74`, sync symbols 48 and 56 |
-| Power | `POWER 1` by default: 24 dBm on the Heltec V4.3, 20 dBm on the L1 Pro and the T-Echo; `POWER 0` is 28 and 22 dBm, `POWER 3` is 14 dBm on all. Not kept over a restart |
+| Power | `POWER 1` by default: 24 dBm on the Heltec V4.3, 20 dBm on the L1 Pro and the T-Echo; `POWER 0` is 28 and 22 dBm, `POWER 3` is 14 dBm on all. Kept over a restart with the group, from 2026-11-16 |
 
 A 25-byte packet is on the air for 30.848 ms, by the same formula as `tools/airtime.py`: the same
 as 24 bytes, and 26 would cost no more.
@@ -237,7 +237,7 @@ on three transports:
 | `LEDGER` | `LEDGER minutes=60 limit_ms=… used_ms=… positions_ms=…`: the duty ledger, transmit time a minute at a time over the last hour, oldest first, by category |
 | `KEY <32 hex digits>` | `OK keyed group=<id>`; riders heard under another key are forgotten |
 | `STATE <0–15>` | `OK state=<n>`: the state our rider chose (the packet's byte 19); a change goes out in our next three slots, and who carries it starts afresh. `HELP <0–1>` is states 1 and 0, for an app with that button only |
-| `BEAT <0–7>`, `MOVE <1–1000>`, `PASSENGERS <0–3>` | `OK <key>=<value>`: the send rule's heartbeat (every 2^n frames, 0 every frame) and distance in metres, and the riders carried in each packet; for the bench until the invitation carries a profile, not kept (3, 10 and 1 at start) |
+| `BEAT <0–7>`, `MOVE <1–1000>`, `PASSENGERS <0–3>` | `OK <key>=<value>`: the send rule's heartbeat (every 2^n frames, 0 every frame) and distance in metres, and the riders carried in each packet; kept over a restart with the group, as `POWER` is, so a board with no phone rides as it was set (3, 10 and 1 as built). The app's Board settings sends them |
 | `DEAF <3,4 or ->` | `OK deaf=<hex mask>`: for the bench, the board takes nothing directly from these slots, as if they were out of its reach, and still has them from riders who carry them: a chain on one desk. `-` hears everyone; not kept |
 | `SLOT <0–31>`, `SLOTS <1–32>`, `INTERVAL <500–60000>`, `POWER <0–3>` | `OK <key>=<value>`, or `ERR <why>` |
 | `MODE <SF 7–12> <kHz 62, 125, 250, 500>` | `OK mode=<SF>/<kHz>`: another radio mode on the same frequency, for trying range (E2); kept over a restart. Every board of a group needs the same |

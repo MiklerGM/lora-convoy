@@ -163,14 +163,17 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
         node_set_state(api->node, v ? STATE_HELP : STATE_NORMAL);
         snprintf(out, sizeof(out), "OK help=%ld", v);
     } else if (strcasecmp(line, "beat") == 0 && number(arg, 0, 7, &v)) {
-        /* the send rule's knobs, for the bench until a profile carries them; not kept */
+        /* the send rule's knobs, kept with the setup, as POWER is */
         cfg->beat = (uint8_t)v;
+        api->setup_changed = true;
         snprintf(out, sizeof(out), "OK beat=%ld", v);
     } else if (strcasecmp(line, "move") == 0 && number(arg, 1, 1000, &v)) {
         cfg->move_m = (uint16_t)v;
+        api->setup_changed = true;
         snprintf(out, sizeof(out), "OK move=%ld", v);
     } else if (strcasecmp(line, "passengers") == 0 && number(arg, 0, PKT_PASSENGERS_MAX, &v)) {
         cfg->passengers = (uint8_t)v;
+        api->setup_changed = true;
         snprintf(out, sizeof(out), "OK passengers=%ld", v);
     } else if (strcasecmp(line, "deaf") == 0 && slot_list(arg, &mask)) {
         cfg->deaf = mask;
@@ -189,7 +192,7 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
         snprintf(out, sizeof(out), "OK interval=%ld", v);
     } else if (strcasecmp(line, "power") == 0 && number(arg, 0, 3, &v)) {
         api->power = (uint8_t)v;
-        api->radio_changed = true;
+        api->radio_changed = api->setup_changed = true;
         snprintf(out, sizeof(out), "OK power=%ld dbm=%d", v, api->tx_dbm((uint8_t)v));
     } else if (strcasecmp(line, "forget") == 0 && !arg) {
         api->forget = true;

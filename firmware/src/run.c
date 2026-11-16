@@ -1,6 +1,7 @@
 #include "run.h"
 
 #include <stdatomic.h>
+#include <stddef.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -60,8 +61,17 @@ typedef struct {
     uint8_t sf;           /* the radio mode, on v0's frequency */
     uint8_t tour_s;       /* TOUR; 0 in every setup kept before there was one */
     uint16_t bw_khz;      /* 62 for 62.5 */
+    /* from SETUP_VERSION 4: what the app's board screen sets, kept so a board with no phone rides
+     * as it was set */
+    uint8_t power;        /* POWER, 0 strongest */
+    uint8_t beat;         /* BEAT */
+    uint8_t passengers;   /* PASSENGERS */
+    uint8_t spare;
+    uint16_t move_m;      /* MOVE */
 } setup_t;
-#define SETUP_VERSION 3
+#define SETUP_VERSION 4
+/* A setup kept by a board before version 4 is its first part: taken, with the rest as built. */
+#define SETUP_V3_LEN offsetof(setup_t, power)
 
 static node_t s_node;
 static api_t s_api;
@@ -157,7 +167,9 @@ static bool command(char *line, replies_t *out, int64_t came_us) {
     if (s_api.radio_changed) atomic_store(&s_reapply, true);
     setup_t setup = {.version = SETUP_VERSION, .keyed = s_node.cfg.keyed, .slot = s_node.cfg.slot,
                      .slots = s_node.cfg.slots, .interval_ms = s_node.cfg.interval_ms, .sf = s_node.cfg.phy.sf,
-                     .tour_s = s_api.tour_s, .bw_khz = (uint16_t)(s_node.cfg.phy.bw_hz / 1000)};
+                     .tour_s = s_api.tour_s, .bw_khz = (uint16_t)(s_node.cfg.phy.bw_hz / 1000),
+                     .power = s_api.power, .beat = s_node.cfg.beat, .passengers = s_node.cfg.passengers,
+                     .move_m = s_node.cfg.move_m};
     memcpy(setup.key, s_node.cfg.key, sizeof(setup.key));
     const bool save = s_api.setup_changed;
     s_api.forget = s_api.restart = s_api.bootloader = s_api.radio_changed = s_api.setup_changed = false;
@@ -477,7 +489,8 @@ void run_start(const char *board, const char *reset) {
                          .listen_one_in = 32, .move_m = 10, .beat = 3, .passengers = 1,
                          .drift_ppm = NODE_DRIFT_PPM};
     setup_t setup;
-    const bool kept = port_setup_load(&setup, sizeof(setup)) && setup.version == SETUP_VERSION &&
+    const bool v4 = port_setup_load(&setup, sizeof(setup)) && setup.version == SETUP_VERSION;
+    const bool kept = (v4 || (port_setup_load(&setup, SETUP_V3_LEN) && setup.version == 3)) &&
                       setup.slot < NODE_SLOTS && setup.slots >= 1 && setup.slots <= NODE_SLOTS &&
                       setup.interval_ms >= 500 && setup.interval_ms <= 60000;
     if (kept) {
@@ -491,12 +504,20 @@ void run_start(const char *board, const char *reset) {
         phy.bw_hz = setup.bw_khz == 62 ? 62500 : (uint32_t)setup.bw_khz * 1000;
         if (phy_supported(&phy)) cfg.phy = phy;
     }
+    uint8_t power = NODE_POWER_LEVEL;
+    if (v4 && kept) {
+        /* each within what its command takes, else as built */
+        if (setup.power <= 3) power = setup.power;
+        if (setup.beat <= 7) cfg.beat = setup.beat;
+        if (setup.passengers <= PKT_PASSENGERS_MAX) cfg.passengers = setup.passengers;
+        if (setup.move_m >= 1 && setup.move_m <= 1000) cfg.move_m = setup.move_m;
+    }
     const uint8_t tour_s = kept ? setup.tour_s : 0;
     memset(&setup, 0, sizeof(setup));
     s_lock = port_mutex_create();
     s_command_lock = port_mutex_create();
     node_init(&s_node, &cfg, port_random() ^ h);
-    s_api = (api_t){.node = &s_node, .board = board, .reset = s_reset, .power = NODE_POWER_LEVEL,
+    s_api = (api_t){.node = &s_node, .board = board, .reset = s_reset, .power = power,
                     .tx_dbm = radio_tx_dbm, .tour_s = tour_s};
     LOGI(TAG, "LoRa Convoy, protocol v%d, phone API %d, on %s after %s: %s, slot %u of %u%s, every %u ms, %d dBm",
          PKT_VERSION, API_PROTO, board, s_reset,
