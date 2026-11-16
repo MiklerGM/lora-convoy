@@ -22,9 +22,10 @@ object BoardLines {
         val group: Long,
         val fix: Boolean,
         val stopped: Boolean,
-        /** Our rider's call for help is on (state 1), and so many others' boards carry it on. */
-        val help: Boolean,
+        /** What our rider says (STATE_NAMES), and how many others' boards carry it on, and since when (s). */
+        val state: Int,
         val heard: Int,
+        val echoS: Int?,
         /** Where its clock comes from: none, nmea or pps; and how far off it may be, in ms. */
         val time: String,
         val timeErrMs: Double?,
@@ -36,7 +37,17 @@ object BoardLines {
         val reset: String,
         /** False when the board could not save its setup: switched off, it would forget it. */
         val kept: Boolean,
-    )
+        /** The radio mode, SF/kHz; the transmit power's level, 0 the strongest. */
+        val mode: String?,
+        val power: Int?,
+        /** The send rule (send=): a beat every 2^beat frames, a new position after so many metres, riders carried per packet. */
+        val beat: Int?,
+        val moveM: Int?,
+        val passengers: Int?,
+        val sats: Int?,
+    ) {
+        val help get() = state == STATE_HELP
+    }
 
     /** What a board took from a GROUP: the group's tag, and its slot, slots and interval. */
     data class Setup(val group: Long, val slot: Int, val slots: Int, val intervalMs: Int) {
@@ -96,6 +107,7 @@ object BoardLines {
     fun status(line: String): Status? {
         if (!line.startsWith("STATUS ")) return null
         val t = tokens(line)
+        val send = t["send"]?.split('/')
         return Status(
             proto = t["proto"]?.toIntOrNull() ?: return null,
             board = t["board"] ?: "?",
@@ -105,8 +117,9 @@ object BoardLines {
             group = t["group"]?.toLongOrNull(16) ?: return null,
             fix = t["fix"] == "1",
             stopped = t["stopped"] == "1",
-            help = t["state"] == "1",
+            state = t["state"]?.toIntOrNull() ?: STATE_NORMAL,
             heard = t["heard"]?.toIntOrNull() ?: 0,
+            echoS = t["echo"]?.toIntOrNull(),
             time = t["time"] ?: "?",
             timeErrMs = t["err"]?.toDoubleOrNull(),
             riders = t["riders"]?.toIntOrNull() ?: 0,
@@ -115,6 +128,12 @@ object BoardLines {
             dbm = t["dbm"]?.toIntOrNull(),
             reset = t["reset"] ?: "?",
             kept = t["kept"] != "0",
+            mode = t["mode"],
+            power = t["power"]?.toIntOrNull(),
+            beat = send?.getOrNull(0)?.toIntOrNull(),
+            moveM = send?.getOrNull(1)?.toIntOrNull(),
+            passengers = send?.getOrNull(2)?.toIntOrNull(),
+            sats = t["sats"]?.toIntOrNull(),
         )
     }
 
@@ -150,10 +169,11 @@ object BoardLines {
             heardAtMs = nowMs - (heardS * 1000).toLong(),
             speedKmh = t["speed"]?.toIntOrNull(),
             courseDeg = t["course"]?.toIntOrNull(),
-            help = t["help"] == "1",
+            // a board before v5 says help= only
+            state = t["state"]?.toIntOrNull() ?: if (t["help"] == "1") STATE_HELP else STATE_NORMAL,
             stopped = t["stopped"] == "1",
             gpsOk = t["gps"] == "1",
-            answeredBy = t["answered"]?.split(',')?.mapNotNull { it.toIntOrNull() }?.map(::nameOf) ?: emptyList(),
+            via = t["via"]?.toIntOrNull()?.let(::nameOf),
         )
     }
 

@@ -40,6 +40,12 @@
             </intent-filter>
         </activity>
 
+        <!-- The board's settings: power, the send rule, passengers. -->
+        <activity
+            android:name=".BoardActivity"
+            android:exported="false"
+            android:label="Board settings" />
+
         <!-- Joining a group with an invitation, or starting one. -->
         <activity
             android:name=".GroupActivity"

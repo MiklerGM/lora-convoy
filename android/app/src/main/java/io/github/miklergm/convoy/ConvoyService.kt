@@ -127,6 +127,11 @@ class ConvoyService : Service() {
             linkState = "the board refused ${sentGroup?.name ?: "the group"}: $line"
             return
         }
+        // the answer to a command from a screen; TIME's come every 10 s and say nothing to the rider
+        if ((line.startsWith("OK ") && !line.startsWith("OK time=")) || line.startsWith("ERR")) {
+            reply = line
+            return
+        }
         if (line == "FORGOTTEN") {
             // the board has dropped us; Android's own bond goes too, and the board stops being ours
             (link as? BleBoardLink)?.removeBond()
@@ -169,7 +174,8 @@ class ConvoyService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_FORGET -> link?.send("FORGET")
-            ACTION_HELP -> link?.send(if (intent.getBooleanExtra(EXTRA_ON, false)) "HELP 1" else "HELP 0")
+            // and its status at once, so the screen shows what the board took
+            ACTION_COMMAND -> intent.getStringExtra(EXTRA_LINE)?.let { if (link?.send(it) == true) link?.send("STATUS") }
         }
         return START_STICKY
     }
@@ -198,6 +204,8 @@ class ConvoyService : Service() {
                 boardRiders.all(boardClock, mono, now)
             }
             if (riders != null) osmand.show(riders.map { it.toPoint(now) })
+            ConvoyService.riders = riders.orEmpty()
+            ridersAtMs = now
             state = osmand.state
             version = osmand.version
         } catch (e: Exception) {
@@ -217,6 +225,8 @@ class ConvoyService : Service() {
         board = null
         confirmed = null
         linkState = null
+        reply = null
+        riders = emptyList()
         super.onDestroy()
     }
 
@@ -268,9 +278,16 @@ class ConvoyService : Service() {
         private const val PHONE_UTC_ERR_MS = 1_000.0
         /** Asks the board to forget this phone; FORGOTTEN then ends the link on both sides. */
         const val ACTION_FORGET = "io.github.miklergm.convoy.FORGET"
-        /** Our rider's call for help, on or off (EXTRA_ON), through the board. */
-        const val ACTION_HELP = "io.github.miklergm.convoy.HELP"
-        const val EXTRA_ON = "on"
+        /** One line of the phone API to the board (EXTRA_LINE), from a screen: a state, a setting. */
+        const val ACTION_COMMAND = "io.github.miklergm.convoy.COMMAND"
+        const val EXTRA_LINE = "line"
+
+        /** A command to the board this service is linked to; false, and nothing sent, without one. */
+        fun command(context: Context, line: String): Boolean {
+            if (board == null || state == null) return false
+            context.startService(Intent(context, ConvoyService::class.java).setAction(ACTION_COMMAND).putExtra(EXTRA_LINE, line))
+            return true
+        }
         private const val CHANNEL = "riders"
 
         /** For the screen: null while the service is not running. */
@@ -286,6 +303,14 @@ class ConvoyService : Service() {
             private set
         /** The group the board has said it took on this link: this phone's, once it has. */
         @Volatile var confirmed: Invitation? = null
+            private set
+        /** The board's answer to the last command from a screen. */
+        @Volatile var reply: String? = null
+            private set
+        /** The riders as last put on the map, and the calendar's time then. */
+        @Volatile var riders: List<Rider> = emptyList()
+            private set
+        @Volatile var ridersAtMs = 0L
             private set
         /** When the board last heard another radio in its slot, on our monotonic clock; 0 for never. */
         @Volatile var clashAtMs = 0L

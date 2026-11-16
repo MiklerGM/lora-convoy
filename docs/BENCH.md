@@ -81,12 +81,18 @@ the RIDER lines stop, and their `rssi=` and `snr=` before that. `MODE 7 250` goe
 - Group, Create with the riders' names, then send each other rider their invitation; on each
   other phone, Join with it. Each board's `group=` is the same.
 - OsmAnd, Plugins, LoRa Convoy on: the other riders on the map, ageing grey when not heard.
+- Board settings: power, the distance after which a new position goes, the heartbeat while
+  standing, the riders carried in each packet; each as the board's status says it now, set with
+  Set, and kept by the board over a restart.
+- The main screen lists the riders as the board knows them: their state, how old their position
+  is, and `via` whom when the board has them only from another rider.
 - Forget this board, or the board's button held 3 s: the phone can pair again.
 
 ## 5. Help (M7)
 
-- Need help on one phone: the others' maps show that rider red with SOS, and the details say who
-  has answered; the caller's screen counts the answers.
+- A state on one phone (Needs help, Stop now, Stop when convenient, Helping): the others' maps
+  label that rider with it, red for the first two; the caller's screen counts the riders whose
+  boards carry it.
 - `LEDGER` on a console: transmit time a minute at a time over the last hour.
 
 ## What to bring back

@@ -17,8 +17,8 @@ import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.FrameLayout
-import android.widget.ScrollView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import android.widget.TextView
 
 /** The main screen: where the riders come from, what OsmAnd says, and the board's own state. */
@@ -26,16 +26,25 @@ class MainActivity : Activity() {
 
     private val handler = Handler(Looper.getMainLooper())
     private lateinit var status: TextView
+    private lateinit var mine: TextView
+    private lateinit var riders: TextView
     private lateinit var target: EditText
     private lateinit var found: LinearLayout
-    private lateinit var helpButton: Button
+    private lateinit var stateButtons: List<Button>
     private lateinit var batteryButton: Button
     private var scanner: BleBoardLink.Scanner? = null
 
     private val refresh = object : Runnable {
         override fun run() {
             status.text = statusText()
-            helpButton.text = if (ConvoyService.board?.help == true) "Call off help" else "Need help"
+            val board = ConvoyService.board
+            mine.text = board?.let(::stateText) ?: "Your state: no board connected."
+            // the state the board says it is in, marked, and not to be chosen again
+            stateButtons.forEachIndexed { i, b ->
+                b.text = (if (board?.state == i) "✓ " else "") + STATE_NAMES[i]
+                b.isEnabled = board != null && board.state != i
+            }
+            riders.text = ridersText()
             batteryButton.visibility = if (batteryUnrestricted()) View.GONE else View.VISIBLE
             handler.postDelayed(this, 1000)
         }
@@ -57,21 +66,26 @@ class MainActivity : Activity() {
             setPadding(pad, pad, pad, pad)
             addView(TextView(this@MainActivity).apply { text = "LoRa Convoy $version"; textSize = 20f })
             addView(status)
-            helpButton = button("Need help") { help() }
-            addView(helpButton)
+            mine = TextView(this@MainActivity).apply { textSize = 16f }
+            addView(mine)
+            stateButtons = STATE_NAMES.indices.map { i -> button(STATE_NAMES[i]) { choose(i) }.also(::addView) }
+            riders = TextView(this@MainActivity).apply { textSize = 16f; setPadding(0, pad, 0, pad) }
+            addView(riders)
             batteryButton = button("Let it run in the background") { askBatteryExemption() }
             addView(batteryButton)
+            addView(button("Open OsmAnd") { openOsmAnd() })
+            addView(button("Board settings") { startActivity(Intent(this@MainActivity, BoardActivity::class.java)) })
             addView(button("Group") { startActivity(Intent(this@MainActivity, GroupActivity::class.java)) })
-            addView(button("Mock riders") { start(ConvoyService.Source.Mock) })
-            addView(target)
-            addView(button("Simulated board") { simulated()?.let(::start) })
             addView(button("Find boards") { findBoards() })
             found = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
             addView(found)
             addView(button("Forget this board") { forget() })
-            addView(button("Stop") { stopService(Intent(this@MainActivity, ConvoyService::class.java)) })
-            addView(button("Open OsmAnd") { openOsmAnd() })
             addView(button("Last route") { startActivity(Intent(this@MainActivity, RouteActivity::class.java)) })
+            addView(button("Stop") { stopService(Intent(this@MainActivity, ConvoyService::class.java)) })
+            addView(TextView(this@MainActivity).apply { text = "\nWithout a board"; textSize = 16f })
+            addView(button("Mock riders") { start(ConvoyService.Source.Mock) })
+            addView(target)
+            addView(button("Simulated board") { simulated()?.let(::start) })
         }
         // Android 15 draws apps edge to edge: this keeps the column clear of the system bars.
         // scrolls: a long status and the boards found push the buttons past the screen's end
@@ -126,15 +140,27 @@ class MainActivity : Activity() {
         }
     }
 
-    /** Our rider's call for help, through the board: the others' maps show it, and their boards answer. */
-    private fun help() {
-        val board = ConvoyService.board
-        if (board == null || ConvoyService.state == null) {
-            status.text = "No board connected to call for help through."
-            return
-        }
-        startService(Intent(this, ConvoyService::class.java).setAction(ConvoyService.ACTION_HELP)
-            .putExtra(ConvoyService.EXTRA_ON, !board.help))
+    /** What our rider says, through the board: the others' maps show it, and their boards carry it on. */
+    private fun choose(state: Int) {
+        if (!ConvoyService.command(this, "STATE $state")) status.text = "No board connected to tell it through."
+    }
+
+    /** Our state, and whether the others have it yet: a rider's board that carries it has it. */
+    private fun stateText(b: BoardLines.Status): String {
+        // a board's status comes every 10 s: an age under a minute would only mislead
+        val carried = when (b.heard) {
+            0 -> "no one has it yet"
+            1 -> "1 rider has it"
+            else -> "${b.heard} riders have it"
+        } + (b.echoS?.takeIf { it >= 60 }?.let { ", none told it for ${age(it * 1000L)}" } ?: "")
+        return "Your state: ${stateName(b.state)}; $carried."
+    }
+
+    private fun ridersText(): String {
+        val all = ConvoyService.riders
+        if (all.isEmpty()) return "No riders heard yet."
+        val now = ConvoyService.ridersAtMs
+        return all.sortedBy { it.name }.joinToString("\n") { it.line(now) }
     }
 
     /**
@@ -204,10 +230,6 @@ class MainActivity : Activity() {
             lines.add("Another board is sending in your slot, so the others see neither: has one invitation " +
                 "been used twice? Each rider needs their own.")
         }
-        ConvoyService.board?.takeIf { it.help }?.let {
-            lines.add(if (it.heard == 0) "You are calling for help; no one has answered yet."
-                else "You are calling for help; ${it.heard} riders' boards have answered.")
-        }
         ConvoyService.board?.let {
             val mine = GroupActivity.Group.load(this)
             val tag = "%08x".format(it.group)
@@ -221,13 +243,15 @@ class MainActivity : Activity() {
             }
             val clock = when (it.time) {
                 "pps" -> "time from PPS"
+                "group" -> "time from the group"
                 "nmea" -> "time from NMEA"
                 else -> "no time yet"
             } + (it.timeErrMs?.let { e -> " ±$e ms" } ?: "")
             val who = if (inMine) "${mine!!.riderName(it.slot)}, " else ""
-            lines.add("Board: ${it.board}, ${who}rider ${it.slot + 1}${it.slots?.let { n -> " of $n" } ?: ""}, $group, " +
-                (if (it.fix) "GNSS fix" else "no GNSS fix") + ", $clock, ${it.riders} riders heard, " +
-                "${it.dbm ?: "?"} dBm, duty ${it.duty}, started after ${it.reset}")
+            lines.add("Board: ${it.board}, ${who}rider ${it.slot + 1}${it.slots?.let { n -> " of $n" } ?: ""}, $group")
+            lines.add((if (it.fix) "GNSS fix" + (it.sats?.let { n -> ", $n satellites" } ?: "") else "No GNSS fix") +
+                "; $clock")
+            lines.add("${it.riders} riders known, ${it.dbm ?: "?"} dBm, duty ${it.duty}, started after ${it.reset}")
             if (!it.kept) lines.add("The board could not save its setup: switched off, it will forget it.")
         }
         return lines.joinToString("\n")

@@ -25,7 +25,7 @@ class BoardLinesTest {
         assertEquals(172, r.courseDeg)
         assertTrue(r.gpsOk)
         assertFalse(r.help || r.stopped)
-        assertEquals(emptyList<String>(), r.answeredBy)
+        assertNull(r.via)
         assertEquals(0x86c91c92L, BoardLines.groupOf(line))
         // where it was heard, read past the packets' rx= at the end of the line
         assertEquals(BoardLines.Heard(boot = 0xa, rxMs = 68_600, fix = 53_757), BoardLines.heard(line))
@@ -35,9 +35,23 @@ class BoardLinesTest {
         assertEquals("Christopher", named.name)
         assertEquals("Christop", named.short)
         assertEquals("3", r.short)
-        // calling for help: who has answered this call, named
-        val calling = BoardLines.rider(line.replace("help=0", "help=1").replace("answered=-", "answered=0,1"), now, group)!!
-        assertEquals(listOf("Ann", "Bob"), calling.answeredBy)
+        // a board before v5: help= alone
+        assertTrue(BoardLines.rider(line.replace("help=0", "help=1"), now)!!.help)
+    }
+
+    @Test
+    fun `a v5 rider line, its state and who told of it`() {
+        val line = "RIDER slot=2 group=86c91c92 boot=0000000a at=70100 heard_at=68600 fix=53757 pos=1 lat=47.1415722 " +
+            "lon=9.5280433 fix_age=13 heard=1.5 speed=40 course=172 gps=1 help=0 stopped=0 answered=- state=3 via=0 " +
+            "direct=- rssi=-90 snr=5.00 rx=12/14 offset=? late=0 sats=9"
+        val group = Invitation(ByteArray(16), 0, 3, 2000, "Bench", listOf("Ann", "Bob", "Christopher"))
+        val r = BoardLines.rider(line, now, group)!!
+        assertEquals(3, r.state)
+        assertFalse(r.help)
+        assertEquals("Ann", r.via)
+        // heard itself: told by no one
+        assertNull(BoardLines.rider(line.replace("via=0", "via=-"), now, group)!!.via)
+        assertTrue(BoardLines.rider(line.replace("state=3", "state=1"), now)!!.help)
     }
 
     @Test
@@ -84,6 +98,16 @@ class BoardLinesTest {
         assertEquals("0.43%", s.duty)
         assertEquals(16, s.dbm)
         assertTrue(s.kept)
+        assertEquals(1, s.state)
+        assertEquals(3, s.echoS)
+        assertEquals(listOf(3, 10, 1), listOf(s.beat, s.moveM, s.passengers))
+        assertEquals(3, s.power)
+        assertEquals(9, s.sats)
+        // no one has carried our state yet; a board before v5's send rule
+        val first = BoardLines.status("STATUS proto=8 slot=0 group=86c91c92 echo=- mode=7/250")!!
+        assertNull(first.echoS)
+        assertNull(first.beat)
+        assertEquals("7/250", first.mode)
         assertFalse(BoardLines.status("STATUS proto=8 slot=0 group=86c91c92 kept=0")!!.kept)
         // another state than a call for help is not one
         assertFalse(BoardLines.status("STATUS proto=8 slot=0 group=86c91c92 state=3")!!.help)

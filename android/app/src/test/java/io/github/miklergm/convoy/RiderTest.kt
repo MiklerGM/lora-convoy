@@ -62,14 +62,22 @@ class RiderTest {
             assertFalse(it.stale)
             assertEquals(listOf("Heard at 08:01:39", "Fix from 08:01:37", "40 km/h, heading 270°"), it.details)
         }
-        fresh.copy(help = true, stopped = true).toPoint(now, utc).let {
+        fresh.copy(state = STATE_HELP, stopped = true, via = "Bob").toPoint(now, utc).let {
             assertEquals("A SOS", it.shortName)
-            assertEquals("Rider A needs help", it.fullName)
+            assertEquals("Rider A: needs help", it.fullName)
             assertEquals(HELP_COLOR, it.color)
-            assertEquals(
-                listOf("Needs help", "No one has answered yet", "Heard at 08:01:39", "Fix from 08:01:37", "Stopped"),
-                it.details,
-            )
+            assertEquals(listOf("Needs help", "Heard at 08:01:39 from Bob", "Fix from 08:01:37", "Stopped"), it.details)
+        }
+        // the other states: a word on the label; a stop now red as a call for help is
+        fresh.copy(state = STATE_STOP_NOW).toPoint(now, utc).let {
+            assertEquals("A STOP", it.shortName)
+            assertEquals(HELP_COLOR, it.color)
+        }
+        assertEquals("A break", fresh.copy(state = 3).toPoint(now, utc).shortName)
+        // an old one says how old too, and what is not urgent turns grey
+        fresh.copy(state = 4, heardAtMs = now - 45_000).toPoint(now, utc).let {
+            assertEquals("A helping 45 s", it.shortName)
+            assertEquals(STALE_COLOR, it.color)
         }
         fresh.copy(heardAtMs = now - 45_000, gpsOk = false).toPoint(now, utc).let {
             assertEquals("A 45 s", it.shortName)
@@ -91,15 +99,20 @@ class RiderTest {
         assertTrue(fresh.copy(fixAtMs = null).toPoint(now, utc).stale)
         assertTrue(fresh.copy(fixAtMs = now + 60_000).toPoint(now, utc).stale)
         // and help still shows above it all
-        assertEquals(HELP_COLOR, fresh.copy(fixAtMs = now - 600_000, gpsOk = false, help = true).toPoint(now, utc).color)
+        fresh.copy(fixAtMs = now - 600_000, gpsOk = false, state = STATE_HELP).toPoint(now, utc).let {
+            assertEquals(HELP_COLOR, it.color)
+            assertEquals("A SOS 10 min", it.shortName)
+        }
     }
 
     @Test
-    fun `a call for help shows who answers it`() {
+    fun `a rider in the app's own list`() {
         val now = start
-        val caller = Rider("2", "Rider 2", "2", 0, lat0, lon0, fixAtMs = now, heardAtMs = now, speedKmh = 0,
-            courseDeg = null, help = true, answeredBy = listOf("Rider 3", "Rider 4"))
-        assertEquals("Answered by Rider 3, Rider 4", caller.toPoint(now).details[1])
+        val r = Rider("slot1", "Bob", "Bob", 0, lat0, lon0, fixAtMs = now - 12_000, heardAtMs = now - 2_000,
+            speedKmh = 40, courseDeg = 90)
+        assertEquals("Bob · position 12 s old · heard 2 s ago · 40 km/h", r.line(now))
+        assertEquals("Bob · Needs help · position of unknown age, no GPS · heard 2 s ago via Ann · stopped",
+            r.copy(state = STATE_HELP, fixAtMs = null, gpsOk = false, via = "Ann", speedKmh = 0).line(now))
     }
 
     @Test

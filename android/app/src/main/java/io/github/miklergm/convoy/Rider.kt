@@ -23,12 +23,27 @@ data class Rider(
     val heardAtMs: Long,
     val speedKmh: Int?,
     val courseDeg: Int?,
-    val help: Boolean = false,
+    /** What the rider says: [STATE_NAMES], by the firmware's numbers (codec.h). */
+    val state: Int = STATE_NORMAL,
     val stopped: Boolean = false,
     val gpsOk: Boolean = true,
-    /** For a rider who needs help: the names of those whose boards have answered this call, as the board heard them. */
-    val answeredBy: List<String> = emptyList(),
-)
+    /** Who told us of this rider last, when it was not the rider itself: its name. */
+    val via: String? = null,
+) {
+    val help get() = state == STATE_HELP
+}
+
+const val STATE_NORMAL = 0
+const val STATE_HELP = 1
+const val STATE_STOP_NOW = 2
+
+/** The states a rider can choose, by number, as the firmware has them (codec.h). */
+val STATE_NAMES = listOf("Riding", "Needs help", "Stop now", "Stop when convenient", "Helping")
+
+/** What the map's label adds for each state; "" for none. */
+private val STATE_TAGS = listOf("", "SOS", "STOP", "break", "helping")
+
+fun stateName(state: Int) = STATE_NAMES.getOrElse(state) { "State $state" }
 
 /** What OsmAnd draws for a rider, as plain data so the rules are tested without Android. */
 data class PointSpec(
@@ -58,7 +73,7 @@ private val CLOCK = DateTimeFormatter.ofPattern("HH:mm:ss")
 
 /**
  * OsmAnd 5.4 draws a layer point as a circle in the point's colour, labelled with its short name;
- * the details are lines in the point's menu. So help and staleness go into the colour and the
+ * the details are lines in the point's menu. So a state and staleness go into the colour and the
  * label, which are redrawn every tick and seen without a tap. The details hold clock times, not
  * ages: an open menu is not redrawn, and "heard 2 s ago" would stay on screen while it grew false.
  */
@@ -69,18 +84,13 @@ fun Rider.toPoint(nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): PointSpec
     val fixAgo = fixAtMs?.let { nowMs - it }
     val positionOld = !gpsOk || fixAgo == null || fixAgo > STALE_AFTER_MS || fixAgo < -FUTURE_SLACK_MS
     val stale = heardAgo > STALE_AFTER_MS || positionOld
-    val label = when {
-        help -> "$short SOS"
-        stale -> "$short ${age(maxOf(heardAgo, fixAgo ?: heardAgo))}"
-        else -> short
-    }
+    // the state's word and, once old, how old: "3 SOS 2 min"
+    val label = listOf(short, STATE_TAGS.getOrElse(state) { "" }, if (stale) age(maxOf(heardAgo, fixAgo ?: heardAgo)) else "")
+        .filter { it.isNotEmpty() }.joinToString(" ")
     fun at(ms: Long) = CLOCK.format(Instant.ofEpochMilli(ms).atZone(zone))
     val details = buildList {
-        if (help) {
-            add("Needs help")
-            add(if (answeredBy.isEmpty()) "No one has answered yet" else "Answered by ${answeredBy.joinToString()}")
-        }
-        add("Heard at ${at(heardAtMs)}")
+        if (state != STATE_NORMAL) add(stateName(state))
+        add("Heard at ${at(heardAtMs)}" + (via?.let { " from $it" } ?: ""))
         add(when {
             fixAtMs == null -> "Fix time unknown"
             gpsOk -> "Fix from ${at(fixAtMs)}"
@@ -95,9 +105,10 @@ fun Rider.toPoint(nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): PointSpec
     return PointSpec(
         id = id,
         shortName = label,
-        fullName = if (help) "$name needs help" else name,
+        fullName = if (state != STATE_NORMAL) "$name: ${stateName(state).lowercase()}" else name,
         color = when {
-            help -> HELP_COLOR
+            // both ask everyone at once; the label tells them apart
+            help || state == STATE_STOP_NOW -> HELP_COLOR
             stale -> STALE_COLOR
             else -> color
         },
@@ -117,3 +128,12 @@ fun age(ms: Long): String {
         else -> "${s / 3600} h"
     }
 }
+
+/** One line of the app's own list: who, what they say, how old their position is, and who told it. */
+fun Rider.line(nowMs: Long): String = buildList {
+    add(name)
+    if (state != STATE_NORMAL) add(stateName(state))
+    add("position " + (fixAtMs?.let { "${age(nowMs - it)} old" } ?: "of unknown age") + if (gpsOk) "" else ", no GPS")
+    add("heard ${age(nowMs - heardAtMs)} ago" + (via?.let { " via $it" } ?: ""))
+    speedKmh?.let { add(if (stopped || it == 0) "stopped" else "$it km/h") }
+}.joinToString(" · ")

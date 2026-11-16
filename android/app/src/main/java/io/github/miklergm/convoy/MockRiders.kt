@@ -31,7 +31,7 @@ object MockRiders {
         val a = loop("a", 0xFF1E88E5.toInt(), 600.0, 40.0, 0.0, t)
         val b = if (t < HELP_AFTER_S) loop("b", 0xFF43A047.toInt(), 300.0, 20.0, 2.0, t)
         else loop("b", 0xFF43A047.toInt(), 300.0, 20.0, 2.0, HELP_AFTER_S)
-            .copy(speedKmh = 0, stopped = true, help = true)
+            .copy(speedKmh = 0, stopped = true, state = STATE_HELP)
         val c = if (t < LOST_AFTER_S) loop("c", 0xFFFB8C00.toInt(), 1000.0, 60.0, 4.0, t)
         else loop("c", 0xFFFB8C00.toInt(), 1000.0, 60.0, 4.0, LOST_AFTER_S).let {
             val lastMs = startMs + (LOST_AFTER_S * 1000).toLong()

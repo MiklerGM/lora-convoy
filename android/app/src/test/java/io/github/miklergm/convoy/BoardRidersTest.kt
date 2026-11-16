@@ -7,7 +7,7 @@ import org.junit.Test
 class BoardRidersTest {
 
     private fun rider(slot: Int, help: Boolean = false) = Rider("slot$slot", "Rider ${slot + 1}", "${slot + 1}", 0,
-        47.0, 9.0, fixAtMs = 0, heardAtMs = 0, speedKmh = null, courseDeg = null, help = help)
+        47.0, 9.0, fixAtMs = 0, heardAtMs = 0, speedKmh = null, courseDeg = null, state = if (help) STATE_HELP else STATE_NORMAL)
 
     // the groups of the keys 00 01 .. 0f and 0f 0e 00 ..: their ids, from OpenSSL
     private val before = 0x86c91c92L
