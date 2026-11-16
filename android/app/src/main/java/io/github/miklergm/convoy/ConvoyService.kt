@@ -44,6 +44,9 @@ class ConvoyService : Service() {
     @Volatile private var group: Invitation? = null
     /** The board's clash count at its last status on this link, to see it grow. */
     @Volatile private var lastClash: Int? = null
+    private lateinit var log: BoardLog
+    /** What this link asked LOG for: where the log of the board's own lines ended then. */
+    @Volatile private var logAsked: Long? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -61,11 +64,14 @@ class ConvoyService : Service() {
             .setOngoing(true)
             .build())
         sourceText = source.describe()
+        log = BoardLog(java.io.File(filesDir, BoardLog.DIR))
+        log.write("# started: ${source.describe()}")
         osmand = OsmAnd(this)
         osmand.connect()
         link = source.link(this)?.also { l ->
             l.open(::onLine) { s ->
                 linkState = s
+                log.write("# $s")
                 // its version first: a board that speaks another protocol is asked nothing more
                 if (s.startsWith("connected")) {
                     clocksAsked = 0
@@ -73,16 +79,39 @@ class ConvoyService : Service() {
                     confirmed = null
                     askedRiders = false
                     lastClash = null
-                    l.send("STATUS")
+                    logAsked = null
+                    send("STATUS")
                 }
             }
         }
         worker.scheduleWithFixedDelay(::tick, 0, 1, TimeUnit.SECONDS)
     }
 
+    /** A line to the board, in the log too, as the cable's logger has what it sends. */
+    private fun send(line: String): Boolean {
+        // one that could not go is not logged: the link's state says why, once, not every second
+        val sent = link?.send(line) == true
+        if (sent) log.write("> $line")
+        return sent
+    }
+
     private fun onLine(line: String) {
         val receivedMono = SystemClock.elapsedRealtime()
         val received = System.currentTimeMillis()
+        log.write(line)
+        BoardLines.logNumber(line)?.let {
+            logNext = maxOf(logNext, it + 1)
+            return
+        }
+        BoardLines.logStart(line)?.let {
+            val asked = logAsked
+            when {
+                it.boot != logBoot -> log.write("# the board's run %08x: its own lines from %d".format(it.boot, it.from))
+                asked != null && it.from > asked -> log.write("# the board's own lines $asked to ${it.from - 1} were no longer kept")
+            }
+            logBoot = it.boot
+            return
+        }
         BoardLines.clock(line)?.let { c ->
             boardClock.observe(c.boot, c.t1Ms, c.rxUs, c.txUs, receivedMono, c.utcMs)
             // the board's calendar: our UTC at a moment of its clock, give or take the reckoning and
@@ -90,7 +119,7 @@ class ConvoyService : Service() {
             boardClock.reckoning(c.boot, receivedMono)?.let { r ->
                 val boardMs = c.txUs / 1000
                 val utc = received - (receivedMono - (boardMs - r.offsetMs).roundToLong())
-                link?.send("TIME $boardMs $utc ${(r.errMs + PHONE_UTC_ERR_MS).roundToLong()}")
+                send("TIME $boardMs $utc ${(r.errMs + PHONE_UTC_ERR_MS).roundToLong()}")
             }
             return
         }
@@ -103,6 +132,11 @@ class ConvoyService : Service() {
                 boardRiders.clear()
             } else {
                 board = status
+                // its own lines too, from where this phone's log of them ends, once per link
+                if (logAsked == null) {
+                    logAsked = logNext
+                    send("LOG %08x %d".format(logBoot, logNext))
+                }
                 boardRiders.group(status.group)
                 lastClash?.let { if (status.clash > it) clashAtMs = SystemClock.elapsedRealtime() }
                 lastClash = status.clash
@@ -153,29 +187,29 @@ class ConvoyService : Service() {
      * before the new key is not taken, however late it comes.
      */
     private fun setUp() {
-        val l = link ?: return
+        if (link == null) return
         val mine = GroupActivity.Group.load(this)
         group = mine
         if (mine != null && mine != sentGroup) {
             confirmed = null
             sentGroup = mine
-            l.send(mine.setup())
+            send(mine.setup())
         } else if (mine == null && !askedRiders) {
             askRiders()
         }
     }
 
     private fun askRiders() {
-        val l = link ?: return
+        if (link == null) return
         askedRiders = true
-        l.send("RIDERS")
+        send("RIDERS")
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_FORGET -> link?.send("FORGET")
+            ACTION_FORGET -> send("FORGET")
             // and its status at once, so the screen shows what the board took
-            ACTION_COMMAND -> intent.getStringExtra(EXTRA_LINE)?.let { if (link?.send(it) == true) link?.send("STATUS") }
+            ACTION_COMMAND -> intent.getStringExtra(EXTRA_LINE)?.let { if (send(it)) send("STATUS") }
         }
         return START_STICKY
     }
@@ -193,11 +227,11 @@ class ConvoyService : Service() {
             } else {
                 // a live board says what it knows every 10 s, and this keeps its link from going quiet
                 if (mono >= nextPoll) {
-                    link?.send("STATUS")
+                    send("STATUS")
                     nextPoll = mono + 10_000
                 }
                 // the clocks: three exchanges as a link begins, then one every 10 s
-                if ((clocksAsked < 3 || mono >= nextClock) && link?.send("CLOCK $mono") == true) {
+                if ((clocksAsked < 3 || mono >= nextClock) && send("CLOCK $mono")) {
                     clocksAsked++
                     nextClock = mono + 10_000
                 }
@@ -215,6 +249,8 @@ class ConvoyService : Service() {
     }
 
     override fun onDestroy() {
+        log.write("# stopped")
+        log.close()
         link?.close()
         worker.execute {
             osmand.clear()
@@ -304,6 +340,11 @@ class ConvoyService : Service() {
         /** The group the board has said it took on this link: this phone's, once it has. */
         @Volatile var confirmed: Invitation? = null
             private set
+        /** Where this phone's log of the board's own lines ends: the board's run and the next line's
+         * number, kept over links and over the service started again, so a new link asks only for
+         * what was missed. ponytail: not over the app's process; a new one asks for all the board kept. */
+        @Volatile private var logBoot = 0L
+        @Volatile private var logNext = 0L
         /** The board's answer to the last command from a screen. */
         @Volatile var reply: String? = null
             private set

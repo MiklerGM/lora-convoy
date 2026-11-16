@@ -75,6 +75,7 @@ class MainActivity : Activity() {
             addView(batteryButton)
             addView(button("Open OsmAnd") { openOsmAnd() })
             addView(button("Board settings") { startActivity(Intent(this@MainActivity, BoardActivity::class.java)) })
+            addView(button("Share log") { shareLog() })
             addView(button("Group") { startActivity(Intent(this@MainActivity, GroupActivity::class.java)) })
             addView(button("Find boards") { findBoards() })
             found = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
@@ -138,6 +139,22 @@ class MainActivity : Activity() {
         if (requestCode == 2 && grantResults.isNotEmpty() && grantResults.all { it == PackageManager.PERMISSION_GRANTED }) {
             findBoards()
         }
+    }
+
+    /** The newest day's log of the board, to another app: a messenger, mail, a file manager. */
+    private fun shareLog() {
+        val f = BoardLog.newest(java.io.File(filesDir, BoardLog.DIR))
+        if (f == null) {
+            status.text = "No log yet: it starts with a board, mock or simulated."
+            return
+        }
+        val send = Intent(Intent.ACTION_SEND).apply {
+            type = "text/plain"
+            putExtra(Intent.EXTRA_STREAM, Uri.parse("content://${RouteProvider.AUTHORITY}/${f.name}"))
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        }
+        // the riders' positions are in it, in clear
+        startActivity(Intent.createChooser(send, "${f.name}: with the riders' positions"))
     }
 
     /** What our rider says, through the board: the others' maps show it, and their boards carry it on. */

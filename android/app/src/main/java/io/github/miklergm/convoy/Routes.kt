@@ -70,10 +70,16 @@ class RouteProvider : ContentProvider() {
 
     override fun onCreate() = true
 
+    /** A kept route, or a day's log of the board (BoardLog), for Share log. */
     private fun file(uri: Uri): File {
         val name = uri.lastPathSegment
-        if (name == null || !NAME.matches(name)) throw FileNotFoundException(uri.toString())
-        val file = File(File(context!!.filesDir, Routes.DIR), name)
+        val dir = when {
+            name == null -> throw FileNotFoundException(uri.toString())
+            NAME.matches(name) -> Routes.DIR
+            BoardLog.NAME.matches(name) -> BoardLog.DIR
+            else -> throw FileNotFoundException(uri.toString())
+        }
+        val file = File(File(context!!.filesDir, dir), name)
         if (!file.exists()) throw FileNotFoundException(uri.toString())
         return file
     }
@@ -91,7 +97,7 @@ class RouteProvider : ContentProvider() {
         }
     }
 
-    override fun getType(uri: Uri) = "application/gpx+xml"
+    override fun getType(uri: Uri) = if (uri.lastPathSegment?.endsWith(".log") == true) "text/plain" else "application/gpx+xml"
     override fun insert(uri: Uri, values: ContentValues?): Uri? = throw UnsupportedOperationException()
     override fun update(uri: Uri, values: ContentValues?, selection: String?, selectionArgs: Array<out String>?) =
         throw UnsupportedOperationException()

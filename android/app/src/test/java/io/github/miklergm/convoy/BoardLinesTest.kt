@@ -142,6 +142,15 @@ class BoardLinesTest {
     }
 
     @Test
+    fun `the board's own lines for the log, numbered, and its answer to LOG`() {
+        assertEquals(41L, BoardLines.logNumber("LOG n=41 at=70100 TX counter=12 len=34 ok"))
+        assertEquals(null, BoardLines.logNumber("TX counter=12 len=34 ok"))
+        assertEquals(BoardLines.LogStart(boot = 0x1a2b3c4d, from = 14, next = 142),
+            BoardLines.logStart("OK log boot=1a2b3c4d from=14 next=142"))
+        assertNull(BoardLines.logStart("OK beat=3"))
+    }
+
+    @Test
     fun `lines from pieces, and an overlong one dropped to its end`() {
         val a = LineAssembler(max = 16)
         assertEquals(emptyList<String>(), a.feed("RIDER sl".toByteArray()))

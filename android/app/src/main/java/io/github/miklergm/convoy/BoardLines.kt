@@ -101,6 +101,19 @@ object BoardLines {
         return (if (behind < 0x8000) nowS - behind else nowS + (0x10000 - behind)) * 1000
     }
 
+    /** A LOG line's number: one of the board's own console lines, numbered for this phone's log. */
+    fun logNumber(line: String): Long? = if (line.startsWith("LOG ")) tokens(line)["n"]?.toLongOrNull() else null
+
+    /** The board's answer to LOG: its run, and the numbers of the first line it gives and the next it will have. */
+    data class LogStart(val boot: Long, val from: Long, val next: Long)
+
+    fun logStart(line: String): LogStart? {
+        if (!line.startsWith("OK log ")) return null
+        val t = tokens(line)
+        return LogStart(t["boot"]?.toLongOrNull(16) ?: return null, t["from"]?.toLongOrNull() ?: return null,
+            t["next"]?.toLongOrNull() ?: return null)
+    }
+
     /** The group a line names (group=): which group's a RIDER line is, as its board heard it. */
     fun groupOf(line: String): Long? = tokens(line)["group"]?.toLongOrNull(16)
 
