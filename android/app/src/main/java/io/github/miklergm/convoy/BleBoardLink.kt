@@ -71,7 +71,7 @@ class BleBoardLink(context: Context, private val address: String) : BoardLink {
             retryLater()
             return
         }
-        onState("connecting to $address")
+        onState("connecting")
         // One bound covers connecting, discovery, pairing and the subscription.
         timeout = Runnable { fail("no working link within ${LINK_TIMEOUT_MS / 1000} s") }.also {
             handler.postDelayed(it, LINK_TIMEOUT_MS)
@@ -174,7 +174,7 @@ class BleBoardLink(context: Context, private val address: String) : BoardLink {
                 timeout?.let { handler.removeCallbacks(it) }
                 timeout = null
                 ready = true
-                onState("connected to $address")
+                onState("connected")
             }
         }
 

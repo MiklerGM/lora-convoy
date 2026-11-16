@@ -20,7 +20,7 @@
 # create one of 3 riders; the app is rider 1 and sets board 0 up itself. Boards 1 and 2 get the same
 # key by hand, as their riders' apps would give it: the key is bytes 1-16 of the invitation
 # (`adb shell run-as io.github.miklergm.convoy cat shared_prefs/group.xml`), sent as KEY <32 hex>
-# to 127.0.0.1:4404 and :4405. Then Simulated board with 10.0.2.2:4403: OsmAnd shows riders 2 and 3.
+# to 127.0.0.1:4404 and :4405. Then Simulated board… in the menu, 10.0.2.2:4403: OsmAnd shows riders 2 and 3.
 #
 # The image is Google APIs without the Play Store, so `adb root` works for looking inside apps.
 set -euo pipefail

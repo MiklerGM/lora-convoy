@@ -18,7 +18,7 @@ import java.util.concurrent.Executors
 /**
  * A route from outside: shared to the app, or opened with it, from a messenger, a file manager, or
  * adb. It is checked, kept under its hash, and handed to OsmAnd only when the rider asks: shown,
- * then navigated along after a confirmation. Opened from the main screen, it shows the last route.
+ * then navigated along after a confirmation. Opened with nothing, it shows the last route.
  */
 class RouteActivity : Activity() {
 

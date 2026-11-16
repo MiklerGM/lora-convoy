@@ -267,7 +267,9 @@ def wait_tap(serial: str, want: str, timeout=30) -> None:
             raise AssertionError(f"{serial}: no {want!r} on screen")
         settle(serial)
         tries += 1
-        if tries % 2 == 0:  # below the fold, perhaps: scroll down, and back up the time after
+        if tries % 2 == 1:  # in the menu, perhaps
+            tap(serial, "More options")
+        else:  # below the fold, perhaps: scroll down, and back up the time after
             y1, y2 = ("1600", "800") if tries % 4 == 2 else ("800", "1600")
             adb(serial, "shell", "input", "swipe", "540", y1, "540", y2, "300", check=False)
         time.sleep(2)
@@ -278,8 +280,7 @@ def main_screen(serial: str) -> str:
     adb(serial, "shell", "am", "start", "-n", f"{APP}/.MainActivity", "-f", "0x04000000", check=False)
     time.sleep(2)
     settle(serial)
-    texts = [t for t, _, _ in screen(serial)]
-    return next((t for t in texts if "Stopped." in t or "Link:" in t or "Mock" in t and "\n" in t), " ".join(texts))
+    return "\n".join(t for t, _, _ in screen(serial))
 
 
 def wait_status(serial: str, want: str, timeout=60) -> str:
@@ -468,7 +469,7 @@ def ride() -> None:
         wait_tap(p, "Find boards")
         wait_tap(p, f"LoRaConvoy-C0FFEE{i:02X}")
         pair(p, i)
-        wait_status(p, r"Board: sim")
+        wait_status(p, r"riders known")
         step(f"phone {i} paired with board {i} over Bluetooth, encrypted")
 
     names = NAMES[:boards]
@@ -514,7 +515,7 @@ def ride() -> None:
     step(f"board {beacon} rides alone as {names[beacon]}, keyed by hand")
 
     for i in range(phones):
-        wait_status(phone(i), rf"{names[i]}, rider {i + 1} of {boards}, in {GROUP}.*{boards - 1} riders heard", 90)
+        wait_status(phone(i), rf"{names[i]} in {GROUP} · rider {i + 1} of {boards}.*{boards - 1} riders known", 90)
     step(f"every phone's board hears the {boards - 1} others")
 
     p1 = phone(1)
@@ -539,7 +540,7 @@ def ride() -> None:
          f"({RUN / 'phone-0-map.png'})")
 
     restart_board(0)
-    wait_status(p0, rf"{names[0]}, rider 1 of {boards}.*{boards - 1} riders heard", 90)
+    wait_status(p0, rf"{names[0]} in {GROUP} · rider 1 of {boards}.*{boards - 1} riders known", 90)
     board_says(0, "<- ", 60)  # its commands came, and without a new pairing: the bond was kept
     assert "paired" not in (RUN / "board-0.log").read_text()
     step("board 0's Bluetooth restarted with its bond kept, and phone 0 came back to it without pairing again "
@@ -547,7 +548,7 @@ def ride() -> None:
 
     restart_board(0, forget=True)
     pair(p0, 0, 180)
-    wait_status(p0, rf"{names[0]}, rider 1 of {boards}.*{boards - 1} riders heard", 90)
+    wait_status(p0, rf"{names[0]} in {GROUP} · rider 1 of {boards}.*{boards - 1} riders known", 90)
     step("board 0's Bluetooth restarted without its bonds while phone 0 was away; phone 0 paired again once "
          "the rider agreed")
 
@@ -570,7 +571,7 @@ def ride() -> None:
     main_screen(p0)
     wait_tap(p0, "Find boards")
     wait_tap(p0, "LoRaConvoy-C0FFEE00", 60)
-    wait_status(p0, rf"{names[0]}, rider 1 of {boards}.*{boards - 1} riders heard", 90)
+    wait_status(p0, rf"{names[0]} in {GROUP} · rider 1 of {boards}.*{boards - 1} riders known", 90)
     step("board 0 turned phone 1 away, having an owner; phone 0 came back to it without pairing")
     print("ride: passed")
 

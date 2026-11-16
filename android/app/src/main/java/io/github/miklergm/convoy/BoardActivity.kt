@@ -14,7 +14,8 @@ import android.widget.TextView
 /**
  * The board's settings as its status tells them, each changed by one command (docs/PROTOCOL.md).
  * The board keeps them over a restart, as it keeps its group, so it rides as set with no phone.
- * The radio mode is the group's, the same on every board, so it is not here.
+ * The radio mode is the group's, the same on every board, so it is not here. Above them, the board's
+ * details the main screen leaves out.
  */
 class BoardActivity : Activity() {
 
@@ -97,8 +98,19 @@ class BoardActivity : Activity() {
     private fun show() {
         val s = ConvoyService.board
         info.text = s?.let {
-            "${it.board}, rider ${it.slot + 1}${it.slots?.let { n -> " of $n" } ?: ""}, group %08x, mode ${it.mode ?: "?"}"
-                .format(it.group)
+            val time = when (it.time) {
+                "pps" -> "time from PPS"
+                "group" -> "time from the group"
+                "nmea" -> "time from NMEA"
+                else -> "no time yet"
+            } + (it.timeErrMs?.let { e -> " ±$e ms" } ?: "")
+            listOfNotNull(
+                "${ConvoyService.sourceText}: ${it.board}",
+                "Rider ${it.slot + 1}${it.slots?.let { n -> " of $n" } ?: ""}, group %08x, mode ${it.mode ?: "?"}".format(it.group),
+                (if (it.fix) "GNSS fix" + (it.sats?.let { n -> ", $n satellites" } ?: "") else "No GNSS fix") + "; $time",
+                "${it.riders} riders known, duty ${it.duty}, started after ${it.reset}",
+                ConvoyService.version?.let { v -> "On the map of $v" },
+            ).joinToString("\n")
         } ?: "No board connected."
         shown.forEach { (view, read) -> view.text = s?.let(read) ?: "" }
         ConvoyService.reply?.let { answer.text = "The board said: $it" }

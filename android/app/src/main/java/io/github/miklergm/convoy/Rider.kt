@@ -129,11 +129,19 @@ fun age(ms: Long): String {
     }
 }
 
-/** One line of the app's own list: who, what they say, how old their position is, and who told it. */
+/**
+ * One line of the app's own list: who, what they say, how old their position is, and who told it.
+ * One age while the rider has a fix, taken just before it was sent, so the older; with none, both.
+ */
 fun Rider.line(nowMs: Long): String = buildList {
     add(name)
     if (state != STATE_NORMAL) add(stateName(state))
-    add("position " + (fixAtMs?.let { "${age(nowMs - it)} old" } ?: "of unknown age") + if (gpsOk) "" else ", no GPS")
-    add("heard ${age(nowMs - heardAtMs)} ago" + (via?.let { " via $it" } ?: ""))
+    val via = via?.let { " via $it" } ?: ""
+    if (gpsOk && fixAtMs != null) {
+        add("${age(nowMs - fixAtMs)} ago$via")
+    } else {
+        add("position " + (fixAtMs?.let { "${age(nowMs - it)} old" } ?: "of unknown age") + if (gpsOk) "" else ", no GPS")
+        add("heard ${age(nowMs - heardAtMs)} ago$via")
+    }
     speedKmh?.let { add(if (stopped || it == 0) "stopped" else "$it km/h") }
 }.joinToString(" · ")

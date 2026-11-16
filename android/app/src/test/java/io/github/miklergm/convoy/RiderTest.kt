@@ -110,7 +110,8 @@ class RiderTest {
         val now = start
         val r = Rider("slot1", "Bob", "Bob", 0, lat0, lon0, fixAtMs = now - 12_000, heardAtMs = now - 2_000,
             speedKmh = 40, courseDeg = 90)
-        assertEquals("Bob · position 12 s old · heard 2 s ago · 40 km/h", r.line(now))
+        assertEquals("Bob · 12 s ago · 40 km/h", r.line(now))
+        assertEquals("Bob · 12 s ago via Ann · 40 km/h", r.copy(via = "Ann").line(now))
         assertEquals("Bob · Needs help · position of unknown age, no GPS · heard 2 s ago via Ann · stopped",
             r.copy(state = STATE_HELP, fixAtMs = null, gpsOk = false, via = "Ann", speedKmh = 0).line(now))
     }
