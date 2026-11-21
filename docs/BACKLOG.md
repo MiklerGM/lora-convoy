@@ -325,7 +325,9 @@ bench: the riders stayed off its map until our service restarted); the app asks 
 exemption as the bridge did; Play allows that request only
 for some kinds of app, which matters once it is published (T-app-id). An hour on the emulator
 against a simulated board kept the link and flat memory (ROADMAP, M7); a phone over Bluetooth,
-asleep in a pocket, is the test that counts. The Bluetooth client now runs on the emulator bench
+asleep in a pocket, is the test that counts. On the walk of 2026-11-21 a real phone in a pocket
+kept the link for the hour and lost none of the board's log ([07](07-experiments.md)); a whole
+ride is still to come. The Bluetooth client now runs on the emulator bench
 against boards in netsim ([tools/bench](../tools/bench/README.md)): pairing with Android's consent,
 encrypted writes, a bond kept across a board's restart, FORGET from either side, and a bond gone
 stale on the phone's side, the board reset by its button while the phone was away. Android 15
