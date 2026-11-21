@@ -80,8 +80,9 @@ the RIDER lines stop, and their `rssi=` and `snr=` before that. `MODE 7 250` goe
 - Find boards, tap one, accept Android's pairing dialog: the main screen's first line names the
   rider, the group and the slot, its second the fix, the time's error and the riders known. The
   rest is in the menu (⋮); the board's details in Board settings.
-- Group, Create with the riders' names, then send each other rider their invitation; on each
-  other phone, Join with it. Each board's `group=` is the same.
+- Group, Create with the riders' names, then show each other rider their invitation's QR code, or
+  send it; on each other phone, Group, scan it, or paste it and Join. Each board's `group=` is the
+  same.
 - OsmAnd, Plugins, LoRa Convoy on: the other riders on the map, ageing grey when not heard.
 - Board settings: power, the distance after which a new position goes, the heartbeat while
   standing, the riders carried in each packet; each as the board's status says it now, set with

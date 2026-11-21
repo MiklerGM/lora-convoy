@@ -302,8 +302,9 @@ Support both once a release has the groups.
 ### T-invite: invitations as QR codes, riders' names, several boards
 
 M5's invitation is a string sent as text; since M7 it names the riders, so the map says "Bob", not
-"Rider 2". Open: a QR code the organiser shows and the rider scans, which wants a QR library or
-encoder; a link a messenger makes tappable, which wants a domain or app links; riders' colours; one
+"Rider 2". **QR codes, 2026-11-21:** the organiser's app shows each rider's invitation as one,
+and the rider's app scans it, asking for the camera then (ZXing, Apache-2.0, 0.65 MB; its own
+camera screen needs AndroidX, so ours is a few lines over its view). Open: a link a messenger makes tappable, which wants a domain or app links; riders' colours; one
 phone setting up several boards, such as a pillion's or loaners, without joining each slot itself;
 a new key for the group when a rider leaves. Needed by M7.
 

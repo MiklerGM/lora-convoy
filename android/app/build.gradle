@@ -44,5 +44,8 @@ android {
 dependencies {
     // OsmAnd's AIDL V2 client, vendored and pinned: libs/README.md.
     implementation files('libs/android-aidl-lib-5.4.aar')
+    // Invitations as QR codes, drawn and read with ZXing (Apache-2.0, no Google services). Its
+    // camera view only: its CaptureActivity needs AndroidX, which this app does without (ScanActivity).
+    implementation 'com.journeyapps:zxing-android-embedded:4.3.0'
     testImplementation 'junit:junit:4.13.2'
 }

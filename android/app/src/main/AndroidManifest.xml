@@ -52,6 +52,15 @@
             android:exported="false"
             android:label="Group" />
 
+        <!-- The camera, for an invitation's QR code. ZXing's own screen goes: it needs AndroidX. -->
+        <activity
+            android:name=".ScanActivity"
+            android:exported="false"
+            android:label="Scan the invitation" />
+        <activity
+            android:name="com.journeyapps.barcodescanner.CaptureActivity"
+            tools:node="remove" />
+
         <!-- Routes from outside. Messengers and file managers label a GPX in several ways, octet
              stream included, so the activity reads the file and refuses whatever is not GPX. -->
         <activity

@@ -117,15 +117,6 @@ class MainActivity : Activity() {
         })
     }
 
-    /** Side by side; the views after a text share the width left. */
-    private fun row(vararg views: View) = LinearLayout(this).apply {
-        gravity = android.view.Gravity.CENTER_VERTICAL
-        views.forEach {
-            if (it is Button || it is Spinner) addView(it, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
-            else addView(it)
-        }
-    }
-
     override fun onCreateOptionsMenu(menu: Menu): Boolean {
         actions.keys.forEach { menu.add(it) }
         return true
@@ -329,4 +320,13 @@ class MainActivity : Activity() {
 fun Activity.button(label: String, onClick: () -> Unit) = Button(this).apply {
     text = label
     setOnClickListener { onClick() }
+}
+
+/** Side by side; the views after a text share the width left. */
+fun Activity.row(vararg views: View) = LinearLayout(this).apply {
+    gravity = android.view.Gravity.CENTER_VERTICAL
+    views.forEach {
+        if (it is Button || it is Spinner) addView(it, LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f))
+        else addView(it)
+    }
 }
