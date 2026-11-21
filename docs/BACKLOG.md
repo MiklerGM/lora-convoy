@@ -14,9 +14,9 @@ made, and freshness measured on setups the radio can achieve rather than guessed
 ### T-licence: publishing
 
 **Licence decided, 2026-10-23:** GPL-3.0-or-later for the whole repository (ARCHITECTURE, D14).
-Before the repository goes public: a history check (done 2026-10-23: no secrets, no DMD2 4.036
+**Public**, with what it needed first: a history check (2026-10-23: no secrets, no DMD2 4.036
 internals; the author's address is public already), CI that runs `make check`, a README for
-strangers, and SECURITY.md saying the cipher is our own and unreviewed.
+strangers, and SECURITY.md saying the cipher is our own and unreviewed. Left: releases.
 
 ### T-app-id: the app's name and package
 
@@ -177,11 +177,11 @@ normal, please stop, need fuel and helping, said in every packet until changed, 
 the board observes; no automatic answers, the interface showing that the state is going out and
 how fresh each rider's radio contact is, promising no delivery; helping names no one, back to an
 addressee if rides show a need; normal again after a restart or a loss of power, need help
-included; no button for it on the board in the first iteration (T-board-ui). **v3, for now:** the
-flag and the call's number in every packet of the caller, and a byte in every packet that answers
-one call heard, naming it, each in turn when several call ([PROTOCOL](PROTOCOL.md)): among twenty
-riders the first answer comes in 1.1 s and the last in 5.4 s, at the median, v3's history once v4
-is built. Still open: a call heard only through a relay (T-relay).
+included; no button for it on the board in the first iteration (T-board-ui). **Built in v5,
+2026-11-14** ([PROTOCOL](PROTOCOL.md)): the state in every packet, and passengers carry each
+rider's state on, a changed one first, so a call heard only through a relay arrives too. On the
+desk chain of 2026-11-15 every change crossed the relay within 4 s ([07](07-experiments.md)). v3's
+answers to a call, and its numbers, are history.
 
 ### T-relay: work out relaying
 
@@ -355,11 +355,10 @@ button for help ([ARCHITECTURE](ARCHITECTURE.md), D17).
 Something useful on the screen [owner, 2026-11-16]: all three bench boards have one, and none of
 them shows anything yet.
 
-- Heltec V4: a 0.96" OLED, 128×64, SSD1306 on I2C [vendor's docs; our firmware does not touch it].
-- L1: a 1.3" OLED, 128×64, SH1106 on I2C; our firmware turns it off at start, since it otherwise
-  keeps the last firmware's picture (`firmware/zephyr/src/main.c`).
-- T-Echo: a 1.54" e-paper, 200×200 [vendor's docs]; it keeps its picture unpowered, and a full
-  redraw takes seconds, so it can only show what changes slowly. Our board file does not describe it yet.
+- Heltec V4: a 0.96" OLED, 128×64, SSD1306 on I2C.
+- L1: a 1.3" OLED, 128×64, SH1106 on I2C.
+- T-Echo: a 1.54" e-paper, 200×200; it keeps its picture unpowered, and a full redraw takes
+  seconds, so it can only show what changes slowly.
 
 **Built, 2026-11-21** (`firmware/src/screen.c`): the time where the phone is (ZONE), Bluetooth,
 the battery (or USB); the rider's slot and state; on air or silent, and the satellites; riders heard
