@@ -164,9 +164,12 @@ frames ([PROTOCOL](PROTOCOL.md)). Groups apart by frequency remain T-group-freq.
 
 ### T-cadence: sending less when stopped
 
-A fixed frame with skipped slots, or a variable frame. After M6. A walker taken for stopped would
-send less while walking: the stop's rule for every activity comes first ([09](09-protocol-next.md),
-when a rider counts as stopped).
+A fixed frame with skipped slots, or a variable frame. **Built in v5** as the first: the send rule
+([PROTOCOL](PROTOCOL.md)) keeps a rider's slot quiet unless it has moved 10 m, turned, changed
+state or carries a change, or every 8 frames, so it goes by distance, not by "stopped", and a
+walker is not silenced. On the desk chain a standing board spoke in a fifth of its slots
+([07](07-experiments.md), 2026-11-15). Still open: a variable frame, if a group's air ever needs
+the slots a standing rider leaves.
 
 ### T-help: "need help", and the rider's state
 
