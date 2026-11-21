@@ -189,6 +189,16 @@ Chosen as a direction on 2026-11-14 [owner]: passengers, 9-byte records of other
 packet ([12](12-protocol-v5-proposal.md), what the owner's review changed). The rest below is the
 survey it was chosen from.
 
+**Relaying more often** [owner, 2026-11-21]. On the first walk with a relay, a T-Echo standing in
+a car carried the walker and the Heltec at home to each other, but each only every 32 s: standing,
+it sent every 16 s (BEAT 3), and one passenger a packet took the two in turn. An extra send costs
+no other rider anything, since each has its own slot; only the board's battery and airtime, 1.9%
+sending every frame at SF7/250 against the band's 10%. To try first, with no code: BEAT 0 and
+PASSENGERS 2 on the standing relay, each rider then relayed every 2 s. If that helps at the edge,
+the rule: a standing board sends in every frame while it carries news, a moving rider's new
+position or a changed state, and at its beat otherwise. News must not include a standing rider's
+heartbeat, or two standing boards that hear each other set each other off in every frame.
+
 Version 2 in [06](06-own-protocol.md): who relays (riders someone misses, from bitmaps of who hears
 whom), who owns a relay slot (by role, in turn, by the hearing graph, or piggybacked), the budget
 of one rider bridging two bunches, and ages that never get younger. Compared first offline on E8's
