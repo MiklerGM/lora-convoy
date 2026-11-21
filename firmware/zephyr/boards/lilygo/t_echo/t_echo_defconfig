@@ -5,3 +5,5 @@ CONFIG_SERIAL=y
 CONFIG_CONSOLE=y
 CONFIG_BUILD_OUTPUT_UF2=y
 CONFIG_USE_DT_CODE_PARTITION=y
+# P0.12, the peripherals' power, as a regulator on from the start (t_echo.dts)
+CONFIG_REGULATOR=y

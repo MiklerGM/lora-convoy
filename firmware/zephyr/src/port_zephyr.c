@@ -411,3 +411,71 @@ int port_console_getc(uint32_t timeout_ms) {
     } while (k_uptime_get() < until);
     return -1;
 }
+
+/* ---- the screen and the battery, as the board's devicetree names them -------------------------- */
+
+#if DT_HAS_CHOSEN(zephyr_display)
+#include <zephyr/drivers/display.h>
+
+static const struct device *const s_display = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
+
+/* screen.c's pages, a byte for eight rows with the top row in the low bit; a driver that tiles
+ * otherwise is not one this takes. */
+bool port_screen_size(int *w, int *h) {
+    if (!device_is_ready(s_display)) return false;
+    struct display_capabilities caps;
+    display_get_capabilities(s_display, &caps);
+    *w = caps.x_resolution;
+    *h = caps.y_resolution;
+    return (caps.screen_info & SCREEN_INFO_MONO_VTILED) && *w * *h / 8 <= 200 * 200 / 8;
+}
+
+/* Turned round as the driver wants it: the top row in the high bit where it says MSB first, and
+ * the letters dark on an e-paper, lit on an OLED, whichever of white or black its format calls 1. */
+void port_screen_show(const uint8_t *buf) {
+    static uint8_t out[200 * 200 / 8];
+    static bool on;
+    struct display_capabilities caps;
+    display_get_capabilities(s_display, &caps);
+    const size_t len = (size_t)caps.x_resolution * caps.y_resolution / 8;
+    const bool msb = caps.screen_info & SCREEN_INFO_MONO_MSB_FIRST;
+    const bool invert = !(caps.screen_info & SCREEN_INFO_EPD) != !(caps.current_pixel_format == PIXEL_FORMAT_MONO10);
+    for (size_t i = 0; i < len && i < sizeof(out); i++) {
+        uint8_t b = buf[i];
+        if (msb) {
+            b = (uint8_t)((b & 0xF0) >> 4 | (b & 0x0F) << 4);
+            b = (uint8_t)((b & 0xCC) >> 2 | (b & 0x33) << 2);
+            b = (uint8_t)((b & 0xAA) >> 1 | (b & 0x55) << 1);
+        }
+        out[i] = invert ? (uint8_t)~b : b;
+    }
+    const struct display_buffer_descriptor desc = {
+        .buf_size = len, .width = caps.x_resolution, .height = caps.y_resolution, .pitch = caps.x_resolution};
+    if (display_write(s_display, 0, 0, &desc, out) != 0) LOGW(TAG, "screen: write refused");
+    /* an e-paper draws its first picture whole on this, and the later ones in part */
+    if (!on) on = display_blanking_off(s_display) == 0;
+}
+#else
+bool port_screen_size(int *w, int *h) {
+    (void)w, (void)h;
+    return false;
+}
+void port_screen_show(const uint8_t *buf) { (void)buf; }
+#endif
+
+#if DT_HAS_COMPAT_STATUS_OKAY(voltage_divider)
+#include <zephyr/drivers/sensor.h>
+
+static const struct device *const s_vbatt = DEVICE_DT_GET(DT_COMPAT_GET_ANY_STATUS_OKAY(voltage_divider));
+
+int port_battery_mv(void) {
+    struct sensor_value v;
+    if (!device_is_ready(s_vbatt) || sensor_sample_fetch(s_vbatt) != 0 ||
+        sensor_channel_get(s_vbatt, SENSOR_CHAN_VOLTAGE, &v) != 0) {
+        return 0;
+    }
+    return v.val1 * 1000 + v.val2 / 1000;
+}
+#else
+int port_battery_mv(void) { return 0; }
+#endif

@@ -15,6 +15,8 @@
  */
 
 #define NODE_SLOTS 32
+/* How old our own fix may be and still count as the GNSS's current one. */
+#define FIX_FRESH_US (3 * 1000000ll)
 
 typedef struct {
     bool keyed;              /* without a key the board sends nothing: v1 has no clear text */
@@ -229,6 +231,9 @@ bool node_utc_ms(const node_t *n, int64_t now_us, int64_t *utc_ms);
 /* How far our time may be off and still send: the gap between two slots, less what the receivers
  * need, shared by the two senders either side of it. 0 when the slots do not fit the frame. */
 int64_t node_time_budget_us(const node_t *n);
+/* Whether our time is sure enough now for a packet to land in our slot, not a neighbour's: the
+ * check every send passes (node.c), for the screen. */
+bool node_time_fits(const node_t *n, int64_t now_us);
 
 /* Transmit time over the last 60 minutes, in milliseconds. */
 uint32_t node_duty_used_ms(const node_t *n, int64_t now_us);

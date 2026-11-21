@@ -348,7 +348,7 @@ L1 Pro 1W (its radio's own power switch). After M4.
 ### T-board-ui: a screen and a button on the board
 
 A later task [owner, 2026-10-24]: a screen on some boards, and a button to switch the rider's chosen
-state. Not now: no display support and no new use of the buttons; the first iteration needs no
+state. The screen is built (below); no new use of the buttons yet, as the first iteration needs no
 button for help ([ARCHITECTURE](ARCHITECTURE.md), D17).
 
 Something useful on the screen [owner, 2026-11-16]: all three bench boards have one, and none of
@@ -360,12 +360,13 @@ them shows anything yet.
 - T-Echo: a 1.54" e-paper, 200×200 [vendor's docs]; it keeps its picture unpowered, and a full
   redraw takes seconds, so it can only show what changes slowly. Our board file does not describe it yet.
 
-Candidates to show, the owner to choose: whether the board works without a phone or cable
-(fix and satellites, time ok or not, riders heard and how long ago); the state the rider chose,
-and another rider's need help or stop now in large type; the group, the rider's slot, Bluetooth
-connected or not, and the battery. Open: what fits 128×64; how long an OLED stays lit (power, and
-burn-in over a ride); an e-paper redraw no more often than its state changes. Needed by no
-milestone yet.
+**Built, 2026-11-21** (`firmware/src/screen.c`): the time where the phone is (ZONE), Bluetooth,
+the battery (or USB); the rider's slot and state; on air or silent, and the satellites; riders heard
+in the last minute, or another rider's call for help or to stop in their place. The e-paper adds
+the riders known, how long since and through whom. Nothing changes by the second, so the e-paper
+redraws, in part, at most once a minute. Seen right on the L1 and the T-Echo (turned 180°); the
+Heltec's reads along the board, to be judged in its case. Still open: how long an OLED stays lit
+(power, and burn-in over a ride), an e-paper's ghosting after many partial redraws, the button.
 
 ### T-power: power
 

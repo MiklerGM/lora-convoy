@@ -72,6 +72,7 @@ typedef struct {
     uint8_t gnss_ask;               /* GNSS 0|1: 0 nothing asked, 1 off, 2 on */
     uint8_t gnss_systems;           /* SYSTEMS: 1 GPS, 2 BeiDou, 4 GLONASS, summed; 8 two in turn (run.c); 0 as the GNSS has it */
     uint8_t tour_s;                 /* TOUR: the mode changed by the clock every so many seconds; 0 never */
+    int16_t zone_min;               /* ZONE: the phone's offset from UTC, minutes, for the screen's clock */
     /* LOG: line n is log[n % API_LOG_LINES] while n is within the last API_LOG_LINES */
     api_log_line_t log[API_LOG_LINES];
     uint32_t log_next;              /* the number the next line gets */

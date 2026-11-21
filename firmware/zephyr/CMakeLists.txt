@@ -19,6 +19,8 @@ target_sources(app PRIVATE
     ${SHARED}/nmea.c
     ${SHARED}/node.c
     ${SHARED}/api.c
+    ${SHARED}/screen.c
+    ${SHARED}/screen_font.c
 )
 target_include_directories(app PRIVATE src ${SHARED})
 # The board's pins, from its devicetree, ahead of everything else: sx1262.h's defaults are the

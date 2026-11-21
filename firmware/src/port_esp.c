@@ -200,3 +200,92 @@ size_t port_device_id(uint8_t *out, size_t cap) {
     for (size_t i = 0; i < sizeof(mac); i++) out[i] = mac[i];
     return sizeof(mac);
 }
+
+/* ---- the screen and the battery: the Heltec V4.3's, as Meshtastic's heltec_v4 variant wires them -- */
+
+#include "driver/i2c_master.h"
+#include "esp_adc/adc_cali_scheme.h"
+#include "esp_adc/adc_oneshot.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_ops.h"
+#include "esp_lcd_panel_ssd1306.h"
+#include "esp_lcd_panel_vendor.h"
+
+#define PIN_VEXT 36       /* low powers the OLED */
+#define PIN_OLED_SDA 17
+#define PIN_OLED_SCL 18
+#define PIN_OLED_RST 21
+#define PIN_ADC_CTRL 37   /* high connects the battery's divider */
+#define BATTERY_CHANNEL ADC_CHANNEL_0 /* GPIO 1 */
+
+static esp_lcd_panel_handle_t s_panel;
+
+/* Once, on the first picture: a screen that will not start leaves the board running without one. */
+static bool screen_open(void) {
+    static bool tried;
+    if (tried) return s_panel != NULL;
+    tried = true;
+    port_pin_output(PIN_VEXT);
+    port_pin_set(PIN_VEXT, 0);
+    port_sleep_ms(50);
+    i2c_master_bus_config_t bus_cfg = {.i2c_port = -1, .sda_io_num = PIN_OLED_SDA, .scl_io_num = PIN_OLED_SCL,
+                                       .clk_source = I2C_CLK_SRC_DEFAULT, .glitch_ignore_cnt = 7,
+                                       .flags.enable_internal_pullup = true};
+    i2c_master_bus_handle_t bus;
+    esp_lcd_panel_io_handle_t io;
+    esp_lcd_panel_io_i2c_config_t io_cfg = {.dev_addr = 0x3C, .control_phase_bytes = 1, .dc_bit_offset = 6,
+                                            .lcd_cmd_bits = 8, .lcd_param_bits = 8, .scl_speed_hz = 400000};
+    esp_lcd_panel_ssd1306_config_t ssd = {.height = 64};
+    esp_lcd_panel_dev_config_t dev_cfg = {.bits_per_pixel = 1, .reset_gpio_num = PIN_OLED_RST, .vendor_config = &ssd};
+    esp_lcd_panel_handle_t panel;
+    esp_err_t err = i2c_new_master_bus(&bus_cfg, &bus);
+    if (err == ESP_OK) err = esp_lcd_new_panel_io_i2c(bus, &io_cfg, &io);
+    if (err == ESP_OK) err = esp_lcd_new_panel_ssd1306(io, &dev_cfg, &panel);
+    if (err == ESP_OK) err = esp_lcd_panel_reset(panel);
+    if (err == ESP_OK) err = esp_lcd_panel_init(panel);
+    if (err == ESP_OK) err = esp_lcd_panel_disp_on_off(panel, true);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "screen: %s", esp_err_to_name(err));
+        return false;
+    }
+    s_panel = panel;
+    return true;
+}
+
+bool port_screen_size(int *w, int *h) {
+    *w = 128;
+    *h = 64;
+    return true;
+}
+
+/* ESP-IDF's SSD1306 takes the pages as screen.c draws them. */
+void port_screen_show(const uint8_t *buf) {
+    if (screen_open()) esp_lcd_panel_draw_bitmap(s_panel, 0, 0, 128, 64, buf);
+}
+
+int port_battery_mv(void) {
+    static adc_oneshot_unit_handle_t adc;
+    static adc_cali_handle_t cali;
+    static bool tried;
+    if (!tried) {
+        tried = true;
+        port_pin_output(PIN_ADC_CTRL);
+        adc_oneshot_unit_init_cfg_t unit = {.unit_id = ADC_UNIT_1};
+        adc_oneshot_chan_cfg_t chan = {.atten = ADC_ATTEN_DB_2_5, .bitwidth = ADC_BITWIDTH_DEFAULT};
+        adc_cali_curve_fitting_config_t cal = {.unit_id = ADC_UNIT_1, .chan = BATTERY_CHANNEL,
+                                               .atten = ADC_ATTEN_DB_2_5, .bitwidth = ADC_BITWIDTH_DEFAULT};
+        if (adc_oneshot_new_unit(&unit, &adc) != ESP_OK || adc_oneshot_config_channel(adc, BATTERY_CHANNEL, &chan) != ESP_OK ||
+            adc_cali_create_scheme_curve_fitting(&cal, &cali) != ESP_OK) {
+            ESP_LOGW(TAG, "battery: no ADC");
+            adc = NULL;
+        }
+    }
+    if (!adc) return 0;
+    port_pin_set(PIN_ADC_CTRL, 1);
+    port_sleep_ms(5);
+    int raw = 0, mv = 0;
+    const bool ok = adc_oneshot_read(adc, BATTERY_CHANNEL, &raw) == ESP_OK && adc_cali_raw_to_voltage(cali, raw, &mv) == ESP_OK;
+    port_pin_set(PIN_ADC_CTRL, 0);
+    /* the divider, 4.9, and Meshtastic's 4.5% for this board (ADC_MULTIPLIER) */
+    return ok ? mv * 4900 * 1045 / 1000000 : 0;
+}

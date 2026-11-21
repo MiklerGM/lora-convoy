@@ -1,4 +1,5 @@
 #include "run.h"
+#include "screen.h"
 
 #include <stdatomic.h>
 #include <stddef.h>
@@ -66,7 +67,7 @@ typedef struct {
     uint8_t power;        /* POWER, 0 strongest */
     uint8_t beat;         /* BEAT */
     uint8_t passengers;   /* PASSENGERS */
-    uint8_t spare;
+    int8_t zone_q;        /* ZONE, in quarter hours; 0, UTC, in a setup kept before there was one */
     uint16_t move_m;      /* MOVE */
 } setup_t;
 #define SETUP_VERSION 4
@@ -177,7 +178,7 @@ static bool command(char *line, replies_t *out, int64_t came_us) {
                      .slots = s_node.cfg.slots, .interval_ms = s_node.cfg.interval_ms, .sf = s_node.cfg.phy.sf,
                      .tour_s = s_api.tour_s, .bw_khz = (uint16_t)(s_node.cfg.phy.bw_hz / 1000),
                      .power = s_api.power, .beat = s_node.cfg.beat, .passengers = s_node.cfg.passengers,
-                     .move_m = s_node.cfg.move_m};
+                     .zone_q = (int8_t)(s_api.zone_min / 15), .move_m = s_node.cfg.move_m};
     memcpy(setup.key, s_node.cfg.key, sizeof(setup.key));
     const bool save = s_api.setup_changed;
     s_api.forget = s_api.restart = s_api.bootloader = s_api.radio_changed = s_api.setup_changed = false;
@@ -425,12 +426,31 @@ static void radio_task(void *arg) {
     }
 }
 
+/* ---- the screen: redrawn when what it says has changed --------------------------- */
+
+static void screen_update(int battery_mv) {
+    static screen_text_t text, shown;
+    static uint8_t buf[SCREEN_BYTES];
+    static bool any;
+    int w, h;
+    if (!port_screen_size(&w, &h) || w * h / 8 > SCREEN_BYTES) return;
+    const bool phone = ble_nus_connected();
+    port_mutex_lock(s_lock);
+    screen_text(&s_node, port_uptime_us(), phone, battery_mv, s_api.zone_min, text);
+    port_mutex_give(s_lock);
+    if (any && memcmp(text, shown, sizeof(text)) == 0) return;
+    any = true;
+    memcpy(shown, text, sizeof(text));
+    screen_draw((const char (*)[SCREEN_COLS + 1])text, buf, w, h);
+    port_screen_show(buf);
+}
+
 /* ---- the button, Bluetooth's health, and the status the phone gets unasked --------- */
 
 static void service_task(void *arg) {
     (void)arg;
     const int watch = port_wdt_watch();
-    int held_ms = 0, tick_ms = 0, status_ms = 0;
+    int held_ms = 0, tick_ms = 0, status_ms = 0, battery_s = 0, battery_mv = 0;
     bool fired = false;
     char text[API_LINE];
     for (;;) {
@@ -441,6 +461,20 @@ static void service_task(void *arg) {
                 LOGE(TAG, "bluetooth stuck - restarting");
                 port_restart(RESTART_NOTE_MAGIC | RESTART_FOR_BLE);
             }
+            /* the battery every 10 s: it moves slowly, and reading it on the L1 powers its divider */
+            if (battery_s-- <= 0) {
+                battery_s = 10;
+                const int mv = port_battery_mv();
+                /* a line for the logs, cable's and phone's, as it moves: what a ride's battery did */
+                if (mv && (mv > battery_mv + 50 || mv < battery_mv - 50)) {
+                    char bat[32];
+                    snprintf(bat, sizeof(bat), "BAT %d mV", mv);
+                    note(bat);
+                    battery_mv = mv;
+                }
+                if (!mv) battery_mv = 0;
+            }
+            screen_update(battery_mv);
         }
         /* LOG: the kept console lines to the phone, a few a tick, so a backlog leaves the link room
          * for the riders; under the command lock, so a LOG asked meanwhile starts where it says */
@@ -538,6 +572,7 @@ void run_start(const char *board, const char *reset) {
         if (setup.move_m >= 1 && setup.move_m <= 1000) cfg.move_m = setup.move_m;
     }
     const uint8_t tour_s = kept ? setup.tour_s : 0;
+    const int16_t zone_min = v4 && kept && setup.zone_q >= -48 && setup.zone_q <= 56 ? (int16_t)(setup.zone_q * 15) : 0;
     memset(&setup, 0, sizeof(setup));
     s_lock = port_mutex_create();
     s_command_lock = port_mutex_create();
@@ -550,6 +585,7 @@ void run_start(const char *board, const char *reset) {
     s_api.power = power;
     s_api.tx_dbm = radio_tx_dbm;
     s_api.tour_s = tour_s;
+    s_api.zone_min = zone_min;
     LOGI(TAG, "LoRa Convoy, protocol v%d, phone API %d, on %s after %s: %s, slot %u of %u%s, every %u ms, %d dBm",
          PKT_VERSION, API_PROTO, board, s_reset,
          cfg.keyed ? "keyed" : "no key yet: silent until the app or KEY gives one", cfg.slot, cfg.slots,

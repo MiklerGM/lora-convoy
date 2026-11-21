@@ -241,6 +241,11 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
         api->tour_s = (uint8_t)v;
         api->setup_changed = true;
         snprintf(out, sizeof(out), "OK tour=%ld", v);
+    } else if (strcasecmp(line, "zone") == 0 && number(arg, -720, 840, &v) && v % 15 == 0) {
+        /* the phone's offset from UTC, for the screen's clock; kept, in quarter hours */
+        api->zone_min = (int16_t)v;
+        api->setup_changed = true;
+        snprintf(out, sizeof(out), "OK zone=%ld", v);
     } else if (strcasecmp(line, "gnss") == 0 && number(arg, 0, 1, &v)) {
         /* the GNSS off with the board running on the time it holds, for the bench (13, 2.7) */
         api->gnss_ask = (uint8_t)(v + 1);
@@ -251,7 +256,7 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
         snprintf(out, sizeof(out), "OK systems=%ld", v);
     } else {
         snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, CLOCK <t1>, TIME <ms> <utc ms> <err ms>, LEDGER, GROUP <32 hex> <slot> <slots> <ms>, KEY <32 hex>, STATE 0-15, BEAT 0-7, MOVE <m>, PASSENGERS 0-3, DEAF <slots>|-, SLOT 0-%d, SLOTS 1-%d, "
-                 "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, TOUR 0-255, GNSS 0-1, SYSTEMS 1-8, LOG <boot> <n>, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
+                 "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, TOUR 0-255, ZONE <min>, GNSS 0-1, SYSTEMS 1-8, LOG <boot> <n>, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
                  NODE_SLOTS);
     }
     reply(ctx, out);

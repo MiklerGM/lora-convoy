@@ -74,12 +74,6 @@
 #define NODE_DRIFT_PPM 150
 #endif
 
-/* Its OLED keeps lit whatever the last firmware drew, since a restart does not reset it; main.c
- * puts it to sleep. */
-#if DT_HAS_CHOSEN(zephyr_display) && DT_NODE_HAS_COMPAT(DT_CHOSEN(zephyr_display), sinowealth_sh1106)
-#define BOARD_OLED_SH1106 DT_CHOSEN(zephyr_display)
-#endif
-
 /* The Wio Tracker L1 Pro's own, measured on one board, 2026-11-11 and 12 (docs/07): its L76K's RMC,
  * sending GGA and RMC only, comes 138 ms after its second and 8.7 ms more for each satellite used
  * (187 ms at 5, 275 at 15, by 5,600 packets heard on a board with PPS); its radio takes 7.1 ms to

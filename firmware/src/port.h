@@ -50,6 +50,10 @@
  *
  *   bool    port_button_down(void)              the board's one button, held
  *
+ *   bool    port_screen_size(int *w, int *h)    the screen's pixels; false on a board without one
+ *   void    port_screen_show(const uint8_t *buf) a picture as screen_draw makes it for that size
+ *   int     port_battery_mv(void)               the battery's voltage; 0 where the board cannot tell
+ *
  *   void    port_restart(uint32_t note)         restarts, leaving the note for the next start
  *   uint32_t port_restart_note(void)            that note once, then 0; 0 after a power loss
  *   const char *port_reset_cause(void)          poweron brownout panic int_wdt task_wdt wdt pin

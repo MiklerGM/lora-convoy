@@ -12,6 +12,7 @@
 #include "nmea.h"
 #include "node.h"
 #include "phy.h"
+#include "screen.h"
 
 #define SEC 1000000ll
 
@@ -1197,13 +1198,16 @@ static void test_api(void) {
     ask(&api, "DEAF -");
     assert(!api.setup_changed);
     static const struct { const char *ask, *ok; } KEPT[] = {
-        {"BEAT 4", "OK beat=4"}, {"MOVE 25", "OK move=25"}, {"PASSENGERS 2", "OK passengers=2"}, {"POWER 2", "OK power=2 dbm=18"}};
+        {"BEAT 4", "OK beat=4"}, {"MOVE 25", "OK move=25"}, {"PASSENGERS 2", "OK passengers=2"}, {"POWER 2", "OK power=2 dbm=18"},
+        {"ZONE -210", "OK zone=-210"}};
     for (size_t i = 0; i < sizeof(KEPT) / sizeof(KEPT[0]); i++) {
         api.setup_changed = false;
         ask(&api, KEPT[i].ask);
         assert(strcmp(replies[0], KEPT[i].ok) == 0 && api.setup_changed);
     }
-    assert(n.cfg.beat == 4 && n.cfg.move_m == 25 && n.cfg.passengers == 2 && api.power == 2);
+    assert(n.cfg.beat == 4 && n.cfg.move_m == 25 && n.cfg.passengers == 2 && api.power == 2 && api.zone_min == -210);
+    ask(&api, "ZONE 20"); /* not a quarter hour: the setup keeps quarters */
+    assert(starts(replies[0], "ERR ") && api.zone_min == -210);
     ask(&api, "PASSENGERS 0");
     /* more passengers than a packet holds would write past it */
     ask(&api, "PASSENGERS 4");
@@ -1304,6 +1308,80 @@ static void test_api(void) {
     printf("api: status, riders, the key, settings, and what it leaves to the caller\n");
 }
 
+/* ---- screen ---------------------------------------------------------------------- */
+
+extern const uint8_t screen_font[95][20];
+extern const uint8_t screen_font_large[95][45];
+
+/* What a rider reads at a glance: the time where the phone said, the battery, sending or not, who is
+ * near, and a call for help ahead of a stop whatever their slots, on the four lines an OLED has;
+ * the e-paper's list says who told of whom. */
+static void test_screen_text(void) {
+    node_t n;
+    node_init(&n, &CFG, 12345);
+    const int64_t t = T0 + 5 * SEC;
+    for (int64_t s = T0; s <= t; s += SEC) tick(&n, s);
+    n.state = STATE_STOP_SOON;
+    n.riders[0] = (rider_t){.known = true, .via = 3, .rec_us = t - 130 * SEC, .rec = {.state = STATE_HELP}};
+    n.riders[3] = (rider_t){.known = true, .via = 3, .rec_us = t - 5 * SEC, .rec = {.state = STATE_STOP_NOW}};
+    screen_text_t text;
+    screen_text(&n, t, false, 3845, 60, text);
+    /* 12:00:10 UTC, an hour east; 3.845 V halfway between 70% and 60% */
+    static const char *const want[] = {"13:00    65%", "R2/4 BREAK", "on air 9sat", "R1 SOS", "R1 2m SOS via R4",
+                                       "R4 now STOP", ""};
+    for (size_t i = 0; i < sizeof(want) / sizeof(want[0]); i++) {
+        if (strcmp(text[i], want[i])) {
+            fprintf(stderr, "screen line %zu: \"%s\", want \"%s\"\n", i, text[i], want[i]);
+            abort();
+        }
+    }
+    n.riders[0].rec.state = STATE_STOP_NOW, n.riders[3].rec.state = STATE_HELP;
+    screen_text(&n, t, true, 4300, -90, text);
+    assert(!strcmp(text[3], "R4 SOS") && !strcmp(text[0], "10:30 BT100%"));
+    n.riders[3].rec.state = STATE_NORMAL;
+    screen_text(&n, t, true, 3000, 0, text);
+    assert(!strcmp(text[3], "R1 STOP") && !strcmp(text[0], "12:00 BT  0%"));
+    n.riders[0].rec.state = STATE_NORMAL;
+    screen_text(&n, t, true, 57, 0, text); /* a Heltec with no cell */
+    assert(!strcmp(text[3], "riders 1/3") && !strcmp(text[0], "12:00 BT"));
+    screen_text(&n, t, false, 4742, 0, text); /* a T-Echo on its cable */
+    assert(!strcmp(text[0], "12:00    USB"));
+    /* slots too short for any time error: silent, though the fix is current */
+    n.cfg.slots = 32;
+    n.cfg.interval_ms = 1000;
+    screen_text(&n, t, true, 0, 0, text);
+    assert(!strcmp(text[2], "silent 9sat"));
+
+    node_config_t bare = CFG;
+    bare.keyed = false;
+    node_init(&n, &bare, 1);
+    screen_text(&n, t, false, 0, 0, text);
+    assert(!strcmp(text[0], "--:--") && !strcmp(text[1], "no group") && !strcmp(text[2], "silent nofix"));
+    printf("screen: the time where the phone is, the battery, sending or silent, help before a stop\n");
+}
+
+/* A letter where it belongs in the page layout the OLEDs take, and nothing past the screen's edge:
+ * 12 letters and 4 lines on 128 x 64; 13 and 8 of the larger ones on 200 x 200. */
+static void test_screen_draw(void) {
+    screen_text_t text = {{0}};
+    for (int i = 0; i < SCREEN_LINES; i++) memset(text[i], 'W', SCREEN_COLS);
+    text[0][1] = 'R';
+    static uint8_t buf[SCREEN_BYTES + 64];
+    memset(buf, 0xAA, sizeof(buf));
+    screen_draw(text, buf, 128, 64);
+    const uint8_t *r = screen_font['R' - ' '];
+    for (int x = 0; x < SCREEN_FONT_W; x++) assert(buf[10 + x] == r[x * 2] && buf[128 + 10 + x] == r[x * 2 + 1]);
+    for (int x = 120; x < 128; x++) assert(buf[x] == 0); /* the 13th letter would start at 120 */
+    assert(buf[128 * 8] == 0xAA);                         /* and nothing past 1024 bytes */
+    memset(buf, 0xAA, sizeof(buf));
+    screen_draw(text, buf, 200, 200);
+    const uint8_t *w = screen_font_large['W' - ' '];
+    /* the 13th letter of the 8th line, its last eight rows: 180 to 194 across, band 23 */
+    for (int x = 0; x < 15; x++) assert(buf[23 * 200 + 180 + x] == w[x * 3 + 2]);
+    assert(buf[23 * 200 + 195] == 0 && buf[24 * 200] == 0 && buf[SCREEN_BYTES] == 0xAA);
+    printf("screen: letters in place, none past the edge\n");
+}
+
 int main(void) {
     test_airtime();
     test_crypto();
@@ -1321,5 +1399,7 @@ int main(void) {
     test_tour();
     test_api();
     test_api_log();
+    test_screen_text();
+    test_screen_draw();
     return 0;
 }

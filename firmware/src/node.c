@@ -4,9 +4,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-/* How old our own fix may be and still count as the GNSS's current one. */
-#define FIX_FRESH_US (3 * 1000000ll)
-
 /* The schedule's terms (docs/PROTOCOL.md, When a board sends). Bounds, not measurements: E0 measures
  * each board. */
 #define DRIFT_PPM 50       /* our crystal against true time, temperature included, unless the board says */
@@ -215,6 +212,11 @@ static int64_t spacing_us(const node_t *n) { return frame_us(n) / (n->cfg.slots 
 int64_t node_time_budget_us(const node_t *n) {
     const int64_t gap = spacing_us(n) - phy_airtime_us(&n->phy, PKT_LEN(n->cfg.passengers)) - RX_GAP_US;
     return gap > 0 ? gap / 2 : 0;
+}
+
+bool node_time_fits(const node_t *n, int64_t now_us) {
+    int64_t utc, err;
+    return node_utc_us(n, now_us, &utc, &err) && err + TX_ERR_US <= node_time_budget_us(n);
 }
 
 /* The frame's phase, under one spacing: the same for the whole group, drawn anew for each frame
