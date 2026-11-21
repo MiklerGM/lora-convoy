@@ -42,7 +42,7 @@ int screen_battery_pct(int mv) {
     return 0;
 }
 
-void screen_text(const node_t *n, int64_t now_us, bool phone, int battery_mv, int zone_min, screen_text_t out) {
+void screen_text(const node_t *n, int64_t now_us, bool phone, int battery_mv, bool usb, int zone_min, screen_text_t out) {
     memset(out, 0, sizeof(screen_text_t));
     char clock[16] = "--:--", battery[16] = "";
     int64_t utc, err;
@@ -50,10 +50,17 @@ void screen_text(const node_t *n, int64_t now_us, bool phone, int battery_mv, in
         const long long m = ((utc / 60000000 + zone_min) % 1440 + 1440) % 1440;
         snprintf(clock, sizeof(clock), "%02lld:%02lld", m / 60, m % 60);
     }
-    /* under 2.5 V there is no cell: a Heltec without one reads its divider's noise. Over 4.4 V, more
-     * than a cell gives, it is USB: the T-Echo's divider sees it through a diode, 4.74 V. */
-    if (battery_mv > SCREEN_USB_MV) snprintf(battery, sizeof(battery), "USB");
-    else if (battery_mv >= 2500) snprintf(battery, sizeof(battery), "%d%%", screen_battery_pct(battery_mv));
+    /* Under 2.5 V there is no cell: a Heltec without one reads its divider's noise. Over 4.4 V, more
+     * than a cell gives, the divider sees USB, not the cell (the T-Echo's, through a diode, 4.74 V),
+     * so there is no charge to tell. On USB a cell under full is marked charging; at full the mark
+     * goes, which is all its voltage says: no charger on these boards tells the chip it is done. */
+    if (battery_mv > SCREEN_USB_MV || (usb && battery_mv < 2500)) {
+        snprintf(battery, sizeof(battery), "USB");
+    } else if (battery_mv >= 2500) {
+        const int pct = screen_battery_pct(battery_mv);
+        if (usb && pct < 100) snprintf(battery, sizeof(battery), "%c%d%%", SCREEN_CHARGING, pct);
+        else snprintf(battery, sizeof(battery), "%d%%", pct);
+    }
     put(out[0], "%s %-2s%4s", clock, phone ? "BT" : "", battery);
     if (n->cfg.keyed) {
         const char *t = tag(n->state);
@@ -97,6 +104,14 @@ void screen_text(const node_t *n, int64_t now_us, bool phone, int battery_mv, in
     }
 }
 
+/* The charging mark, ours, in the fonts' layout and height: a bolt over the digits' rows. */
+const uint8_t screen_bolt[20] = {0x00, 0x00, 0x00, 0x00, 0x40, 0x1c, 0x60, 0x0e, 0x70, 0x07,
+                                 0xf8, 0x03, 0xdc, 0x01, 0xcc, 0x00, 0x44, 0x00, 0x00, 0x00};
+const uint8_t screen_bolt_large[45] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x06,
+                                       0x00, 0x07, 0x03, 0x80, 0x87, 0x01, 0xc0, 0xc7, 0x01, 0xe0, 0xe6, 0x00,
+                                       0x70, 0x76, 0x00, 0x38, 0x3e, 0x00, 0x18, 0x1e, 0x00, 0x08, 0x0e, 0x00,
+                                       0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+
 void screen_draw(const screen_text_t text, uint8_t *buf, int w, int h) {
     memset(buf, 0, (size_t)(w * h / 8));
     /* 10 x 16 on the OLEDs, 4 lines of 12; 15 x 24 on the e-paper, 8 lines of 13 */
@@ -107,7 +122,8 @@ void screen_draw(const screen_text_t text, uint8_t *buf, int w, int h) {
     for (int row = 0; row < rows && row < SCREEN_LINES; row++) {
         for (int col = 0; col < cols && col < SCREEN_COLS && text[row][col]; col++) {
             const unsigned char c = (unsigned char)text[row][col];
-            const uint8_t *g = font + (c >= ' ' && c <= '~' ? c - ' ' : '?' - ' ') * per;
+            const uint8_t *g = c == (unsigned char)SCREEN_CHARGING ? (large ? screen_bolt_large : screen_bolt)
+                               : font + (c >= ' ' && c <= '~' ? c - ' ' : '?' - ' ') * per;
             for (int x = 0; x < fw; x++) {
                 for (int b = 0; b < bands; b++) buf[(row * bands + b) * w + col * fw + x] = g[x * bands + b];
             }

@@ -365,7 +365,9 @@ them shows anything yet.
   seconds, so it can only show what changes slowly.
 
 **Built, 2026-11-21** (`firmware/src/screen.c`): the time where the phone is (ZONE), Bluetooth,
-the battery (or USB); the rider's slot and state; on air or silent, and the satellites; riders heard
+the battery, a bolt by it while it charges [owner] (the nRF52840 boards know USB from their own
+VBUS detector; "USB" alone where the divider sees USB and not the cell, as the T-Echo's does); the
+rider's slot and state; on air or silent, and the satellites; riders heard
 in the last minute, or another rider's call for help or to stop in their place. The e-paper adds
 the riders known, how long since and through whom. Nothing changes by the second, so the e-paper
 redraws, in part, at most once a minute. Seen right on the L1 and the T-Echo (turned 180°); the

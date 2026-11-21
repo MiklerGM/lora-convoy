@@ -434,12 +434,9 @@ static void screen_update(int battery_mv) {
     static bool any;
     int w, h;
     if (!port_screen_size(&w, &h) || w * h / 8 > SCREEN_BYTES) return;
-    const bool phone = ble_nus_connected();
-    /* USB as USB, where the chip can tell: a charging cell reads under SCREEN_USB_MV, and its
-     * percentage, high while it charges, would only mislead */
-    if (port_usb_power()) battery_mv = SCREEN_USB_MV + 1;
+    const bool phone = ble_nus_connected(), usb = port_usb_power();
     port_mutex_lock(s_lock);
-    screen_text(&s_node, port_uptime_us(), phone, battery_mv, s_api.zone_min, text);
+    screen_text(&s_node, port_uptime_us(), phone, battery_mv, usb, s_api.zone_min, text);
     port_mutex_give(s_lock);
     if (any && memcmp(text, shown, sizeof(text)) == 0) return;
     any = true;
