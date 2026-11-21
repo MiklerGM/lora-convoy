@@ -377,8 +377,10 @@ engine start ([01](01-goals.md), wishes; E7).
 
 Transmit time per hour by category: positions, relays, routes, retries, control
 ([01](01-goals.md), requirements). **So far:** `LEDGER` gives the last hour a minute at a time, with
-positions the only category yet ([PROTOCOL](PROTOCOL.md)). Still open: keeping it over a restart,
-and the app saving it with the ride. Needed by M7.
+positions the only category yet ([PROTOCOL](PROTOCOL.md)). The app keeps the hour's share with the
+ride: its log of the day has every status line, and with it `duty=` (the L1 on the walk of
+2026-11-21: 0.23–0.27 %). Still open: keeping it over a restart, which matters only in a mode that
+comes near the limit. Needed by M7.
 
 ### T-flasher: flashing without a toolchain
 
