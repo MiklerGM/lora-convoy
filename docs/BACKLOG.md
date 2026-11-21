@@ -334,10 +334,9 @@ stale on the phone's side, the board reset by its button while the phone was awa
 pairs again by itself there, once the rider agrees; for phones that keep the stale key, as the
 bridge met on rides, the app drops it after two refused sessions (BondHealth). On the bench,
 2026-10-23, Android 15 asked for the first pairing's consent in a notification, not a dialog, and
-the pairing waited some 30 s for it, then failed and came again with the next connection. To do:
-tell the rider to look at the notifications while Android bonds with the board
-(`ACTION_BOND_STATE_CHANGED`), and try whether a board associated through `CompanionDeviceManager`
-brings the dialog forward, on phones.
+the pairing waited some 30 s for it, then failed and came again with the next connection. The app
+now says, while it pairs, that the request may be in the notifications. To do: try whether a board
+associated through `CompanionDeviceManager` brings the dialog forward, on phones.
 Needed by M7.
 
 ## Firmware and boards

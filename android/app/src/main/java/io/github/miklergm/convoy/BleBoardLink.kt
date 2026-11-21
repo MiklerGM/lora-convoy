@@ -162,7 +162,7 @@ class BleBoardLink(context: Context, private val address: String) : BoardLink {
                 // Zephyr). Android starts pairing; the subscription goes again once that is done.
                 if (status == GATT_INSUFFICIENT_AUTHENTICATION || status == GATT_INSUFFICIENT_ENCRYPTION) {
                     if (g.device.bondState == BluetoothDevice.BOND_BONDED) authenticationRejected = true
-                    onState("pairing with the board: accept Android's pairing request")
+                    onState(PAIRING)
                     handler.postDelayed({ synchronized(this@BleBoardLink) { if (gatt === g) subscribe(g, d.characteristic, d) } },
                         PAIRING_WAIT_MS)
                     return
@@ -203,7 +203,7 @@ class BleBoardLink(context: Context, private val address: String) : BoardLink {
                     // same fragment simply goes again once that is done.
                     GATT_INSUFFICIENT_AUTHENTICATION, GATT_INSUFFICIENT_ENCRYPTION -> {
                         if (g.device.bondState == BluetoothDevice.BOND_BONDED) authenticationRejected = true
-                        onState("pairing with the board: accept Android's pairing request")
+                        onState(PAIRING)
                         delay = PAIRING_WAIT_MS
                     }
                     else -> if (++failures > MAX_WRITE_FAILURES) {
@@ -353,5 +353,7 @@ class BleBoardLink(context: Context, private val address: String) : BoardLink {
         private const val MAX_WRITE_FAILURES = 3
         private const val GATT_INSUFFICIENT_AUTHENTICATION = 5
         private const val GATT_INSUFFICIENT_ENCRYPTION = 15
+        /** Android 15 may put the request in a notification, not a dialog, and pairing then waits on it. */
+        private const val PAIRING = "pairing: accept Android's request; no window? it is in the notifications"
     }
 }
