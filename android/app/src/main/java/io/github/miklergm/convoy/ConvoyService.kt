@@ -168,8 +168,8 @@ class ConvoyService : Service() {
             linkState = "the board refused ${sentGroup?.name ?: "the group"}: $line"
             return
         }
-        // the answer to a command from a screen; TIME's come every 10 s and say nothing to the rider
-        if ((line.startsWith("OK ") && !line.startsWith("OK time=")) || line.startsWith("ERR")) {
+        // the answer to a command from a screen; TIME's and ZONE's are this service's own, not the rider's
+        if ((line.startsWith("OK ") && !line.startsWith("OK time=") && !line.startsWith("OK zone=")) || line.startsWith("ERR")) {
             reply = line
             return
         }
