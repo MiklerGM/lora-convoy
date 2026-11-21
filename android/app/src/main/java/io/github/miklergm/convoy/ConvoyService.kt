@@ -7,6 +7,7 @@ import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
+import android.graphics.drawable.Icon
 import android.os.IBinder
 import android.os.SystemClock
 import android.util.Log
@@ -61,6 +62,10 @@ class ConvoyService : Service() {
             .setContentTitle("Riders on the OsmAnd map")
             .setContentText(source.describe())
             .setContentIntent(open)
+            .addAction(Notification.Action.Builder(
+                Icon.createWithResource(this, android.R.drawable.ic_menu_close_clear_cancel), "Stop",
+                PendingIntent.getService(this, 1, Intent(this, ConvoyService::class.java).setAction(ACTION_STOP),
+                    PendingIntent.FLAG_IMMUTABLE)).build())
             .setOngoing(true)
             .build())
         sourceText = source.describe()
@@ -210,6 +215,7 @@ class ConvoyService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_FORGET -> send("FORGET")
+            ACTION_STOP -> stopSelf()
             // and its status at once, so the screen shows what the board took
             ACTION_COMMAND -> intent.getStringExtra(EXTRA_LINE)?.let { if (send(it)) send("STATUS") }
         }
@@ -316,6 +322,8 @@ class ConvoyService : Service() {
         private const val PHONE_UTC_ERR_MS = 1_000.0
         /** Asks the board to forget this phone; FORGOTTEN then ends the link on both sides. */
         const val ACTION_FORGET = "io.github.miklergm.convoy.FORGET"
+        /** The notification's Stop: the map's riders go, the link closes; the board rides on. */
+        const val ACTION_STOP = "io.github.miklergm.convoy.STOP"
         /** One line of the phone API to the board (EXTRA_LINE), from a screen: a state, a setting. */
         const val ACTION_COMMAND = "io.github.miklergm.convoy.COMMAND"
         const val EXTRA_LINE = "line"

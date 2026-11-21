@@ -41,6 +41,7 @@ class MainActivity : Activity() {
     private lateinit var riders: TextView
     private lateinit var found: LinearLayout
     private lateinit var batteryButton: Button
+    private lateinit var runButton: Button
     private var scanner: BleBoardLink.Scanner? = null
     /** The board's state the picker was last set to, and what it shows now, set by us or the rider. */
     private var shownState: Int? = null
@@ -52,7 +53,6 @@ class MainActivity : Activity() {
             "Group" to { startActivity(Intent(this, GroupActivity::class.java)) },
             "Share log" to ::shareLog,
             "Forget this board" to ::forget,
-            "Stop" to { stopService(Intent(this, ConvoyService::class.java)) },
             "Mock riders" to { start(ConvoyService.Source.Mock) },
             "Simulated board…" to ::askSimulated,
         )
@@ -72,6 +72,11 @@ class MainActivity : Activity() {
             carried.put(board?.let(::carriedText) ?: "")
             riders.put(ridersText())
             batteryButton.visibility = if (batteryUnrestricted()) View.GONE else View.VISIBLE
+            // Start comes back to the board last chosen; with none, Find boards is the way in
+            val running = ConvoyService.state != null
+            runButton.put(if (running) "Stop" else "Start")
+            runButton.visibility = if (running || ConvoyService.Source.load(this@MainActivity) !is ConvoyService.Source.Mock)
+                View.VISIBLE else View.GONE
             handler.postDelayed(this, 1000)
         }
     }
@@ -105,7 +110,8 @@ class MainActivity : Activity() {
             addView(row(TextView(this@MainActivity).apply { text = "Your state"; textSize = 16f }, picker, carried))
             riders = TextView(this@MainActivity).apply { textSize = 16f; setPadding(0, pad / 2, 0, pad / 2) }
             addView(riders)
-            addView(row(button("Open OsmAnd") { openOsmAnd() }, button("Find boards") { findBoards() }))
+            runButton = button("Stop") { startOrStop() }
+            addView(row(button("Open OsmAnd") { openOsmAnd() }, button("Find boards") { findBoards() }, runButton))
             found = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.VERTICAL }
             addView(found)
         }
@@ -259,6 +265,11 @@ class MainActivity : Activity() {
             .show()
     }
 
+    private fun startOrStop() {
+        if (ConvoyService.state != null) stopService(Intent(this, ConvoyService::class.java))
+        else start(ConvoyService.Source.load(this))
+    }
+
     /** Switching source restarts the service, so nothing of the old source lingers on the map. */
     private fun start(source: ConvoyService.Source) {
         // Android 13 and later. Without it the service still runs; only its notification stays hidden.
@@ -278,7 +289,9 @@ class MainActivity : Activity() {
 
     /** Who the board rides as, and whether it can: its fix, its time, the riders it knows; then only trouble. */
     private fun statusText(): String {
-        if (ConvoyService.state == null) return "Stopped."
+        // the board does not need the phone to ride, and riders took Stop to silence it
+        if (ConvoyService.state == null) return "Stopped: no riders on OsmAnd's map." +
+            if (ConvoyService.Source.load(this) is ConvoyService.Source.Board) " The board goes on sending until it is switched off." else ""
         val lines = mutableListOf<String>()
         val b = ConvoyService.board
         val link = ConvoyService.linkState
