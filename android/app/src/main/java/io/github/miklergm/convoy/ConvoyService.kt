@@ -136,6 +136,8 @@ class ConvoyService : Service() {
                 if (logAsked == null) {
                     logAsked = logNext
                     send("LOG %08x %d".format(logBoot, logNext))
+                    // the screen's clock in this phone's time; the board keeps it for rides without one
+                    send("ZONE ${java.util.TimeZone.getDefault().getOffset(System.currentTimeMillis()) / 60_000}")
                 }
                 boardRiders.group(status.group)
                 lastClash?.let { if (status.clash > it) clashAtMs = SystemClock.elapsedRealtime() }
