@@ -332,6 +332,42 @@ Scripts `lab/chain_run.sh`, `lab/chain_eval.py`.
   packet's sender, so a carried rider's moves never reached the map, only its changes of state.
   Now every rider a packet brings a newer record of gets its line.
 
+### A walk with a relay in a car, 2026-11-21
+
+The first relay out of doors. One walk, 12:32–13:17, build 9cadeb6, the defaults (a group of 10 at
+2 s, SF7/250, `POWER 1`: 24 dBm on the Heltec, 20 on the others; heartbeat every 8 frames, one
+passenger). The Heltec (slot 3) at home on its cable, a plain antenna on the board, indoors; the
+T-Echo (slot 5) standing in a car downstairs, some 25 m from it; the L1 (slot 4) in a pocket with
+the phone, linked over Bluetooth, the riders on OsmAnd's map. Out to 192 m from home through
+built-up streets, into a shop and back. Distances from the phone's GPX track; what the L1 sent and
+heard from the phone's log (`LOG`), as it was off its cable. Scripts `lab/walk1121.py`,
+`lab/walk1121b.py`.
+
+| From home | The L1's packets the Heltec heard directly |
+|---|---|
+| 0–50 m | 46 of 48 |
+| 50–100 m | 2 of 12 |
+| 100–150 m | 0 of 80 |
+| 150–200 m | 0 of 57 |
+
+- **Directly, home and walker lost each other by 75 m.** On 2026-11-12, with the Heltec's antenna
+  out of a window on coax, a walk held whole to some 280 m at 14 dBm. Other streets, so not a
+  measure, but where the home end's antenna stands outweighs 10 dB of power.
+- **Through the car, out to 166–189 m from home.** The Heltec had the L1 through the T-Echo out to
+  166 m from home (143 m from the car), the L1 had the Heltec through it out to 189 m (167 m from
+  the car); the T-Echo reached the L1 directly as far. Few of them, 8 and 7 packets: the walk
+  crossed the edge in a couple of minutes each way, and a standing relay carries each of two riders
+  every 32 s ([BACKLOG](BACKLOG.md), T-relay, relaying more often).
+- **In the shop and behind houses, nothing for 31 minutes** (12:38–13:09, 135–184 m from home),
+  neither directly nor through the car.
+- **The L1 fell silent 19 minutes after it last heard a board, as built.** At 12:37 its time was
+  the group's, ±11.4 ms against a bound of 70.6; hearing no one, its error grew at the 50 ppm
+  assumed, and at 12:56:50 it stopped sending and took the phone's time (±1 s). It went on
+  listening, heard the car at 13:09:35 and sent again a second later.
+- **The phone's side held.** Bluetooth stayed linked for the hour, in a pocket. Back home it
+  dropped once and linked again within a minute, and the board gave again the six lines the phone
+  had missed: the phone's copy has all 483 of the board's lines, none skipped.
+
 ### Earlier
 
 Measurements the documents already rely on:
