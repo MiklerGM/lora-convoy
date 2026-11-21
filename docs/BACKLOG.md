@@ -369,8 +369,15 @@ the battery (or USB); the rider's slot and state; on air or silent, and the sate
 in the last minute, or another rider's call for help or to stop in their place. The e-paper adds
 the riders known, how long since and through whom. Nothing changes by the second, so the e-paper
 redraws, in part, at most once a minute. Seen right on the L1 and the T-Echo (turned 180°); the
-Heltec's reads along the board, to be judged in its case. Still open: how long an OLED stays lit
-(power, and burn-in over a ride), an e-paper's ghosting after many partial redraws, the button.
+Heltec's reads along the board, to be judged in its case.
+
+**Dark and lit, 2026-11-21**, after Meshtastic's (`src/PowerFSM.cpp`, `src/graphics/Screen.cpp`):
+an OLED goes dark 10 minutes after the board starts or its button is pressed, its controller's own
+display off, and a press lights it [owner: the button only; little happens unasked that a rider
+would look at, and a screen woken for it would spend the battery unseen]. Meshtastic wakes it for a
+text message, pairing and power too. The e-paper is never dark, needing no power to keep its
+picture; each 20th redraw is whole, as Meshtastic's T-Echo, to clear what the partial ones leave.
+The button's hold of 3 s still forgets the phone. Still open: the OLED's draw while lit, measured.
 
 ### T-power: power
 

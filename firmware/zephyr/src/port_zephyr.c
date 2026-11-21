@@ -418,6 +418,7 @@ int port_console_getc(uint32_t timeout_ms) {
 #include <zephyr/drivers/display.h>
 
 static const struct device *const s_display = DEVICE_DT_GET(DT_CHOSEN(zephyr_display));
+#define EPD_WHOLE_EVERY 20
 
 /* screen.c's pages, a byte for eight rows with the top row in the low bit; a driver that tiles
  * otherwise is not one this takes. */
@@ -451,9 +452,24 @@ void port_screen_show(const uint8_t *buf) {
     }
     const struct display_buffer_descriptor desc = {
         .buf_size = len, .width = caps.x_resolution, .height = caps.y_resolution, .pitch = caps.x_resolution};
+    /* An e-paper draws its first picture whole, on blanking off, and the later ones in part; each
+     * EPD_WHOLE_EVERY-th whole again, written while blanked, which clears the ghosts the partial ones
+     * leave (Meshtastic's T-Echo: 20 in part at most). */
+    static unsigned drawn;
+    const bool whole = on && (caps.screen_info & SCREEN_INFO_EPD) && ++drawn % EPD_WHOLE_EVERY == 0;
+    if (whole && display_blanking_on(s_display) != 0) LOGW(TAG, "screen: no whole redraw");
     if (display_write(s_display, 0, 0, &desc, out) != 0) LOGW(TAG, "screen: write refused");
-    /* an e-paper draws its first picture whole on this, and the later ones in part */
-    if (!on) on = display_blanking_off(s_display) == 0;
+    if (!on || whole) on = display_blanking_off(s_display) == 0;
+}
+
+/* Dark by the driver's blanking: an OLED's display off, its memory kept. An e-paper keeps its picture
+ * unpowered, so it is never dark, and goes on being redrawn. */
+bool port_screen_light(bool on) {
+    if (!device_is_ready(s_display)) return false;
+    struct display_capabilities caps;
+    display_get_capabilities(s_display, &caps);
+    if (caps.screen_info & SCREEN_INFO_EPD) return false;
+    return (on ? display_blanking_off(s_display) : display_blanking_on(s_display)) == 0;
 }
 #else
 bool port_screen_size(int *w, int *h) {
@@ -461,6 +477,10 @@ bool port_screen_size(int *w, int *h) {
     return false;
 }
 void port_screen_show(const uint8_t *buf) { (void)buf; }
+bool port_screen_light(bool on) {
+    (void)on;
+    return false;
+}
 #endif
 
 #if DT_HAS_COMPAT_STATUS_OKAY(voltage_divider)

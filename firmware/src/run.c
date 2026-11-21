@@ -447,11 +447,18 @@ static void screen_update(int battery_mv) {
 
 /* ---- the button, Bluetooth's health, and the status the phone gets unasked --------- */
 
+/* The screen is lit this long after start or a press of the button, then dark until the next press:
+ * Meshtastic's default, and only the button wakes it [owner, 2026-11-21]: little happens unasked that
+ * a rider would look at, and a screen woken for it would mostly spend the battery unseen. An e-paper
+ * is never dark (port_screen_light). */
+#define SCREEN_LIT_US (10 * 60 * 1000000LL)
+
 static void service_task(void *arg) {
     (void)arg;
     const int watch = port_wdt_watch();
     int held_ms = 0, tick_ms = 0, status_ms = 0, battery_s = 0, battery_mv = 0;
-    bool fired = false;
+    bool fired = false, dark = false;
+    int64_t lit_until = port_uptime_us() + SCREEN_LIT_US;
     char text[API_LINE];
     for (;;) {
         port_wdt_feed(watch);
@@ -474,7 +481,11 @@ static void service_task(void *arg) {
                 }
                 if (!mv) battery_mv = 0;
             }
-            screen_update(battery_mv);
+            if (!dark) screen_update(battery_mv);
+            if (!dark && port_uptime_us() >= lit_until && port_screen_light(false)) {
+                dark = true;
+                LOGI(TAG, "screen dark until the button");
+            }
         }
         /* LOG: the kept console lines to the phone, a few a tick, so a backlog leaves the link room
          * for the riders; under the command lock, so a LOG asked meanwhile starts where it says */
@@ -506,6 +517,15 @@ static void service_task(void *arg) {
         const bool down = port_button_down();
         if (down) {
             held_ms += 100;
+            /* a press lights the screen, drawn first so that it wakes on the present */
+            if (held_ms == 100) {
+                lit_until = port_uptime_us() + SCREEN_LIT_US;
+                if (dark) {
+                    screen_update(battery_mv);
+                    dark = !port_screen_light(true);
+                    LOGI(TAG, "screen lit by the button");
+                }
+            }
             if (held_ms >= PAIR_HOLD_MS && !fired) {
                 fired = true; /* once per press */
                 LOGW(TAG, "button held - forgetting the paired phone");

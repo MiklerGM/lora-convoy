@@ -52,6 +52,8 @@
  *
  *   bool    port_screen_size(int *w, int *h)    the screen's pixels; false on a board without one
  *   void    port_screen_show(const uint8_t *buf) a picture as screen_draw makes it for that size
+ *   bool    port_screen_light(bool on)          lit or dark, keeping its picture; false where it
+ *                                               cannot be dark (none, or an e-paper, which needs no power)
  *   int     port_battery_mv(void)               the battery's voltage; 0 where the board cannot tell
  *
  *   void    port_restart(uint32_t note)         restarts, leaving the note for the next start

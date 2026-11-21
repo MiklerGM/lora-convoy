@@ -263,6 +263,10 @@ void port_screen_show(const uint8_t *buf) {
     if (screen_open()) esp_lcd_panel_draw_bitmap(s_panel, 0, 0, 128, 64, buf);
 }
 
+/* The SSD1306's own display off: its charge pump stops and its memory keeps the picture. Not Vext,
+ * which powers the radio's front end too (Meshtastic's heltec_v4 variant). */
+bool port_screen_light(bool on) { return screen_open() && esp_lcd_panel_disp_on_off(s_panel, on) == ESP_OK; }
+
 int port_battery_mv(void) {
     static adc_oneshot_unit_handle_t adc;
     static adc_cali_handle_t cali;
