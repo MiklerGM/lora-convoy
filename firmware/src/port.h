@@ -55,6 +55,7 @@
  *   bool    port_screen_light(bool on)          lit or dark, keeping its picture; false where it
  *                                               cannot be dark (none, or an e-paper, which needs no power)
  *   int     port_battery_mv(void)               the battery's voltage; 0 where the board cannot tell
+ *   bool    port_usb_power(void)                USB power in; false where the chip cannot tell
  *
  *   void    port_restart(uint32_t note)         restarts, leaving the note for the next start
  *   uint32_t port_restart_note(void)            that note once, then 0; 0 after a power loss

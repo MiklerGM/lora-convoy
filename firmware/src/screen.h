@@ -29,8 +29,9 @@
 
 typedef char screen_text_t[SCREEN_LINES][SCREEN_COLS + 1];
 
-/* The caller holds the node's lock. phone: one is connected; battery_mv under 2500 for none; zone_min
- * the local time's offset from UTC. */
+/* The caller holds the node's lock. phone: one is connected; battery_mv under 2500 for none, over
+ * SCREEN_USB_MV for USB power, which no cell reads; zone_min the local time's offset from UTC. */
+#define SCREEN_USB_MV 4400
 void screen_text(const node_t *n, int64_t now_us, bool phone, int battery_mv, int zone_min, screen_text_t out);
 
 /* A lithium cell's charge from its voltage, roughly: it reads high while charging or under no load. */

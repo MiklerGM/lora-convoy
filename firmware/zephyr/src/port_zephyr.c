@@ -483,6 +483,11 @@ bool port_screen_light(bool on) {
 }
 #endif
 
+/* The nRF52840's own VBUS detector, which a charging cell's voltage is not: Meshtastic's T-Echo
+ * reads the voltage, and shows a charging cell as a percentage. */
+#include <hal/nrf_power.h>
+bool port_usb_power(void) { return nrf_power_usbregstatus_vbusdet_get(NRF_POWER); }
+
 #if DT_HAS_COMPAT_STATUS_OKAY(voltage_divider)
 #include <zephyr/drivers/sensor.h>
 

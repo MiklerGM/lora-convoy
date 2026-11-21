@@ -265,6 +265,9 @@ void port_screen_show(const uint8_t *buf) {
 
 /* The SSD1306's own display off: its charge pump stops and its memory keeps the picture. Not Vext,
  * which powers the radio's front end too (Meshtastic's heltec_v4 variant). */
+/* No VBUS sense on the Heltec V4.3 that Meshtastic's variant names; the voltage tells where it can. */
+bool port_usb_power(void) { return false; }
+
 bool port_screen_light(bool on) { return screen_open() && esp_lcd_panel_disp_on_off(s_panel, on) == ESP_OK; }
 
 int port_battery_mv(void) {

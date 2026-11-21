@@ -51,6 +51,7 @@ bool port_screen_size(int *w, int *h);
 void port_screen_show(const uint8_t *buf);
 bool port_screen_light(bool on);
 int port_battery_mv(void);
+bool port_usb_power(void);
 
 void port_restart(uint32_t note);
 uint32_t port_restart_note(void);

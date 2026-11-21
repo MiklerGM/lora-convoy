@@ -52,7 +52,7 @@ void screen_text(const node_t *n, int64_t now_us, bool phone, int battery_mv, in
     }
     /* under 2.5 V there is no cell: a Heltec without one reads its divider's noise. Over 4.4 V, more
      * than a cell gives, it is USB: the T-Echo's divider sees it through a diode, 4.74 V. */
-    if (battery_mv > 4400) snprintf(battery, sizeof(battery), "USB");
+    if (battery_mv > SCREEN_USB_MV) snprintf(battery, sizeof(battery), "USB");
     else if (battery_mv >= 2500) snprintf(battery, sizeof(battery), "%d%%", screen_battery_pct(battery_mv));
     put(out[0], "%s %-2s%4s", clock, phone ? "BT" : "", battery);
     if (n->cfg.keyed) {
