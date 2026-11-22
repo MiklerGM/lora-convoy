@@ -66,8 +66,10 @@ class MainActivity : Activity() {
             // only when the board's state changes, so the rider's pick stays while the board takes it
             if (board != null && board.state != shownState && board.state in STATE_NAMES.indices) {
                 shownState = board.state
-                picked = board.state
-                picker.setSelection(board.state)
+                // a pick the service still holds for a board out of reach, over a turn of the phone
+                // too, which makes this screen anew (a review, 2026-11-22)
+                picked = ConvoyService.wanted?.takeIf { it in STATE_NAMES.indices } ?: board.state
+                picker.setSelection(picked!!)
             }
             carried.put(board?.let { carried(picked, it, ConvoyService.linkState?.startsWith("connected") == true) } ?: "")
             riders.put(ridersText())
@@ -100,14 +102,16 @@ class MainActivity : Activity() {
                 override fun onNothingSelected(parent: AdapterView<*>?) {}
             }
         }
-        carried = TextView(this).apply { textSize = 16f; setPadding(pad / 2, 0, 0, 0) }
+        carried = TextView(this).apply { textSize = 16f }
         val column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(pad, pad / 2, pad, pad)
             addView(status)
             batteryButton = button("Let it run in the background") { askBatteryExemption() }
             addView(batteryButton)
-            addView(row(TextView(this@MainActivity).apply { text = "Your state"; textSize = 16f }, picker, carried))
+            addView(row(TextView(this@MainActivity).apply { text = "Your state"; textSize = 16f }, picker))
+            // under it, not beside: a long one ("not on the board yet: …") left the picker no width
+            addView(carried)
             riders = TextView(this@MainActivity).apply { textSize = 16f; setPadding(0, pad / 2, 0, pad / 2) }
             addView(riders)
             runButton = button("Stop") { startOrStop() }

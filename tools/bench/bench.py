@@ -540,8 +540,27 @@ def ride() -> None:
     wait_tap(p1, "Needs help")
     wait_tap(p1, "Riding")
     wait_status(p1, rf"Your state\nRiding\n✓ all {boards - 1}", 60)
-    wait_status(p0, rf"^(?!.*{names[1]} · Needs help)", 60)
+    # listed still, and with no state named, which is riding: not merely gone (a review, 2026-11-22)
+    wait_status(p0, rf"(?m)^{names[1]} · (?!Needs help|Stop now|Stop when convenient|Helping)", 60)
     step(f"phone 1 called it off, and phone 0 lists {names[1]} riding again")
+
+    # A call for help with board 0 out of reach: each main_screen() makes the screen anew (CLEAR_TOP),
+    # as a turn of the phone does, and it must show the pick still waiting, not the board's last
+    # state; the board takes it once back and checked (a review, 2026-11-22)
+    os.killpg(int((RUN / "board-0.pid").read_text()), signal.SIGTERM)
+    main_screen(p0)
+    wait_tap(p0, "Riding")
+    wait_tap(p0, "Needs help")
+    wait_status(p0, r"Your state\nNeeds help\nnot on the board yet", 60)
+    start("board-0", *board_command_line(0))
+    board_says(0, "advertising", 60)
+    wait_status(p0, rf"Your state\nNeeds help\n✓ all {boards - 1}", 120)
+    step("phone 0 called for help with board 0 out of reach; its screen, made anew, kept the call, "
+         f"and board 0, back, carried it to all {boards - 1}")
+    main_screen(p0)
+    wait_tap(p0, "Needs help")
+    wait_tap(p0, "Riding")
+    wait_status(p0, rf"Your state\nRiding\n✓ all {boards - 1}", 60)
 
     # OsmAnd stopped and started again, as a rider or an update does: the app binds to it anew. The
     # Version 1 engine, as OpenGL hides moving points in a share of frames (T-osmand-opengl).

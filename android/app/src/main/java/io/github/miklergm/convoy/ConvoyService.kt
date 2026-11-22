@@ -41,6 +41,8 @@ class ConvoyService : Service() {
     /** What this link's board has been sent: this phone's group, and the question for its riders. */
     @Volatile private var sentGroup: Invitation? = null
     @Volatile private var askedRiders = false
+    /** The board on this link checked (ready()), for the rider's state to go to it. */
+    @Volatile private var ready = false
     /** This phone's group, for the riders' names; read again at each status. */
     @Volatile private var group: Invitation? = null
     /** The board's clash count at its last status on this link, to see it grow. */
@@ -85,10 +87,8 @@ class ConvoyService : Service() {
                     askedRiders = false
                     lastClash = null
                     logAsked = null
+                    ready = false
                     send("STATUS")
-                    // the state the rider chose while the board was out of reach: the same one again
-                    // changes nothing on the board (node_set_state), so it is sent on each link
-                    wanted?.let { if (send("STATE $it")) send("STATUS") }
                 }
             }
         }
@@ -152,6 +152,7 @@ class ConvoyService : Service() {
                 lastClash?.let { if (status.clash > it) clashAtMs = SystemClock.elapsedRealtime() }
                 lastClash = status.clash
                 setUp()
+                if (group == null) ready()
             }
             return
         }
@@ -163,6 +164,7 @@ class ConvoyService : Service() {
                 confirmed = sent
                 boardRiders.group(taken.group)
                 askRiders()
+                ready()
             } else {
                 linkState = "the board took another setup than ${sent.name}'s: $line"
             }
@@ -210,6 +212,17 @@ class ConvoyService : Service() {
         }
     }
 
+    /**
+     * The board checked on this link, its protocol and this phone's group, if it has one, taken: the
+     * state the rider chose while it was out of reach goes now, not before (a review, 2026-11-22).
+     * The same state again changes nothing on the board (node_set_state), so it goes on each link.
+     */
+    private fun ready() {
+        if (ready) return
+        ready = true
+        wanted?.let { if (send("STATE $it")) send("STATUS") }
+    }
+
     private fun askRiders() {
         if (link == null) return
         askedRiders = true
@@ -222,8 +235,9 @@ class ConvoyService : Service() {
             ACTION_STOP -> stopSelf()
             // and its status at once, so the screen shows what the board took
             ACTION_COMMAND -> intent.getStringExtra(EXTRA_LINE)?.let {
-                if (it.startsWith("STATE ")) wanted = it.removePrefix("STATE ").toIntOrNull()
-                if (send(it)) send("STATUS")
+                val state = it.startsWith("STATE ")
+                if (state) wanted = it.removePrefix("STATE ").toIntOrNull()
+                if ((!state || ready) && send(it)) send("STATUS")
             }
         }
         return START_STICKY
