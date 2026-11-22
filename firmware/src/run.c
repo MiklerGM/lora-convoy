@@ -307,10 +307,18 @@ static void gnss_task(void *arg) {
         if (want != systems) {
             systems = want;
             char body[12], cmd[20];
-            const int n = snprintf(body, sizeof(body), "PCAS04,%u", systems);
-            uint8_t sum = 0;
-            for (int i = 0; i < n; i++) sum ^= (uint8_t)body[i];
-            snprintf(cmd, sizeof(cmd), "$%s*%02X\r\n", body, sum);
+            snprintf(body, sizeof(body), "PCAS04,%u", systems);
+            nmea_sentence(body, cmd, sizeof(cmd));
+            port_gnss_write(cmd);
+        }
+        /* GNSS 2-4, a restart (PCAS10: 0 hot, 1 warm, 2 cold), read and cleared without the lock
+         * as SYSTEMS is. ponytail: two asked within one byte's time can lose one; a bench command. */
+        const uint8_t start = s_api.gnss_start;
+        if (start) {
+            s_api.gnss_start = 0;
+            char body[12], cmd[20];
+            snprintf(body, sizeof(body), "PCAS10,%u", start - 1);
+            nmea_sentence(body, cmd, sizeof(cmd));
             port_gnss_write(cmd);
         }
         const int c = port_gnss_getc(200);

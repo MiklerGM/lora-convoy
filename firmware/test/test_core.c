@@ -237,6 +237,13 @@ static void test_nmea(void) {
     assert(!fix.valid && fix.time_valid);
     /* The bench's GSV: each satellite's C/N0, an untracked one as such, NMEA 4.1's signal id after
      * the last no satellite; any other sentence none. */
+    /* commands to the L76K: a cold start's checksum XORed by hand, and the PCAS03 the boards have
+     * sent since 2026-11-11, which the L76K obeys */
+    char cmd[48];
+    nmea_sentence("PCAS10,2", cmd, sizeof(cmd));
+    assert(strcmp(cmd, "$PCAS10,2*1E\r\n") == 0);
+    nmea_sentence("PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0", cmd, sizeof(cmd));
+    assert(strcmp(cmd, "$PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0*02\r\n") == 0);
     char gsv[160];
     assert(nmea_gsv_text("$GPGSV,3,1,11,05,62,060,32,13,40,250,,15,22,300,28,18,10,120,40*7A\r\n", gsv, sizeof(gsv)) &&
            strcmp(gsv, "GSV GP 1/3 in=11 05:32 13:- 15:28 18:40") == 0);
@@ -1384,6 +1391,14 @@ static void test_api(void) {
     /* What only the caller can do is left to it, unanswered here. */
     ask(&api, "GNSS 0");
     assert(n_replies == 1 && strcmp(replies[0], "OK gnss=0") == 0 && api.gnss_ask == 1);
+    /* GNSS 2-4 restarts it, 4 cold (PCAS10,2), leaving its power as it is */
+    api.gnss_ask = 0;
+    ask(&api, "GNSS 4");
+    assert(strcmp(replies[0], "OK gnss=4") == 0 && api.gnss_start == 3 && api.gnss_ask == 0);
+    ask(&api, "GNSS 5");
+    assert(strncmp(replies[0], "ERR", 3) == 0 && api.gnss_start == 3);
+    ask(&api, "GNSS 1");
+    assert(api.gnss_ask == 2 && api.gnss_start == 3);
     /* SYSTEMS goes to the GNSS as it stands: nothing the L76K has no meaning for is passed on */
     ask(&api, "SYSTEMS 1");
     assert(strcmp(replies[0], "OK systems=1") == 0 && api.gnss_systems == 1);

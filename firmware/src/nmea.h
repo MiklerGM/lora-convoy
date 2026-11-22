@@ -38,3 +38,6 @@ bool nmea_feed(nmea_t *n, char c, gnss_fix_t *fix);
  * satellite's number and C/N0 in dB-Hz, "-" while untracked ("GSV GP 1/3 in=11 5:32 13:-").
  * Its length, or 0 for any other sentence. For the bench's GSV (run.c). */
 int nmea_gsv_text(const char *sentence, char *out, size_t cap);
+
+/* A command to the GNSS, "$<body>*<checksum>\r\n", in out ("PCAS10,2" to an L76K). */
+void nmea_sentence(const char *body, char *out, size_t cap);

@@ -159,6 +159,12 @@ bool nmea_feed(nmea_t *n, char c, gnss_fix_t *fix) {
     return false;
 }
 
+void nmea_sentence(const char *body, char *out, size_t cap) {
+    uint8_t sum = 0;
+    for (const char *p = body; *p; p++) sum ^= (uint8_t)*p;
+    snprintf(out, cap, "$%s*%02X\r\n", body, sum);
+}
+
 int nmea_gsv_text(const char *sentence, char *out, size_t cap) {
     if (sentence[0] != '$' || strncmp(sentence + 3, "GSV,", 4) != 0) return 0;
     char b[100];

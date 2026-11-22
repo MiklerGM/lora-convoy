@@ -70,6 +70,7 @@ typedef struct {
     bool restart;
     bool bootloader;
     uint8_t gnss_ask;               /* GNSS 0|1: 0 nothing asked, 1 off, 2 on */
+    uint8_t gnss_start;             /* GNSS 2-4: 0 nothing asked, else the L76K's PCAS10 restart + 1 (run.c) */
     uint8_t gnss_systems;           /* SYSTEMS: 1 GPS, 2 BeiDou, 4 GLONASS, summed; 8 two in turn (run.c); 0 as the GNSS has it */
     bool gnss_gsv;                  /* GSV: the satellites' C/N0 to the console (run.c), for the bench */
     uint8_t tour_s;                 /* TOUR: the mode changed by the clock every so many seconds; 0 never */
