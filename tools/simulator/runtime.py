@@ -115,6 +115,9 @@ class Simulation:
                 f"{value['status'] & 1}")
 
     def _position(self, value):
+        # no position yet (pos=0): its 0, 0 is no place
+        if not value["status"] & 8:
+            return None
         return self.world.metric(value["lat_e7"] / 1e7, value["lon_e7"] / 1e7)
 
     def _register(self, node, payload):
@@ -369,13 +372,13 @@ class Simulation:
                                    "may still fail or be cancelled by the platform; actual RF is separate",
                     "scope": "local CAD before the node's own slot, not asynchronous CSMA or Meshtastic"},
                 "candidate_capabilities": {"v3": {"core":"production C node and codec, protocol v5, no riders carried",
-                    "states":["normal","help"], "automatic_help_answers":False, "before_first_position":False},
+                    "states":["normal","help"], "automatic_help_answers":False, "before_first_position":True},
                     "relay":{"core":"production C node and codec, protocol v5, relay_records riders carried a packet",
                              "selection":"a changed state first, then least recently told",
                              "cache_expiry":"10 minutes since the rider said it",
                              "source_authentication":True,"envelope_authentication":True,
                              "wire_relay_peer_identity":True,"states":["normal","help"],
-                             "automatic_help_answers":False,"before_first_position":False},
+                             "automatic_help_answers":False,"before_first_position":True},
                     "v3-cad":{"base_candidate":"v3", "access_policy":"access_policy", "framing_unchanged":True},
                     "relay-cad":{"base_candidate":"relay", "access_policy":"access_policy", "framing_unchanged":True}},
                 "contact_reference": contact_reference(self.events) if contact_diagnostic else

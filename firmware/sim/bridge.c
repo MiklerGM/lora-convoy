@@ -19,7 +19,8 @@ typedef struct {
 } sim_config_t;
 
 /* One rider as told: by itself (via its own slot) or by another. as_of is the UTC second it said
- * so itself; status keeps v3's bits for the host: 1 help, 2 stopped, 4 a current fix. */
+ * so itself; status keeps v3's bits for the host: 1 help, 2 stopped, 4 a current fix, and 8 a
+ * position at all (v5's pos=1), without which lat_e7 and lon_e7 are no place. */
 typedef struct {
     uint32_t slot, as_of, status, via;
     int32_t lat_e7, lon_e7, speed_kmh, course2, rssi_dbm, snr_db4;
@@ -123,7 +124,8 @@ void sim_node_mode(void *p,const sim_config_t *c,int applied) {
 }
 
 static uint32_t status_of(const record_t *r) {
-    return (r->state==STATE_HELP ? 1u : 0) | (r->facts&FACT_STOPPED ? 2u : 0) | (r->facts&FACT_CURRENT ? 4u : 0);
+    return (r->state==STATE_HELP ? 1u : 0) | (r->facts&FACT_STOPPED ? 2u : 0) | (r->facts&FACT_CURRENT ? 4u : 0) |
+           (r->has_pos ? 8u : 0);
 }
 
 int sim_node_view(void *p,unsigned slot,sim_record_t *out) {

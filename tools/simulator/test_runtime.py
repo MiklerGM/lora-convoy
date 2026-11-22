@@ -174,6 +174,24 @@ class RuntimeTest(unittest.TestCase):
             self.assertTrue(signatures[0])
             self.assertEqual(signatures[0],signatures[1])
 
+    def test_a_call_for_help_before_any_fix_comes_without_a_position(self):
+        # GNSS time, never a fix: the C core sends pos=0, and its 0, 0 must not become a place
+        world={"schema":1,"name":"no-fix","duration_s":20,"warmup_s":2,
+               "default_link":{"decode":True,"sense":True,"interfere":True},
+               "nodes":[{"id":node,"group":"g","slot":slot,"listen_one_in":0,
+                         "trajectory":[{"t_s":0,"x_m":slot*100,"y_m":0}]} for slot,node in enumerate(("a","b"))],
+               "outages":[{"node":"a","kind":"fix","from_s":0,"until_s":20}],
+               "actions":[{"id":"call","node":"a","t_s":5,"kind":"state","state":"help"}]}
+        sim=Simulation(world,library=self.library)
+        try:
+            summary=sim.run()
+            self.assertEqual(summary["contract_failures"],[])
+            applied=[e for e in sim.events if e["event"]=="applied" and e["receiver"]=="b" and e["author"]=="a"]
+            self.assertTrue(any(e["state"]=="help" for e in applied))
+            self.assertTrue(applied and all(e["position"] is None for e in applied))
+        finally:
+            sim.close()
+
     def test_cad_defers_for_local_noise_and_stays_inside_symmetric_guard(self):
         scene={"schema":1,"name":"cad-local","duration_s":6,"warmup_s":0,
                "radio":{"cad_noise_threshold_dbm":-100,"noise_threshold_dbm":-100,

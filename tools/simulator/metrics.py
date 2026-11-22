@@ -340,7 +340,8 @@ class Evaluator:
             return
         observed_position = record.position if position is _UNOBSERVED else tuple(position) if position is not None else None
         observed_state = record.state if state is _UNOBSERVED else state
-        coordinate_match = observed_position == tuple(record.position)
+        # a record with no position yet (pos=0) matches only a view with none
+        coordinate_match = observed_position == (tuple(record.position) if record.position is not None else None)
         state_match = observed_state == record.state
         p.provenance_mismatches += not coordinate_match or not state_match
         p.view = View(record.key, record.fix_id if coordinate_match else None,
