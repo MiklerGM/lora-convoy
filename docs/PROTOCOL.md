@@ -283,7 +283,9 @@ RIDER slot=2 group=86c91c92 boot=1a2b3c4d at=70100 heard_at=69700 fix=64200 pos=
 `boot` is the board's run, drawn as it starts; `at` and `heard_at`, when the board made the line
 and when the rider's record came, by itself or carried, on its own clock in ms since it started, which a later GNSS time
 does not change the meaning of; `fix` is the rider's fix time, UTC seconds modulo 65 536: from its own
-packet the second it sent less the fix's age; carried by another, the second it said so itself.
+packet the second it sent less the fix's age; carried by another, the second it said so itself
+while its GPS was current (`gps=1`), else `?`: a held fix passed on has no time the carrier knows,
+and the second of its record would make it young; `fix_age` is then `?` too.
 `pos=0` is a rider with no position yet, its `lat` and `lon` meaningless. The app tells the fix's age by that time on the board's GNSS time where the board
 has it (`CLOCK`'s `utc`), else on its own calendar, either way with no wait on the way in it, and the radio contact's by `heard_at`, which it places on
 its own monotonic clock by `CLOCK` exchanges, run by run: a better reckoning moves a rider kept

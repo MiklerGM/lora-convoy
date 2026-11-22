@@ -130,11 +130,13 @@ int sim_node_view(void *p,unsigned slot,sim_record_t *out) {
     sim_node_t *s=p;
     if (slot>=NODE_SLOTS || !out || !s->node.riders[slot].known) return 0;
     const rider_t *r=&s->node.riders[slot];
-    /* its fix where it told us itself; told by another, when it last said so */
+    /* its fix where it told us itself; told by another, when it last said so while its GPS was
+     * current, else unknown (0), as node_format_rider has it */
+    const uint32_t fix=r->fix_utc ? r->fix_utc : (r->rec.facts&FACT_CURRENT) ? r->as_of : 0;
     *out=(sim_record_t){.slot=slot,.as_of=r->as_of,.status=status_of(&r->rec),.via=r->via,
         .lat_e7=r->rec.lat_e7,.lon_e7=r->rec.lon_e7,.speed_kmh=r->speed_kmh,.course2=r->course2,
         .rssi_dbm=r->rssi_dbm,.snr_db4=r->snr_db4,
-        .fix_utc_ms=(int64_t)(r->fix_utc ? r->fix_utc : r->as_of)*1000,.heard_us=r->heard_us};
+        .fix_utc_ms=(int64_t)fix*1000,.heard_us=r->heard_us};
     return 1;
 }
 

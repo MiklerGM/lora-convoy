@@ -754,6 +754,17 @@ static void test_node_passengers(void) {
     assert(node_on_packet(&deaf, b, pkt_seal(b, &told, &g), -70, 30, T0));
     assert(deaf.riders[0].known && deaf.riders[0].via == 3 && !deaf.riders[0].heard &&
            deaf.riders[0].rec.state == STATE_HELP);
+    /* Its GPS lost (gps=0), its held fix carried: when it said so is not when it fixed, which no
+     * one carrying it knows, so its fix's time is unknown rather than seconds old. */
+    node_format_rider(&deaf, 0, T0, line, sizeof(line));
+    assert(strstr(line, " fix=? pos=1 ") && strstr(line, " fix_age=? ") && strstr(line, " gps=0 "));
+    /* With its GPS current, what it said was its fix of then. */
+    told.count = 1;
+    told.sent = s0 + 2;
+    told.passenger[0].facts = FACT_CURRENT;
+    assert(node_on_packet(&deaf, b, pkt_seal(b, &told, &g), -70, 30, T0 + 2 * SEC));
+    node_format_rider(&deaf, 0, T0 + 5 * SEC, line, sizeof(line));
+    assert(strstr(line, " fix_age=3 ") && strstr(line, " gps=1 ") && !strstr(line, " fix=? "));
 
     /* A record never gets younger on its way: an older one of the caller, from a rider who met it
      * a minute ago, does not put the newer one out; a later one does. */

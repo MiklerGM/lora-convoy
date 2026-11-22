@@ -597,13 +597,16 @@ static const char *deg(char *s, size_t cap, int32_t e7) {
 int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf, size_t cap) {
     if (slot >= NODE_SLOTS || !n->riders[slot].known) return snprintf(buf, cap, "RIDER slot=%u none", slot);
     const rider_t *r = &n->riders[slot];
-    /* Its fix where it told us itself, else when it last said anything: on the calendar we have
-     * now, so a stored rider's age comes, and grows truer, as our calendar does. */
-    const uint32_t fix = r->fix_utc ? r->fix_utc : r->as_of;
-    char lat[16], lon[16], age[24] = "?", via[8] = "-", direct[24] = "-";
+    /* Its fix where it told us itself, else when it last said anything, which is its fix's time
+     * only while its GPS was current: a held fix carried on by another has no time we know, and
+     * its record's would make it young. On the calendar we have now, so a stored rider's age
+     * comes, and grows truer, as our calendar does. */
+    const uint32_t fix = r->fix_utc ? r->fix_utc : (r->rec.facts & FACT_CURRENT) ? r->as_of : 0;
+    char lat[16], lon[16], age[24] = "?", fixs[8] = "?", via[8] = "-", direct[24] = "-";
     int64_t now_utc, err;
     const char *source;
-    if (r->rec.has_pos && calendar_us(n, now_us, &now_utc, &err, &source)) {
+    if (fix) snprintf(fixs, sizeof(fixs), "%u", (unsigned)(fix & 0xFFFF));
+    if (fix && r->rec.has_pos && calendar_us(n, now_us, &now_utc, &err, &source)) {
         snprintf(age, sizeof(age), "%lld", (long long)(now_utc / 1000000 - fix));
     }
     char speed[8] = "?", course[8] = "?";
@@ -617,10 +620,10 @@ int node_format_rider(const node_t *n, unsigned slot, int64_t now_us, char *buf,
     /* heard= is since anything came of it, itself or told; direct= since itself. answered= is v3's,
      * kept empty for the app until it speaks this version. */
     return snprintf(buf, cap,
-                    "RIDER slot=%u group=%08lx boot=%08lx at=%lld heard_at=%lld fix=%u pos=%d lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
+                    "RIDER slot=%u group=%08lx boot=%08lx at=%lld heard_at=%lld fix=%s pos=%d lat=%s lon=%s fix_age=%s heard=%lld.%lld speed=%s course=%s gps=%d "
                     "help=%d stopped=%d answered=- state=%u via=%s direct=%s rssi=%d snr=%s%d.%02d rx=%lu/%lu offset=%s late=%ld sats=%u",
                     slot, (unsigned long)n->group.id, (unsigned long)n->boot, (long long)(now_us / 1000),
-                    (long long)(r->rec_us / 1000), (unsigned)(fix & 0xFFFF), r->rec.has_pos ? 1 : 0,
+                    (long long)(r->rec_us / 1000), fixs, r->rec.has_pos ? 1 : 0,
                     deg(lat, sizeof(lat), r->rec.lat_e7), deg(lon, sizeof(lon), r->rec.lon_e7),
                     age, heard10 / 10, heard10 % 10, speed, course,
                     (r->rec.facts & FACT_CURRENT) ? 1 : 0, r->rec.state == STATE_HELP ? 1 : 0,
