@@ -29,6 +29,8 @@ object BoardLines {
         /** Where its clock comes from: none, nmea or pps; and how far off it may be, in ms. */
         val time: String,
         val timeErrMs: Double?,
+        /** How far off its clock may be and still send in its slot, ms (node_time_budget_us). */
+        val budgetMs: Double? = null,
         val riders: Int,
         /** Packets heard in its own slot from another radio: one invitation used twice, as a rule. */
         val clash: Int,
@@ -135,6 +137,7 @@ object BoardLines {
             echoS = t["echo"]?.toIntOrNull(),
             time = t["time"] ?: "?",
             timeErrMs = t["err"]?.toDoubleOrNull(),
+            budgetMs = t["budget"]?.toDoubleOrNull(),
             riders = t["riders"]?.toIntOrNull() ?: 0,
             clash = t["clash"]?.toIntOrNull() ?: 0,
             duty = t["duty"] ?: "?",

@@ -889,6 +889,28 @@ static void test_send_rule(void) {
     printf("node: silent while nothing changes; a move, a turn, a state and a heartbeat each speak\n");
 }
 
+/* The intervals the app gives a group by its size (Invitation.intervalFor, T-setup): a board without
+ * PPS, its NMEA time good to 100 ms, fits its slot at each, carrying one rider; half a second less
+ * and it would not, so none is slower than it must be. */
+static void test_group_intervals(void) {
+    static const struct { uint8_t slots; uint32_t ms; } APP[] = {
+        {2, 2000}, {7, 2000}, {8, 2500}, {9, 2500}, {10, 3000}, {16, 4500}, {20, 5500}, {32, 8500}};
+    for (size_t i = 0; i < sizeof(APP) / sizeof(APP[0]); i++) {
+        node_t n;
+        node_config_t c = CFG;
+        c.slots = APP[i].slots;
+        c.passengers = 1;
+        c.nmea_err_us = 100000;
+        c.interval_ms = APP[i].ms;
+        node_init(&n, &c, 1);
+        assert(node_time_budget_us(&n) >= c.nmea_err_us + 1000); /* TX_ERR_US */
+        c.interval_ms = APP[i].ms - 500;
+        node_init(&n, &c, 1);
+        assert(APP[i].ms == 2000 || node_time_budget_us(&n) < c.nmea_err_us + 1000);
+    }
+    printf("node: the app's group intervals fit a board without PPS, and none could be shorter\n");
+}
+
 /* Stopped or not, by speed and by way made: a red light, a stop, a walker. */
 static void test_stopped(void) {
     node_t n;
@@ -1496,6 +1518,7 @@ int main(void) {
     test_node_passengers();
     test_send_rule();
     test_stopped();
+    test_group_intervals();
     test_time_from_group();
     test_node_mode();
     test_tour();

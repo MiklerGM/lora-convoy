@@ -10,6 +10,12 @@ import org.junit.Test
 class InvitationTest {
 
     private val key = ByteArray(16) { it.toByte() }
+
+    @Test
+    fun `a group's interval by its size, the table the firmware's test_group_intervals holds`() {
+        val table = mapOf(2 to 2000, 7 to 2000, 8 to 2500, 9 to 2500, 10 to 3000, 16 to 4500, 20 to 5500, 32 to 8500)
+        assertEquals(table, table.keys.associateWith { Invitation.intervalFor(it) })
+    }
     private val five = listOf("Ann", "Bob", "Cid", "Dee", "Eve")
 
     @Test

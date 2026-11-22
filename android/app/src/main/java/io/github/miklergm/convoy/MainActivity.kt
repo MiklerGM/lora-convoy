@@ -303,6 +303,7 @@ class MainActivity : Activity() {
                 else "no time yet"
             lines.add((if (b.fix) "GPS" + (b.sats?.let { " $it sat" } ?: "") else "No GPS fix") +
                 " · $time · ${b.riders} riders known")
+            pausedText(b)?.let(lines::add)
             if (link != null && !link.startsWith("connected")) lines.add("Link: $link")
             if (!b.kept) lines.add("The board could not save its setup: switched off, it will forget it.")
         }
@@ -337,6 +338,19 @@ fun carried(picked: Int?, b: BoardLines.Status, linked: Boolean): String {
     // a board's status comes every 10 s: an age under a minute would only mislead
     return (if (b.heard >= others) "✓ all $others" else "${b.heard} of $others") +
         (b.echoS?.takeIf { it >= 60 }?.let { ", ${age(it * 1000L)} ago" } ?: "")
+}
+
+/**
+ * Why the board, keyed and with a time, sends nothing: its clock is too rough for the group's slots
+ * (firmware: err + 1 ms over budget, counted as unsure), so its position stays with it until GPS
+ * time or a board with PPS sets it closer. Null while it can send.
+ */
+fun pausedText(b: BoardLines.Status): String? {
+    val err = b.timeErrMs ?: return null
+    val budget = b.budgetMs ?: return null
+    if (!b.keyed || b.time == "none" || err + 1 <= budget) return null
+    return "Not sending your position: the board's clock, ±%.0f ms, is too rough for this group's slots (±%.0f ms). ".format(err, budget) +
+        "It sends once its GPS or a board with PPS sets it closer."
 }
 
 fun Activity.button(label: String, onClick: () -> Unit) = Button(this).apply {

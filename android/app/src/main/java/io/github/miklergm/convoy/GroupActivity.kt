@@ -97,8 +97,9 @@ class GroupActivity : Activity() {
             ridersField.error = "2 to 32 names, each up to ${Invitation.MAX_RIDER_NAME} bytes"
             return
         }
-        // ponytail: one radio mode and a 2 s interval for every group until group sizing (T-phy)
-        val group = Invitation.newGroup(name, names, 2000)
+        // ponytail: one radio mode for every group, and the interval by its size alone, for the
+        // roughest clock a board may have (T-setup); a group known to ride on PPS boards could go faster
+        val group = Invitation.newGroup(name, names, Invitation.intervalFor(names.size))
         Group.join(this, group[0]) // the organiser rides too, first
         Group.saveCreated(this, group[0])
         show()

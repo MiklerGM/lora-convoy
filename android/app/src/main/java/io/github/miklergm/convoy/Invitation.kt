@@ -92,6 +92,16 @@ data class Invitation(
         }
 
         /** A new group: a fresh key, and one invitation per rider named, in their order. */
+        /**
+         * The interval a group of [slots] riders gets (BACKLOG T-setup): each slot wide enough for a
+         * board without PPS, its NMEA time good to 100 ms (the L1), to send in on SF7/250 carrying
+         * one rider: 100 + 1 ms either side, 38.5 ms of air, 2 ms to read it out, 242.5 ms
+         * (firmware node_time_budget_us); a slot per rider and a spare one, rounded up to half
+         * seconds, never under 2 s. 10 riders: 3 s. The firmware's test_group_intervals holds the
+         * same table against the core.
+         */
+        fun intervalFor(slots: Int): Int = maxOf(2000, ((slots + 1) * 2425 + 4999) / 5000 * 500)
+
         fun newGroup(name: String, names: List<String>, intervalMs: Int, random: SecureRandom = SecureRandom()): List<Invitation> {
             val key = ByteArray(16).also { random.nextBytes(it) }
             return names.indices.map { Invitation(key, it, names.size, intervalMs, name, names) }
