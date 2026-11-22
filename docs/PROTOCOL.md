@@ -251,6 +251,7 @@ on three transports:
 | `ZONE <minutes>` | `OK zone=<minutes>`: the phone's offset from UTC, −720 to 840 in quarter hours, for the clock on the board's screen; kept over a restart. The app sends it on each link |
 | `GNSS <0–1>` | `OK gnss=<0–1>`: the board's GNSS off or on, for the bench: off, it runs on the time and the position it holds, as in a tunnel. On again at a restart |
 | `SYSTEMS <1–8>` | `OK systems=<1–8>`: which satellites the L76K uses, for the bench: 1 GPS, 2 BeiDou, 4 GLONASS, summed (its `$PCAS04`; 3 as it comes; the units tried had no GLONASS, 5 being as 1 and 7 as 3). 8: 3 and 1 in turn, a quarter of an hour of UTC each, 3 from the hour and the half hour. Fewer satellites, less lag ([07](07-experiments.md)). Not kept over a restart of the board |
+| `GSV <0–1>` | `OK gsv=<0–1>`: for the bench, the L76K adds GSV, and the board prints each sentence on its console as `GSV GP 1/3 in=11 05:32 13:- …`, each satellite's number and C/N0 in dB-Hz (`-` untracked); not in `LOG`. GSV comes before RMC, so a board on NMEA time alone dates its seconds late with it; one with PPS does not. Not kept over a restart |
 | `FORGET` | `FORGOTTEN` once the board has dropped its bond, or `ERR forget incomplete` |
 | `REBOOT`, and `BOOTLOADER` on the L1 Pro (its UF2 drive) | — |
 

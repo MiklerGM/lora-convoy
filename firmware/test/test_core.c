@@ -235,6 +235,16 @@ static void test_nmea(void) {
     /* Out of range: 95 degrees of latitude is no position. */
     assert(feed(&n, "GNRMC,120011.000,A,9500.0000,N,00931.2900,E,0.0,0.0,221026,,,A,V", NULL, &fix));
     assert(!fix.valid && fix.time_valid);
+    /* The bench's GSV: each satellite's C/N0, an untracked one as such, NMEA 4.1's signal id after
+     * the last no satellite; any other sentence none. */
+    char gsv[160];
+    assert(nmea_gsv_text("$GPGSV,3,1,11,05,62,060,32,13,40,250,,15,22,300,28,18,10,120,40*7A\r\n", gsv, sizeof(gsv)) &&
+           strcmp(gsv, "GSV GP 1/3 in=11 05:32 13:- 15:28 18:40") == 0);
+    assert(nmea_gsv_text("$GBGSV,1,1,02,21,45,100,30,26,30,200,,1*55\r\n", gsv, sizeof(gsv)) &&
+           strcmp(gsv, "GSV GB 1/1 in=02 21:30 26:-") == 0);
+    /* cut short before a satellite's C/N0 field: no satellite read past its fields */
+    assert(nmea_gsv_text("$GPGSV,1,1,01,05,62,060*4A\r\n", gsv, sizeof(gsv)) && strcmp(gsv, "GSV GP 1/1 in=01") == 0);
+    assert(!nmea_gsv_text("$GNGGA,120000.000,4708.4600,N,00931.2900,E,1,09,1.0,450.0,M,0.0,M,,*7B\r\n", gsv, sizeof(gsv)));
     printf("nmea: an L76K's sentences, hemispheres, time before a fix, and what is refused\n");
 }
 
@@ -1379,6 +1389,11 @@ static void test_api(void) {
     assert(strcmp(replies[0], "OK systems=1") == 0 && api.gnss_systems == 1);
     ask(&api, "SYSTEMS 9");
     assert(strncmp(replies[0], "ERR", 3) == 0 && api.gnss_systems == 1);
+    /* GSV, the satellites' C/N0 on the console, on and off */
+    ask(&api, "GSV 1");
+    assert(strcmp(replies[0], "OK gsv=1") == 0 && api.gnss_gsv);
+    ask(&api, "GSV 0");
+    assert(strcmp(replies[0], "OK gsv=0") == 0 && !api.gnss_gsv);
     ask(&api, "FORGET");
     assert(n_replies == 0 && api.forget);
     ask(&api, "REBOOT");

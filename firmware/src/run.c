@@ -261,6 +261,20 @@ static void console_task(void *arg) {
 
 /* ---- the GNSS --------------------------------------------------------------------- */
 
+/* GSV on the bench: each of its sentences to the console as one short line, to compare the
+ * satellites' C/N0 between two runs (BACKLOG T-power); several a second, so not to the phone's log. */
+static void gsv_char(char c) {
+    static char s[100];
+    static size_t n;
+    if (c == '$') n = 0;
+    if (n < sizeof(s) - 1) s[n++] = c;
+    if (c != '\n') return;
+    s[n] = 0;
+    n = 0;
+    char text[160];
+    if (nmea_gsv_text(s, text, sizeof(text))) console_line(text);
+}
+
 static void gnss_task(void *arg) {
     (void)arg;
     const int watch = port_wdt_watch();
@@ -270,16 +284,19 @@ static void gnss_task(void *arg) {
     int64_t logged = -GNSS_LOG_US, pps = 0, told = -GNSS_TELL_US;
     uint8_t systems = 0;
     int64_t utc_ms = 0;
-    bool was_valid = false;
+    bool was_valid = false, told_gsv = false;
     for (;;) {
         port_wdt_feed(watch);
         /* GGA and RMC only (the L76K's PCAS03): with GSA and GSV before it, the RMC that dates a
          * second came 0.1 s after it with no fix and over 0.8 s with twelve satellites (test plan
          * 2.1, 2026-11-11), which no fixed lag covers. Told again now and then, for a GNSS that
-         * powers up after us. */
-        if (port_uptime_us() - told >= GNSS_TELL_US) {
-            port_gnss_write("$PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0*02\r\n");
+         * powers up after us. GSV only when the bench asks (GSV 1): a board on NMEA time alone
+         * then dates its seconds late, one with PPS does not. */
+        const bool gsv = s_api.gnss_gsv;
+        if (port_uptime_us() - told >= GNSS_TELL_US || gsv != told_gsv) {
+            port_gnss_write(gsv ? "$PCAS03,1,0,0,1,1,0,0,0,0,0,,,0,0*03\r\n" : "$PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0*02\r\n");
             told = port_uptime_us();
+            told_gsv = gsv;
         }
         /* SYSTEMS (the L76K's PCAS04), once for each asking: not kept over a restart of ours,
          * for the bench. A byte read without the lock, which is whole or not yet there. */
@@ -297,6 +314,7 @@ static void gnss_task(void *arg) {
             port_gnss_write(cmd);
         }
         const int c = port_gnss_getc(200);
+        if (c >= 0 && gsv) gsv_char((char)c);
         gnss_fix_t fix;
         if (c < 0 || !nmea_feed(&nmea, (char)c, &fix)) continue;
         /* ponytail: the fix's time is when its last sentence was parsed, after the UART's buffering;

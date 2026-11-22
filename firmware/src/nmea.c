@@ -1,5 +1,6 @@
 #include "nmea.h"
 
+#include <stdio.h>
 #include <string.h>
 
 void nmea_init(nmea_t *n) { memset(n, 0, sizeof(*n)); }
@@ -156,4 +157,26 @@ bool nmea_feed(nmea_t *n, char c, gnss_fix_t *fix) {
     }
     n->line[n->len++] = c;
     return false;
+}
+
+int nmea_gsv_text(const char *sentence, char *out, size_t cap) {
+    if (sentence[0] != '$' || strncmp(sentence + 3, "GSV,", 4) != 0) return 0;
+    char b[100];
+    snprintf(b, sizeof(b), "%s", sentence + 1);
+    b[strcspn(b, "*\r\n")] = 0;
+    /* fields: talker+GSV, total, number, in view, then prn, elevation, azimuth, C/N0 for each
+     * satellite; NMEA 4.1 adds a signal id after the last, which makes no group of four */
+    const char *f[24];
+    int n = 0;
+    for (char *p = b; n < 24; p++) {
+        f[n++] = p;
+        if (!(p = strchr(p, ','))) break;
+        *p = 0;
+    }
+    if (n < 4) return 0;
+    int len = snprintf(out, cap, "GSV %.2s %s/%s in=%s", f[0], f[2], f[1], f[3]);
+    for (int i = 4; i + 3 < n && len > 0 && (size_t)len < cap; i += 4) {
+        len += snprintf(out + len, cap - (size_t)len, " %s:%s", f[i], *f[i + 3] ? f[i + 3] : "-");
+    }
+    return len > 0 && (size_t)len < cap ? len : 0;
 }

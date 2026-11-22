@@ -33,3 +33,8 @@ void nmea_init(nmea_t *n);
 
 /* One byte from the GNSS. True when it completed an RMC, which is then in *fix. */
 bool nmea_feed(nmea_t *n, char c, gnss_fix_t *fix);
+
+/* A GSV sentence as one short line: talker, which of how many, satellites in view, and each
+ * satellite's number and C/N0 in dB-Hz, "-" while untracked ("GSV GP 1/3 in=11 5:32 13:-").
+ * Its length, or 0 for any other sentence. For the bench's GSV (run.c). */
+int nmea_gsv_text(const char *sentence, char *out, size_t cap);
