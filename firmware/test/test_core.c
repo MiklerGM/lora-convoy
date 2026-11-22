@@ -245,12 +245,14 @@ static void test_nmea(void) {
     nmea_sentence("PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0", cmd, sizeof(cmd));
     assert(strcmp(cmd, "$PCAS03,1,0,0,0,1,0,0,0,0,0,,,0,0*02\r\n") == 0);
     char gsv[160];
-    assert(nmea_gsv_text("$GPGSV,3,1,11,05,62,060,32,13,40,250,,15,22,300,28,18,10,120,40*7A\r\n", gsv, sizeof(gsv)) &&
+    assert(nmea_gsv_text("$GPGSV,3,1,11,05,62,060,32,13,40,250,,15,22,300,28,18,10,120,40*7E\r\n", gsv, sizeof(gsv)) &&
            strcmp(gsv, "GSV GP 1/3 in=11 05:32 13:- 15:28 18:40") == 0);
-    assert(nmea_gsv_text("$GBGSV,1,1,02,21,45,100,30,26,30,200,,1*55\r\n", gsv, sizeof(gsv)) &&
+    /* the same with a byte changed on the wire: its checksum fails, nothing printed (a review, 2026-11-22) */
+    assert(!nmea_gsv_text("$GPGSV,3,1,11,05,62,060,32,13,40,250,,15,22,300,28,18,10,120,48*7E\r\n", gsv, sizeof(gsv)));
+    assert(nmea_gsv_text("$GBGSV,1,1,02,21,45,100,30,26,30,200,,1*71\r\n", gsv, sizeof(gsv)) &&
            strcmp(gsv, "GSV GB 1/1 in=02 21:30 26:-") == 0);
     /* cut short before a satellite's C/N0 field: no satellite read past its fields */
-    assert(nmea_gsv_text("$GPGSV,1,1,01,05,62,060*4A\r\n", gsv, sizeof(gsv)) && strcmp(gsv, "GSV GP 1/1 in=01") == 0);
+    assert(nmea_gsv_text("$GPGSV,1,1,01,05,62,060*63\r\n", gsv, sizeof(gsv)) && strcmp(gsv, "GSV GP 1/1 in=01") == 0);
     assert(!nmea_gsv_text("$GNGGA,120000.000,4708.4600,N,00931.2900,E,1,09,1.0,450.0,M,0.0,M,,*7B\r\n", gsv, sizeof(gsv)));
     printf("nmea: an L76K's sentences, hemispheres, time before a fix, and what is refused\n");
 }

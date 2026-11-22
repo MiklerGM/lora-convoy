@@ -95,15 +95,19 @@ static int split(char *s, char *f[MAX_FIELDS]) {
     return n;
 }
 
+/* "$<body>*<checksum>": true if the checksum after star, two hex digits, holds */
+static bool summed(const char *line, const char *star) {
+    const int hi = hex(star[1]), lo = hi < 0 ? -1 : hex(star[2]);
+    uint8_t sum = 0;
+    for (const char *p = line + 1; p < star; p++) sum ^= (uint8_t)*p;
+    return hi >= 0 && lo >= 0 && sum == (hi << 4 | lo);
+}
+
 static bool sentence(nmea_t *n, gnss_fix_t *fix) {
     char *line = n->line;
-    /* $<body>*<checksum> */
     char *star = strrchr(line, '*');
     if (line[0] != '$' || !star || strlen(star) != 3) return false;
-    const int hi = hex(star[1]), lo = hex(star[2]);
-    uint8_t sum = 0;
-    for (char *p = line + 1; p < star; p++) sum ^= (uint8_t)*p;
-    if (hi < 0 || lo < 0 || sum != (hi << 4 | lo)) {
+    if (!summed(line, star)) {
         n->bad++;
         return false;
     }
@@ -166,7 +170,8 @@ void nmea_sentence(const char *body, char *out, size_t cap) {
 }
 
 int nmea_gsv_text(const char *sentence, char *out, size_t cap) {
-    if (sentence[0] != '$' || strncmp(sentence + 3, "GSV,", 4) != 0) return 0;
+    const char *star = strrchr(sentence, '*');
+    if (sentence[0] != '$' || strncmp(sentence + 3, "GSV,", 4) != 0 || !star || !summed(sentence, star)) return 0;
     char b[100];
     snprintf(b, sizeof(b), "%s", sentence + 1);
     b[strcspn(b, "*\r\n")] = 0;
