@@ -7,7 +7,8 @@
     bench.py ride          a ride, checked step by step: each phone pairs with its own board;
                            phone 0 starts a group and the others join with their invitations; the
                            last board rides alone as a beacon; everyone hears everyone; phone 1
-                           calls for help and the others' boards answer; phone 1 forgets its board
+                           picks Needs help, its tick counts all the others, phone 0 lists it, and
+                           back to Riding; phone 1 forgets its board
     bench.py down          stop it all
     bench.py ui PHONE list|tap TEXT     look at or tap a phone's screen, by hand
     bench.py engine PHONE opengl|v1     OsmAnd's map engine on that phone, OsmAnd restarted
@@ -482,15 +483,22 @@ def ride() -> None:
     wait_tap(p0, "Riders' names")
     adb(p0, "shell", "input", "text", r",\ ".join(names))
     adb(p0, "shell", "input", "keyevent", "KEYCODE_BACK")
+
+    def kept() -> str:
+        prefs = adb(p0, "shell", "run-as", APP, "cat", "shared_prefs/group.xml", check=False)
+        m = re.search(r'name="created">(LC2[^<]+)<', prefs)
+        return m.group(1) if m else ""
+
+    # a group the AVD kept from before is not this one: the new one is what replaces it
+    before = kept()
     wait_tap(p0, "Create")
     created = None
     for _ in range(10):  # the app writes its preferences in the background
-        prefs = adb(p0, "shell", "run-as", APP, "cat", "shared_prefs/group.xml", check=False)
-        if m := re.search(r'name="created">(LC2[^<]+)<', prefs):
-            created = m.group(1)
+        if (now := kept()) and now != before:
+            created = now
             break
         time.sleep(1)
-    assert created, "phone 0 kept no group"
+    assert created, "phone 0 kept no new group"
     raw = bytearray(base64.urlsafe_b64decode(created[4:] + "=" * (-len(created[4:]) % 4)))
 
     def invitation(slot: int) -> str:  # as phone 0's Send button shares it
@@ -498,33 +506,42 @@ def ride() -> None:
         return "LC2." + base64.urlsafe_b64encode(bytes(raw)).decode().rstrip("=")
 
     key = bytes(raw[1:17]).hex()
+    interval = int.from_bytes(raw[19:21], "big")  # the group's, by its size (Invitation.intervalFor)
     step(f"phone 0 started {GROUP!r} for {', '.join(names)}")
     for i in range(1, phones):
         p = phone(i)
         main_screen(p)
         wait_tap(p, "Group")
         time.sleep(2)
-        wait_tap(p, "Paste an invitation")
+        wait_tap(p, "or paste an invitation")
         type_whole(p, invitation(i))
         adb(p, "shell", "input", "keyevent", "KEYCODE_BACK")
         wait_tap(p, "Join")
         wait_text(p, f"you are {names[i]}")
         step(f"phone {i} joined as {names[i]}")
     beacon = boards - 1
-    assert all(r.startswith("OK group=") for r in board_command(beacon, f"GROUP {key} {beacon} {boards} 2000"))
+    assert all(r.startswith("OK group=") for r in board_command(beacon, f"GROUP {key} {beacon} {boards} {interval}"))
     step(f"board {beacon} rides alone as {names[beacon]}, keyed by hand")
 
     for i in range(phones):
         wait_status(phone(i), rf"{names[i]} in {GROUP} · rider {i + 1} of {boards}.*{boards - 1} riders known", 90)
     step(f"every phone's board hears the {boards - 1} others")
 
+    # the state from the picker beside "Your state", its tick of all the others in the group
     p1 = phone(1)
     main_screen(p1)
-    wait_tap(p1, "Need help")
-    wait_status(p1, rf"calling for help; {boards - 1} riders' boards have answered", 60)
-    step(f"phone 1 called for help, and all {boards - 1} other boards answered")
-    wait_tap(p1, "Call off help")
-    wait_status(p1, r"^(?!.*calling for help).*Board:", 30)
+    wait_tap(p1, "Riding")
+    wait_tap(p1, "Needs help")
+    wait_status(p1, rf"Your state\nNeeds help\n✓ all {boards - 1}", 60)
+    step(f"phone 1 called for help, and all {boards - 1} other boards carry it")
+    wait_status(p0, rf"{names[1]} · Needs help", 60)
+    step(f"phone 0 lists {names[1]} as needing help")
+    main_screen(p1)
+    wait_tap(p1, "Needs help")
+    wait_tap(p1, "Riding")
+    wait_status(p1, rf"Your state\nRiding\n✓ all {boards - 1}", 60)
+    wait_status(p0, rf"^(?!.*{names[1]} · Needs help)", 60)
+    step(f"phone 1 called it off, and phone 0 lists {names[1]} riding again")
 
     # OsmAnd stopped and started again, as a rider or an update does: the app binds to it anew. The
     # Version 1 engine, as OpenGL hides moving points in a share of frames (T-osmand-opengl).
@@ -554,7 +571,7 @@ def ride() -> None:
 
     main_screen(p1)
     wait_tap(p1, "Forget this board")
-    wait_status(p1, r"Stopped\.", 30)
+    wait_status(p1, r"Stopped: no riders on OsmAnd.s map\.", 30)
     board_says(1, "forgot its phone")
     step("phone 1 forgot its board: both sides dropped the bond")
 
