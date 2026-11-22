@@ -150,8 +150,10 @@ share a tag once in 256, and then the CCM tag tells them apart. It drops a packe
 does not check as forged.
 
 **What a receiver keeps.** A packet of its group whose CCM tag checks, sent within 3 s of its own
-time where it has one, and later than the last it took from that rider by (second, count): an old
-packet played back is refused even by a receiver just restarted. A packet from its own slot is
+time where it has one, and later than the last it took from that rider by (second, count). An old
+packet played back is refused by a receiver with a time of its own; one just restarted, with no
+GNSS time yet and its riders forgotten, takes the first packet of each rider as it comes, its age
+as that packet tells it, unchecked until the receiver has a time. A packet from its own slot is
 another radio misconfigured onto it, and is counted rather than taken. Each refusal is counted:
 foreign, forged, replay, clash. Per rider it counts the packets taken against those its count says
 were sent: the delivered share of [07](07-experiments.md).
@@ -297,7 +299,7 @@ long since, and a board restarted is a new run, its riders of before left where 
 has no calendar yet, neither GNSS time nor the phone's `TIME`); `heard` is in tenths of a second, since its record came; `direct` the same since we heard
 the rider itself, `-` if never; `via` the slot that carried the record, `-` from itself;
 `speed` and `course` are `?` for a carried record; `help=1` is `state=1`, and `answered=` stays
-`-` (v3's, for an app that reads it); `rx` is packets taken against those its count says were sent; `offset` is how late its packets began against their moment, in µs, least/mean/most, from their RxDone on this board's UTC less their airtime (E0, [BENCH](BENCH.md)), and `late`
+`-` (v3's, for an app that reads it); `rx` is packets taken against those its count says were sent, by an 8-bit count: across a gap of 256 packets or more it wraps, and the share comes out too high (301 sent, 2 taken, read as 2/45), so a field run's delivery is told against the sender's own log; `offset` is how late its packets began against their moment, in µs, least/mean/most, from their RxDone on this board's UTC less their airtime (E0, [BENCH](BENCH.md)), and `late`
 the last of them; `sats` the satellites its fix used. On the console the board also prints `TX`, `RX dropped`, `GNSS`, `WARN` and `BOOT` lines, which `LOG` gives the phone too. Slots count
 from 0 here; the app shows riders from 1.
 
