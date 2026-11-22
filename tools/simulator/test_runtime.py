@@ -192,6 +192,37 @@ class RuntimeTest(unittest.TestCase):
         finally:
             sim.close()
 
+    def test_the_boards_send_rule_runs_when_named(self):
+        # standing still: every frame with the old default, beat 0; one frame in eight with a board's
+        # beat 3, as setups/board.json names it
+        board=json.loads((ROOT/"tools/simulation/setups/board.json").read_text())["candidates"]["board"]["settings"]
+        sent={}
+        for name,settings in (("every frame",{}),("board",board)):
+            world={"schema":1,"name":"standing","duration_s":34,"warmup_s":2,
+                   "default_link":{"decode":True,"sense":True,"interfere":True},
+                   "nodes":[{"id":node,"group":"g","slot":slot,"listen_one_in":0,"interval_ms":2000,
+                             "trajectory":[{"t_s":0,"x_m":slot*100,"y_m":0}]}
+                            | {k:v for k,v in settings.items() if k!="listen_one_in"}
+                            for slot,node in enumerate(("a","b"))]}
+            sim=Simulation(world,library=self.library)
+            try:
+                sim.run()
+                sent[name]=sum(1 for e in sim.events if e["event"]=="tx" and e["sender"]=="a")
+            finally:
+                sim.close()
+        self.assertGreaterEqual(sent["every frame"],14)
+        self.assertTrue(2 <= sent["board"] <= 5)
+        # and the CLI takes the board's setup as it stands
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary)
+            (root/"scene.json").write_text(json.dumps(world|{"name":"board-setup"}))
+            out=subprocess.run([sys.executable,str(ROOT/"tools/simulate.py"),"--scenario",str(root/"scene.json"),
+                                "--setups",str(ROOT/"tools/simulation/setups/board.json"),"--no-replay",
+                                "--output",str(root/"out")],capture_output=True,text=True)
+            self.assertEqual(out.returncode,0,out.stderr)
+            data=json.loads((root/"out/results.json").read_text())
+            self.assertEqual(data["candidate_setups"]["board"]["settings"]["beat"],3)
+
     def test_cad_defers_for_local_noise_and_stays_inside_symmetric_guard(self):
         scene={"schema":1,"name":"cad-local","duration_s":6,"warmup_s":0,
                "radio":{"cad_noise_threshold_dbm":-100,"noise_threshold_dbm":-100,

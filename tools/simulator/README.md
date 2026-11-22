@@ -35,8 +35,12 @@ The checked-in cases are synthetic hypotheses, not measured capture thresholds.
 
 `--setups` names candidate configurations separately from their implementation. Each entry in
 `{"schema":1,"candidates":{"label":{"implementation":"relay","settings":{...}}}}` can override
-`interval_ms`, `phy`, `duty_permille`, `listen_one_in`, `relay_records`, `relay_ttl_s` and
-`tx_power_dbm`; sensor truth, membership and trajectories cannot be changed there. PHY settings
+`interval_ms`, `phy`, `duty_permille`, `listen_one_in`, `relay_records`, `relay_ttl_s`,
+`tx_power_dbm`, and the send rule's `beat` (a heartbeat every 2^beat frames) and `move_m`; sensor
+truth, membership and trajectories cannot be changed there. A node left alone sends every frame
+(beat 0) and carries two riders; a board sends a heartbeat in eight frames (beat 3), on a move
+of 10 m, every 2 s, and carries one. `setups/board.json` names that board as `board`, for runs
+meant to say what a ride on the boards would see. PHY settings
 merge with each node's declared mode. With no `--candidates`, the file's entries are selected;
 otherwise that flag selects labels explicitly. `--interval-ms` is the final cadence override.
 

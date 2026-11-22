@@ -119,7 +119,7 @@ class World:
         for node in node_list:
             _keys(node, ("id", "group", "slot", "participant", "candidate", "interval_ms", "trajectory", "clock",
                          "gnss", "phy", "roles", "duty_permille", "listen_one_in", "relay_records", "relay_ttl_s",
-                         "tx_power_dbm"), "node")
+                         "tx_power_dbm", "beat", "move_m"), "node")
             name = _name(node.get("id"), "node.id")
             if name == "all":
                 raise ValueError("node id 'all' is reserved for outage targeting")
@@ -136,6 +136,10 @@ class World:
             _integer(node.setdefault("duty_permille", 100), f"{name}.duty_permille", 1, 1000)
             _integer(node.setdefault("listen_one_in", 32), f"{name}.listen_one_in", 0, 65535)
             _integer(node.setdefault("relay_records", 2), f"{name}.relay_records", 0, 3)
+            # the send rule: a heartbeat every 2^beat frames (0: every frame) and a move of move_m
+            # metres; a board's own are beat 3 and 10 m (setups/board.json)
+            _integer(node.setdefault("beat", 0), f"{name}.beat", 0, 7)
+            _integer(node.setdefault("move_m", 10), f"{name}.move_m", 1, 1000)
             if _number(node.setdefault("relay_ttl_s", 30), f"{name}.relay_ttl_s", 0, 86400) <= 0:
                 raise ValueError("relay_ttl_s must be positive")
             _number(node.setdefault("tx_power_dbm", 14), f"{name}.tx_power_dbm", -20, 30)
