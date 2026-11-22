@@ -169,8 +169,10 @@ no cost in air. In the simulator, a column of 20 spreading to 9.5 km with radios
 a call for help reaches all 19 within 10 s; riders out of reach are 26 s old at the median with one
 passenger, 12 s with two, 8 s with three.
 
-**Stopped.** The board sets the stopped fact after a minute under 5 km/h, so a red light is not a
-stop, and clears it over 10 km/h, so a GNSS wandering at a standstill does not start it.
+**Stopped.** The board sets the stopped fact after a minute under 5 km/h and within 30 m of where
+that minute began, so a red light is not a stop and a walker at 4 km/h is not stopped; it clears it
+over 10 km/h or 30 m from where the minute began, so a climb at 7 km/h after a stop starts it, and
+a GNSS wandering a few metres at a standstill does not.
 
 **Test vector.** Under the key `00 01 … 0f` (tag `86`): slot 3, session `0x0102`, sent at
 2026-10-22 12:00:05 UTC (1 792 670 405), count 5, a current fix 2 s old on PPS time,

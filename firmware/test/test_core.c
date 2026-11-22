@@ -889,6 +889,56 @@ static void test_send_rule(void) {
     printf("node: silent while nothing changes; a move, a turn, a state and a heartbeat each speak\n");
 }
 
+/* Stopped or not, by speed and by way made: a red light, a stop, a walker. */
+static void test_stopped(void) {
+    node_t n;
+    node_init(&n, &CFG, 5);
+    int64_t t = T0;
+    int32_t north = 0;
+    /* a fix each second for this long, at this speed, going north this far each second (1e-7 deg,
+     * 90 a metre), wandering 3 m either way at a stand */
+    #define FIXES(seconds, kmh10, step) do { \
+        for (int i_ = 0; i_ < (seconds); i_++, t += SEC) { \
+            gnss_fix_t f_ = fix_at(UTC0_MS + (t - T0) / 1000, true); \
+            north += (step); \
+            f_.lat_e7 += north + ((step) ? 0 : (i_ % 3 - 1) * 270); \
+            f_.speed_kmh10 = (kmh10); \
+            node_on_fix(&n, &f_, t); \
+        } } while (0)
+    FIXES(10, 600, 1500);
+    assert(!n.stopped);
+    /* 40 s at a red light: not a stop */
+    FIXES(40, 0, 0);
+    assert(!n.stopped);
+    FIXES(10, 300, 750);
+    /* a minute at a stand: stopped, wander and all, and stays so */
+    FIXES(61, 0, 0);
+    assert(n.stopped);
+    FIXES(120, 0, 0);
+    assert(n.stopped);
+    /* walking off at 4 km/h, 1.1 m a second: going, 30 m on */
+    FIXES(25, 40, 99);
+    assert(n.stopped);
+    FIXES(5, 40, 99);
+    assert(!n.stopped);
+    /* and walking on for three minutes, under 5 km/h all the while: never stopped */
+    for (int i = 0; i < 180; i++) {
+        FIXES(1, 40, 99);
+        assert(!n.stopped);
+    }
+    /* A stop again, then a climb at 7 km/h, 1.9 m a second, never over 10: going within 16 s. */
+    FIXES(70, 0, 0);
+    assert(n.stopped);
+    FIXES(14, 70, 175);
+    assert(n.stopped);
+    FIXES(3, 70, 175);
+    assert(!n.stopped);
+    FIXES(120, 70, 175);
+    assert(!n.stopped);
+    #undef FIXES
+    printf("node: a red light is not a stop, a minute at a stand is, and a walker at 4 km/h is not\n");
+}
+
 /* Time from the group (12, 2026-11-14): a board without PPS sets its clock by the packets of one
  * with it. Ten riders every 2 s leave 74 ms for a clock; the follower's NMEA is good to 100 ms and
  * comes 30 ms late, so alone it must stay silent. */
@@ -1445,6 +1495,7 @@ int main(void) {
     test_node_hears();
     test_node_passengers();
     test_send_rule();
+    test_stopped();
     test_time_from_group();
     test_node_mode();
     test_tour();

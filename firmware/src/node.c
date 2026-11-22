@@ -16,11 +16,14 @@
 #define TX_LATE_US 2000    /* a slot later than this is passed over, never sent late */
 #define RX_GAP_US 2000     /* between two packets, for a receiver to read the first one out */
 
-/* Stopped: under 5 km/h for a minute, so a red light is not a stop; moving again over 10 km/h, so
- * a GNSS's wander at a standstill does not start it up. */
+/* Stopped: under 5 km/h and within 30 m for a minute, so a red light is not a stop and a walker at
+ * 4 km/h, 30 m on in under half a minute, is not stopped either; moving again over 10 km/h or 30 m
+ * from where its minute began, which a GNSS's wander at a standstill seldom is. */
 #define STOP_BELOW_KMH10 50
 #define MOVING_OVER_KMH10 100
 #define STOP_AFTER_US (60 * 1000000ll)
+#define STOP_WITHIN_M 30
+static bool apart(int32_t lat1, int32_t lon1, int32_t lat2, int32_t lon2, uint32_t metres);
 /* Time from the group (12, 2026-11-14): a rider on PPS no further off than this says "precise" ... */
 #define PRECISE_ERR_US 5000
 #define GROUP_ERR_US 10000 /* ... and a clock set by such packets is good to this */
@@ -155,14 +158,21 @@ void node_on_fix(node_t *n, const gnss_fix_t *fix, int64_t now_us) {
     if (fix->valid) {
         n->held = *fix;
         n->have_held = true;
-        if (fix->speed_kmh10 >= MOVING_OVER_KMH10) {
-            n->stopped = false;
+        /* Each minute judged from where it began: 30 m on is going somewhere, a walker or a climb at
+         * 7 km/h after a stop; a whole minute slow and short of that is a stop, and the next minute
+         * begins there. Between 5 and 10 km/h and not stopped: rolling, no minute running. */
+        const bool slow = fix->speed_kmh10 >= 0 && fix->speed_kmh10 < STOP_BELOW_KMH10;
+        const bool went = n->slow_since_us &&
+                          apart(fix->lat_e7, fix->lon_e7, n->slow_lat_e7, n->slow_lon_e7, STOP_WITHIN_M);
+        const bool minute = n->slow_since_us && now_us - n->slow_since_us >= STOP_AFTER_US;
+        if (fix->speed_kmh10 >= MOVING_OVER_KMH10 || went) n->stopped = false;
+        if (slow && minute && !went) n->stopped = true;
+        if (!(slow || n->stopped)) {
             n->slow_since_us = 0;
-        } else if (fix->speed_kmh10 >= 0 && fix->speed_kmh10 < STOP_BELOW_KMH10) {
-            if (!n->slow_since_us) n->slow_since_us = now_us;
-            if (now_us - n->slow_since_us >= STOP_AFTER_US) n->stopped = true;
-        } else if (!n->stopped) {
-            n->slow_since_us = 0; /* between the two: rolling, neither stopping nor stopped */
+        } else if (!n->slow_since_us || went || minute) {
+            n->slow_since_us = now_us;
+            n->slow_lat_e7 = fix->lat_e7;
+            n->slow_lon_e7 = fix->lon_e7;
         }
     }
 }

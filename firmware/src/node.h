@@ -151,8 +151,9 @@ typedef struct {
     uint8_t sent_course2, sent_told;
     int64_t sent_frame;
     uint8_t burst;           /* packets owed after a change of state or facts */
-    bool stopped;            /* slower than walking for a minute */
-    int64_t slow_since_us;   /* when it last went under 5 km/h; 0 while faster */
+    bool stopped;            /* slow and within 30 m for a minute (node_on_fix) */
+    int64_t slow_since_us;   /* when the minute under 5 km/h began; 0 while faster */
+    int32_t slow_lat_e7, slow_lon_e7; /* and where */
     int64_t last_frame;      /* the frame we last sent in, or passed over */
     int64_t tx_due_us;       /* our clock at the moment of the packet last handed over; 0 once done */
     uint32_t tx_air_us;      /* and its airtime, in the mode it went with */

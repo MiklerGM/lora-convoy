@@ -89,7 +89,9 @@ helping names no one; after a restart the state is normal again. What that means
   climbing at 6–8 km/h after a stop for stopped still [code]. A rule for every activity, by distance
   rather than speed: stopped after two minutes within 30 m of one point, moving once out of it. A
   hypothesis, to be checked against recorded rides, walks and climbs before it is kept. Nor is a
-  missing position a stop.
+  missing position a stop. **Built, 2026-11-22**, after an outside review ran the core at 4 km/h:
+  a minute under 5 km/h and within 30 m (PROTOCOL, Stopped); the two minutes and a check against
+  recorded walks are still open.
 - **Three things apart** (D19): how fresh the radio contact is, how old the position is, and what
   movement or stop was last observed, none of them tied to the rider's last speed. "Heard 2 s ago;
   position a minute old; stopped at the last fix" says nothing of whether the rider stands now, and
