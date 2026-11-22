@@ -563,9 +563,12 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
         /* later than what we hold, by more than the age's own step: seconds, then minutes */
         const uint32_t ago = age_seconds(q->age), as_of = p.sent > ago ? p.sent - ago : 0;
         if (q->slot == n->cfg.slot) {
-            /* ourselves, as this rider holds us: with the state we are in, and from a packet of ours
-             * in it, it carries what we say */
-            if (q->state == n->state && as_of >= n->state_sent) {
+            /* ourselves, as this rider holds us: with the state we are in, and surely from a packet
+             * of ours in it, it carries what we say. Surely: by the oldest the age can mean, as it
+             * goes in whole minutes from two (164 s goes as 120; a review, 2026-11-22) */
+            const uint32_t most = q->age < AGE_MINUTES_FROM ? ago : ago + 59;
+            const bool after = q->age < AGE_OLDER && p.sent > most && p.sent - most >= n->state_sent;
+            if (q->state == n->state && after) {
                 n->echo_us = now_us ? now_us : 1;
                 if (!(n->echo_by & 1u << from)) n->echo_news = true;
                 n->echo_by |= 1u << from;

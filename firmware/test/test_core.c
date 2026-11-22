@@ -775,10 +775,25 @@ static void test_node_passengers(void) {
     tells.sent = again + 1;
     tells.passenger[0].age = (uint8_t)age_code(again + 1 - first);
     assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, ts + SEC) && solo.echo_by == 0 && !solo.echo_news);
-    /* It hears the call again and tells of that one: carried. */
+    /* Still of the first call 164 s on: its age goes as whole minutes, "120 s at least", so the
+     * record may be from 44 s after the first call, after this one began (a review, 2026-11-22):
+     * not surely of this call, not carried. */
+    const int64_t later = ts + (int64_t)(first + 164 - SECOND(ts)) * SEC;
     tells.count = 3;
+    tells.sent = first + 164;
+    tells.passenger[0].age = (uint8_t)age_code(164);
+    assert(age_seconds(tells.passenger[0].age) == 120 && first + 44 > again);
+    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, later) && solo.echo_by == 0 && !solo.echo_news);
+    /* Nor, hours on, a record "older than two hours", which may be from any time before */
+    const int64_t hours = later + 7400 * SEC;
+    tells.count = 4;
+    tells.sent = first + 164 + 7400;
+    tells.passenger[0].age = AGE_OLDER;
+    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, hours) && solo.echo_by == 0 && !solo.echo_news);
+    /* It hears the call again and tells of that one: carried. */
+    tells.count = 5;
     tells.passenger[0].age = 1;
-    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, ts + SEC) && solo.echo_by == 1u << 3 && solo.echo_news);
+    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, hours) && solo.echo_by == 1u << 3 && solo.echo_news);
     #undef SEND_ONCE
     #undef SECOND
 
