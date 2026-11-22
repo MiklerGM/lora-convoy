@@ -723,19 +723,47 @@ static void test_node_passengers(void) {
     node_format_status(&far, t, line, sizeof(line));
     assert(strstr(line, " heard=1 state=1 echo=") && !strstr(line, " echo=- "));
 
-    /* Only the state it is in now counts as carried: a rider still telling of it as it was before
-     * the call must not tell its rider that the call is out. */
+    /* Only the state it is in now counts as carried, from a packet of its in that state: a rider
+     * still telling of it as it was before the call, or of the call before (HELP, NORMAL, HELP
+     * again), must not tell its rider that this call is out. */
     node_t solo;
     node_init(&solo, &c, 4); /* slot 2 */
     gnss_fix_t f = fix_at(UTC0_MS, true);
     node_on_fix(&solo, &f, T0);
+    int64_t ts = T0;
+    #define SEND_ONCE() do { while (!node_poll_tx(&solo, ts, b, sizeof(b))) { ts += 1000; assert(ts < T0 + 60 * SEC); } } while (0)
+    #define SECOND(at) ((uint32_t)((UTC0_MS * 1000 + ((at) - T0)) / 1000000))
     node_set_state(&solo, STATE_HELP);
-    packet_t tells = {.session = 1, .sent = (uint32_t)(UTC0_MS / 1000), .own = {.slot = 3}, .passengers = 1,
-                      .passenger = {{.slot = 2, .state = STATE_NORMAL}}};
-    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, T0) && solo.echo_by == 0 && !solo.echo_news);
+    SEND_ONCE();
+    const uint32_t first = solo.state_sent;
+    assert(first == SECOND(ts));
+    /* the carrier's record of it from that packet, passed on a second later */
+    packet_t tells = {.session = 1, .sent = first + 1, .own = {.slot = 3}, .passengers = 1,
+                      .passenger = {{.slot = 2, .age = 1, .state = STATE_NORMAL}}};
+    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, ts + SEC) && solo.echo_by == 0 && !solo.echo_news);
     tells.count = 1;
     tells.passenger[0].state = STATE_HELP;
-    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, T0) && solo.echo_by == 1u << 3 && solo.echo_news);
+    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, ts + SEC) && solo.echo_by == 1u << 3 && solo.echo_news);
+    /* All well, then help again; the carrier heard neither and still tells of the first call. */
+    node_set_state(&solo, STATE_NORMAL);
+    ts += 2 * SEC;
+    SEND_ONCE();
+    node_set_state(&solo, STATE_HELP);
+    ts += 2 * SEC;
+    SEND_ONCE();
+    const uint32_t again = solo.state_sent;
+    assert(again > first + 2);
+    solo.echo_news = false;
+    tells.count = 2;
+    tells.sent = again + 1;
+    tells.passenger[0].age = (uint8_t)age_code(again + 1 - first);
+    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, ts + SEC) && solo.echo_by == 0 && !solo.echo_news);
+    /* It hears the call again and tells of that one: carried. */
+    tells.count = 3;
+    tells.passenger[0].age = 1;
+    assert(node_on_packet(&solo, b, pkt_seal(b, &tells, &g), -70, 30, ts + SEC) && solo.echo_by == 1u << 3 && solo.echo_news);
+    #undef SEND_ONCE
+    #undef SECOND
 
     /* A board deaf to a rider (the bench's DEAF) takes nothing from it directly, yet has it from
      * those who carry it: a chain on one desk. */

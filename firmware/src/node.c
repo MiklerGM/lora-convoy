@@ -77,6 +77,7 @@ void node_set_phone_time(node_t *n, int64_t at_us, int64_t utc_us, int64_t err_u
 void node_set_state(node_t *n, uint8_t state) {
     if (state >= STATES || state == n->state) return;
     n->state = state;
+    n->state_sent = UINT32_MAX;
     n->echo_by = 0; /* who carried the state before has not carried this one */
 }
 
@@ -402,6 +403,7 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
     n->sent_told = told;
     n->sent_frame = k;
     n->last_sent = sent;
+    if (n->state_sent == UINT32_MAX) n->state_sent = sent;
     if (n->burst) n->burst--;
     n->tx_due_us = now_us - (utc - at) + n->cfg.tx_lead_us;
     n->tx_air_us = phy_airtime_us(&n->phy, len);
@@ -548,17 +550,18 @@ bool node_on_packet(node_t *n, const uint8_t *buf, size_t len, int rssi_dbm, int
     for (unsigned i = 0; i < p.passengers; i++) {
         const record_t *q = &p.passenger[i];
         if (q->slot == from) continue;
+        /* later than what we hold, by more than the age's own step: seconds, then minutes */
+        const uint32_t ago = age_seconds(q->age), as_of = p.sent > ago ? p.sent - ago : 0;
         if (q->slot == n->cfg.slot) {
-            /* ourselves, as this rider holds us: with the state we are in, it carries what we say */
-            if (q->state == n->state) {
+            /* ourselves, as this rider holds us: with the state we are in, and from a packet of ours
+             * in it, it carries what we say */
+            if (q->state == n->state && as_of >= n->state_sent) {
                 n->echo_us = now_us ? now_us : 1;
                 if (!(n->echo_by & 1u << from)) n->echo_news = true;
                 n->echo_by |= 1u << from;
             }
             continue;
         }
-        /* later than what we hold, by more than the age's own step: seconds, then minutes */
-        const uint32_t ago = age_seconds(q->age), as_of = p.sent > ago ? p.sent - ago : 0;
         rider_t *o = &n->riders[q->slot];
         if (o->known && as_of <= o->as_of + (q->age < AGE_MINUTES_FROM ? 1 : 60)) continue;
         take_record(n, q, as_of, from, now_us);

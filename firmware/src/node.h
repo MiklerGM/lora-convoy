@@ -133,6 +133,10 @@ typedef struct {
     /* Our own record seen in another's packet, with the state we are in: our packets get out, and
      * these slots carry what we say now, a bit each. News for the phone when a slot is new. */
     uint32_t echo_by;
+    /* The second our first packet in this state named, UINT32_MAX until it goes; 0, the state we
+     * started in. A carrier's record of us from before it is of an earlier state, though the same
+     * (HELP, NORMAL, HELP again). */
+    uint32_t state_sent;
     int64_t echo_us;         /* our clock at the last such; 0 before one */
     bool echo_news;
     uint32_t rx_changed;     /* the riders the packet taken last brought a newer record of, a bit

@@ -162,8 +162,9 @@ rider whose state has just changed (in its next three packets), then whoever it 
 never one it last heard of over 10 minutes before. A receiver takes a carried record only if it is
 later than the one it holds, by more than the age's own step: a record never gets younger on its
 way, nothing loops and nothing floods, and the latest state of a rider travels down a column past
-its radios' reach. A sender seeing its own record carried by another, in the state it is in now,
-knows its packets got out (`heard=`, `echo=` in its status): the confirmation v3's answers gave, at
+its radios' reach. A sender seeing its own record carried by another, in the state it is in now and
+no older than its first packet in that state (a record of an earlier call for help, before an all
+well, is not of this one), knows its packets got out (`heard=`, `echo=` in its status): the confirmation v3's answers gave, at
 no cost in air. In the simulator, a column of 20 spreading to 9.5 km with radios reaching 1 km:
 a call for help reaches all 19 within 10 s; riders out of reach are 26 s old at the median with one
 passenger, 12 s with two, 8 s with three.
