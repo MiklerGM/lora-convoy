@@ -69,7 +69,7 @@ class MainActivity : Activity() {
                 picked = board.state
                 picker.setSelection(board.state)
             }
-            carried.put(board?.let(::carriedText) ?: "")
+            carried.put(board?.let { carried(picked, it, ConvoyService.linkState?.startsWith("connected") == true) } ?: "")
             riders.put(ridersText())
             batteryButton.visibility = if (batteryUnrestricted()) View.GONE else View.VISIBLE
             // Start comes back to the board last chosen; with none, Find boards is the way in
@@ -204,15 +204,6 @@ class MainActivity : Activity() {
         if (!ConvoyService.command(this, "STATE $state")) say("No board connected to tell it through.")
     }
 
-    /** Whether the others have our state yet: 1/2, all of them ✓; a rider's board that carries it has it. */
-    private fun carriedText(b: BoardLines.Status): String {
-        if (picked != b.state) return "telling the board…"
-        if (b.riders == 0) return "no one to tell"
-        // a board's status comes every 10 s: an age under a minute would only mislead
-        return (if (b.heard >= b.riders) "✓" else "${b.heard}/${b.riders}") +
-            (b.echoS?.takeIf { it >= 60 }?.let { ", ${age(it * 1000L)} ago" } ?: "")
-    }
-
     private fun ridersText(): String {
         val all = ConvoyService.riders
         if (all.isEmpty()) return "No riders heard yet."
@@ -328,6 +319,24 @@ class MainActivity : Activity() {
         }
         return lines.joinToString("\n")
     }
+}
+
+/**
+ * Whether the others have our state yet, beside the picker: the rider's [picked] state, the board's
+ * status [b], and whether the link to it is up. Of all the others in the group, not only those the
+ * board knows: in a group of ten, one rider heard of who carries it is 1/9, not all of them; and a
+ * board that carries it has it, not yet its rider (a phone, a glance).
+ */
+fun carried(picked: Int?, b: BoardLines.Status, linked: Boolean): String {
+    if (picked != b.state) {
+        // ConvoyService sends it again when the board is back
+        return if (linked) "telling the board…" else "not on the board yet: it is out of reach, and gets it when back"
+    }
+    val others = (b.slots ?: (b.riders + 1)) - 1
+    if (others <= 0) return "no one to tell"
+    // a board's status comes every 10 s: an age under a minute would only mislead
+    return (if (b.heard >= others) "✓ all $others" else "${b.heard} of $others") +
+        (b.echoS?.takeIf { it >= 60 }?.let { ", ${age(it * 1000L)} ago" } ?: "")
 }
 
 fun Activity.button(label: String, onClick: () -> Unit) = Button(this).apply {

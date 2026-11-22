@@ -86,6 +86,9 @@ class ConvoyService : Service() {
                     lastClash = null
                     logAsked = null
                     send("STATUS")
+                    // the state the rider chose while the board was out of reach: the same one again
+                    // changes nothing on the board (node_set_state), so it is sent on each link
+                    wanted?.let { if (send("STATE $it")) send("STATUS") }
                 }
             }
         }
@@ -137,6 +140,7 @@ class ConvoyService : Service() {
                 boardRiders.clear()
             } else {
                 board = status
+                if (status.state == wanted) wanted = null
                 // its own lines too, from where this phone's log of them ends, once per link
                 if (logAsked == null) {
                     logAsked = logNext
@@ -217,7 +221,10 @@ class ConvoyService : Service() {
             ACTION_FORGET -> send("FORGET")
             ACTION_STOP -> stopSelf()
             // and its status at once, so the screen shows what the board took
-            ACTION_COMMAND -> intent.getStringExtra(EXTRA_LINE)?.let { if (send(it)) send("STATUS") }
+            ACTION_COMMAND -> intent.getStringExtra(EXTRA_LINE)?.let {
+                if (it.startsWith("STATE ")) wanted = it.removePrefix("STATE ").toIntOrNull()
+                if (send(it)) send("STATUS")
+            }
         }
         return START_STICKY
     }
@@ -270,6 +277,7 @@ class ConvoyService : Service() {
         confirmed = null
         linkState = null
         reply = null
+        wanted = null
         riders = emptyList()
         super.onDestroy()
     }
@@ -355,6 +363,10 @@ class ConvoyService : Service() {
          * what was missed. ponytail: not over the app's process; a new one asks for all the board kept. */
         @Volatile private var logBoot = 0L
         @Volatile private var logNext = 0L
+        /** The state the rider chose that the board has yet to show in its status: sent again on
+         * each new link until it does, as Bluetooth can drop between the choice and the board. */
+        @Volatile var wanted: Int? = null
+            private set
         /** The board's answer to the last command from a screen. */
         @Volatile var reply: String? = null
             private set
