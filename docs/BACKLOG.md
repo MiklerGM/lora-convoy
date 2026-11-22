@@ -59,7 +59,13 @@ carries no mode; and `GROUP` takes setups too tight for the board's time error, 
 silent ([09](09-protocol-next.md), fixes that need no new layout). Candidates for the comparison
 runs, not profiles, are in [09](09-protocol-next.md): 5 riders every 2 s, 10 every 3 s, 20 every
 6 s, on SF7/250. Settled by those runs and by E0 and E2 on the boards; recomputed once v4's size is
-agreed.
+agreed. **Interval by size, 2026-11-22** (an outside review ran ten L1s on the core: 7 sent, then
+0 of 8, 9 and 10): the app gives a new group the interval a board without PPS fits, 2 s up to 7
+riders, 2.5 s for 8 and 9, 3 s for 10, 8.5 s for 32 (`Invitation.intervalFor`, held against the
+core by `test_group_intervals`), and the status says when the board's clock is too rough to send.
+Still open: a faster interval for a group known to ride on PPS boards; the mode in the invitation,
+`GROUP` leaving a `MODE` set by hand; and a board refusing a setup too tight for it, left out so
+far as a mixed group's L1 sends on time from a board with PPS.
 
 ### T-length: the packet's final length
 
@@ -184,7 +190,11 @@ included; no button for it on the board in the first iteration (T-board-ui). **B
 2026-11-14** ([PROTOCOL](PROTOCOL.md)): the state in every packet, and passengers carry each
 rider's state on, a changed one first, so a call heard only through a relay arrives too. On the
 desk chain of 2026-11-15 every change crossed the relay within 4 s ([07](07-experiments.md)). v3's
-answers to a call, and its numbers, are history.
+answers to a call, and its numbers, are history. **The path to the rider, 2026-11-22**, after an
+outside review: a call from a rider with no fix yet is listed (it was dropped whole); the tick
+counts all the others in the group, 1 of 9, not those the board knows; an echo of an earlier call
+(HELP, NORMAL, HELP) no longer confirms the latest; a state chosen while the board is out of
+reach says so and goes on the next link. Open: whether the screen says which riders have it.
 
 ### T-relay: work out relaying
 
@@ -243,7 +253,13 @@ After M6 and T-control.
 Routes, group setup apart from the key, rule updates, logs after a ride. Encrypted with the group
 key, found by hash, no accounts and no IP logs, deleted days after the ride, with a size cap and
 rate limit. Open: GPX or our binary geometry, and who runs it ([01](01-goals.md), wishes;
-[06](06-own-protocol.md), Delivering it to everyone).
+[06](06-own-protocol.md), Delivering it to everyone). An outside review, 2026-11-22, would start
+with one whole action: the organiser shares a GPX, encrypted by the phone under a key of its own
+that travels in the invitation, the server keeping only bytes, a random id and an expiry; riders
+fetch it before the ride and open it in OsmAnd offline. A meeting point, changed out of coverage,
+as a short signed radio record (place, revision, cancelled). What can be promised is that the
+server never sees the route or the roster; no accounts is not anonymity, as addresses, times and
+backups remain. The app's own logs hold positions in clear: sent only by the rider's own hand.
 
 ## App
 
@@ -306,7 +322,11 @@ M5's invitation is a string sent as text; since M7 it names the riders, so the m
 and the rider's app scans it, asking for the camera then (ZXing, Apache-2.0, 0.65 MB; its own
 camera screen needs AndroidX, so ours is a few lines over its view). Open: a link a messenger makes tappable, which wants a domain or app links; riders' colours; one
 phone setting up several boards, such as a pillion's or loaners, without joining each slot itself;
-a new key for the group when a rider leaves. Needed by M7.
+a new key for the group when a rider leaves. Needed by M7. **Loaned boards**, from an outside
+review, 2026-11-22: the organiser's two acts, "this board to this rider" and "end the ride on this
+board", the second checked by what the board kept. Forget this board and the board's long press
+forget the phone only: the board keeps the group's key, so a new owner in reach of the old group
+sees its riders, and the group sees the loaned board move. A lost board still needs a new key.
 
 ### T-phone-gps: boards without GNSS
 
@@ -317,7 +337,9 @@ wishes). After M4.
 
 The table of rules from [08](08-regions.md) in the app; the profile picked by country and handed
 to the board, which enforces it and keeps the last one confirmed ([01](01-goals.md), wishes).
-After M7.
+After M7. Noted by an outside review, 2026-11-22: `MODE` takes 500 kHz on 869.525 MHz, wider
+than that 250 kHz sub-band; the Heltec's `POWER 0` is a stated 28 dBm against 500 mW ERP there,
+about 27 dBm after the antenna; what a build radiates wants measuring.
 
 ### T-survive: the app through a whole ride
 
@@ -384,7 +406,12 @@ The button's hold of 3 s still forgets the phone. Still open: the OLED's draw wh
 ### T-power: power
 
 Battery-only nRF52 boards, receive duty cycling, the GNSS in standby; bike power and the dips of an
-engine start ([01](01-goals.md), wishes; E7).
+engine start ([01](01-goals.md), wishes; E7). **On the cells, 2026-11-21** (every 2 s, GNSS always
+on): the T-Echo (850 mAh) went 99 to 44 % in 10 h 16 min, the L1 (2000 mAh) 100 to 87 %; the
+T-Echo's GPS gave out hours before its radio. For a beacon, time to the last usable position
+counts as well as time to the last packet. The T-Echo's GNSS, on the desk: its own sends every 2 s
+keep it from adding satellites indoors, and another board touching it takes them away
+([07](07-experiments.md)).
 
 ### T-ledger: exporting the duty ledger
 
@@ -407,4 +434,9 @@ The phone API over USB OTG as well as BLE, for tablets (dmd2-lora-bridge's M8).
 
 From [07](07-experiments.md): E0 settles T-timing; E2 and E10 settle T-phy; E8 feeds T-relay; E12
 says whether a DMD rider nearby deafens us. E6, the Meshtastic baseline in Meshtasticator, gives the
-numbers this protocol has to beat; Meshtasticator is cloned when E6 runs.
+numbers this protocol has to beat; Meshtasticator is cloned when E6 runs. **Three motorcycles**,
+proposed by an outside review, 2026-11-22: leader and tail ride out of each other's reach, the
+middle links them, then drops back and returns. At each end, by time rather than by packet: the
+age of the other's last position from its own fix, the longest gap, when a new state shows on the
+phone, the time to recover. Again on the same mounts with another number of riders carried.
+Simulations for it with `setups/board.json`, which runs the board's own send rule.
