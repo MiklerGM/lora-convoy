@@ -162,8 +162,6 @@ object BoardLines {
         val lat = t["lat"]?.toDoubleOrNull() ?: return null
         val lon = t["lon"]?.toDoubleOrNull() ?: return null
         val heardS = t["heard"]?.toDoubleOrNull() ?: return null
-        // a rider told of with no position yet has nowhere to be drawn (v5 pos=0)
-        if (t["pos"] == "0") return null
         if (lat !in -90.0..90.0 || lon !in -180.0..180.0) return null
         // riders count from 1, as the group screen does; slots from 0
         fun nameOf(s: Int) = group?.riderName(s) ?: "Rider ${s + 1}"
@@ -187,6 +185,8 @@ object BoardLines {
             stopped = t["stopped"] == "1",
             gpsOk = t["gps"] == "1",
             via = t["via"]?.toIntOrNull()?.let(::nameOf),
+            // heard before its first fix (v5 pos=0): in the list with its state, kept off the map
+            hasPosition = t["pos"] != "0",
         )
     }
 

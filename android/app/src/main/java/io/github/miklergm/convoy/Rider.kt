@@ -29,6 +29,8 @@ data class Rider(
     val gpsOk: Boolean = true,
     /** Who told us of this rider last, when it was not the rider itself: its name. */
     val via: String? = null,
+    /** False for a rider heard before its first fix (v5 pos=0): its state counts, its 0, 0 is no place. */
+    val hasPosition: Boolean = true,
 ) {
     val help get() = state == STATE_HELP
 }
@@ -119,6 +121,9 @@ fun Rider.toPoint(nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): PointSpec
     )
 }
 
+/** What OsmAnd draws: every rider with a position; one with none yet is in the list only. */
+fun mapPoints(riders: List<Rider>, nowMs: Long): List<PointSpec> = riders.filter { it.hasPosition }.map { it.toPoint(nowMs) }
+
 /** "4 s", "2 min", "3 h": coarser as it grows, since a stale age is read at a glance. */
 fun age(ms: Long): String {
     val s = max(0L, ms) / 1000
@@ -137,7 +142,10 @@ fun Rider.line(nowMs: Long): String = buildList {
     add(name)
     if (state != STATE_NORMAL) add(stateName(state))
     val via = via?.let { " via $it" } ?: ""
-    if (gpsOk && fixAtMs != null) {
+    if (!hasPosition) {
+        add("no position yet, not on the map")
+        add("heard ${age(nowMs - heardAtMs)} ago$via")
+    } else if (gpsOk && fixAtMs != null) {
         add("${age(nowMs - fixAtMs)} ago$via")
     } else {
         add("position " + (fixAtMs?.let { "${age(nowMs - it)} old" } ?: "of unknown age") + if (gpsOk) "" else ", no GPS")

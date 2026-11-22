@@ -72,8 +72,17 @@ class BoardLinesTest {
         assertNull(BoardLines.rider("RIDER slot=1 lat=95 lon=2 heard=0", now))
         assertNull(BoardLines.rider("RIDER slot=x lat=1 lon=2 heard=0", now))
         assertNull(BoardLines.rider("TX counter=1 len=17 ok", now))
-        // told of before its first fix: its 0, 0 is no place, and must not be drawn in the Gulf of Guinea
-        assertNull(BoardLines.rider("RIDER slot=2 pos=0 lat=0.0000000 lon=0.0000000 fix_age=? heard=1.0 state=1 help=1", now))
+    }
+
+    @Test
+    fun `a rider told of before its first fix, its call for help counted and its 0, 0 no place`() {
+        val r = BoardLines.rider("RIDER slot=2 fix=? pos=0 lat=0.0000000 lon=0.0000000 fix_age=? heard=1.0 gps=0 state=1 help=1", now)!!
+        assertTrue(r.help && !r.hasPosition)
+        assertNull(r.fixAtMs)
+        // listed with its call, and kept off the map rather than drawn in the Gulf of Guinea
+        assertEquals("Rider 3 · Needs help · no position yet, not on the map · heard 1 s ago", r.line(now))
+        val placed = r.copy(id = "slot3", hasPosition = true, lat = 47.1, lon = 9.5)
+        assertEquals(listOf("slot3"), mapPoints(listOf(r, placed), now).map { it.id })
     }
 
     @Test

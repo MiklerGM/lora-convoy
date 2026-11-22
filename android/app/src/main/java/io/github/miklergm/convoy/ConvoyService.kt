@@ -245,7 +245,7 @@ class ConvoyService : Service() {
                 }
                 boardRiders.all(boardClock, mono, now)
             }
-            if (riders != null) osmand.show(riders.map { it.toPoint(now) })
+            if (riders != null) osmand.show(mapPoints(riders, now))
             ConvoyService.riders = riders.orEmpty()
             ridersAtMs = now
             state = osmand.state
