@@ -25,6 +25,10 @@
 #ifndef NODE_DRIFT_PPM
 #define NODE_DRIFT_PPM 0
 #endif
+/* Whether it keeps the GNSS's quiet windows (node_gnss_quiet): a board whose sends deafen its GNSS. */
+#ifndef NODE_GNSS_QUIET
+#define NODE_GNSS_QUIET 0
+#endif
 #ifndef NODE_POWER_LEVEL
 #define NODE_POWER_LEVEL 1
 #endif
@@ -592,7 +596,7 @@ void run_start(const char *board, const char *reset) {
                          .nmea_lag_sat_us = NODE_NMEA_LAG_SAT_US,
                          .tx_lead_us = NODE_TX_LEAD_US,
                          .listen_one_in = 32, .move_m = 10, .beat = 3, .passengers = 1,
-                         .drift_ppm = NODE_DRIFT_PPM};
+                         .drift_ppm = NODE_DRIFT_PPM, .gnss_quiet = NODE_GNSS_QUIET};
     setup_t setup;
     const bool v4 = port_setup_load(&setup, sizeof(setup)) && setup.version == SETUP_VERSION;
     const bool kept = (v4 || (port_setup_load(&setup, SETUP_V3_LEN) && setup.version == 3)) &&

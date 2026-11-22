@@ -411,7 +411,12 @@ on): the T-Echo (850 mAh) went 99 to 44 % in 10 h 16 min, the L1 (2000 mAh) 100 
 T-Echo's GPS gave out hours before its radio. For a beacon, time to the last usable position
 counts as well as time to the last packet. The T-Echo's GNSS, on the desk: its own sends every 2 s
 keep it from adding satellites indoors, and another board touching it takes them away
-([07](07-experiments.md)).
+([07](07-experiments.md)). On 2026-11-22: tracked at ~30 dB-Hz yet no fix 15 min after a cold
+start while sending every 2 s, a fix 4-9 min after going quiet; the guess, that our sends, locked
+to GPS time, hit the same bits of every satellite's message so the orbits never read. Built: the
+GNSS's quiet windows, one a minute ([PROTOCOL](PROTOCOL.md) `QUIET`), the T-Echo's by default;
+on trial on the desk. Open: whether the L1 or the Heltec need them, and whether neighbours a few
+metres off do any harm (then a window the whole group keeps).
 
 ### T-ledger: exporting the duty ledger
 

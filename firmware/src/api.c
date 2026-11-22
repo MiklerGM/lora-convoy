@@ -256,13 +256,17 @@ void api_command(api_t *api, char *line, int64_t came_us, int64_t now_us, api_re
         /* which satellites the GNSS uses: its lag grows with their number (07, 2026-11-12) */
         api->gnss_systems = (uint8_t)v;
         snprintf(out, sizeof(out), "OK systems=%ld", v);
+    } else if (strcasecmp(line, "quiet") == 0 && number(arg, 0, 1, &v)) {
+        /* the GNSS's quiet windows on or off, for the bench; not kept, the board's own at a restart */
+        cfg->gnss_quiet = v != 0;
+        snprintf(out, sizeof(out), "OK quiet=%ld", v);
     } else if (strcasecmp(line, "gsv") == 0 && number(arg, 0, 1, &v)) {
         /* each satellite's C/N0 on the console, for the bench; NMEA time goes late with it */
         api->gnss_gsv = v != 0;
         snprintf(out, sizeof(out), "OK gsv=%ld", v);
     } else {
         snprintf(out, sizeof(out), "ERR commands: STATUS, RIDERS, CLOCK <t1>, TIME <ms> <utc ms> <err ms>, LEDGER, GROUP <32 hex> <slot> <slots> <ms>, KEY <32 hex>, STATE 0-15, BEAT 0-7, MOVE <m>, PASSENGERS 0-3, DEAF <slots>|-, SLOT 0-%d, SLOTS 1-%d, "
-                 "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, TOUR 0-255, ZONE <min>, GNSS 0-4 (off, on, restart hot, warm, cold), SYSTEMS 1-8, GSV 0-1, LOG <boot> <n>, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
+                 "INTERVAL 500-60000, POWER 0-3 (0 strongest), MODE <SF> <kHz>, TOUR 0-255, ZONE <min>, GNSS 0-4 (off, on, restart hot, warm, cold), SYSTEMS 1-8, GSV 0-1, QUIET 0-1, LOG <boot> <n>, FORGET, REBOOT, BOOTLOADER", NODE_SLOTS - 1,
                  NODE_SLOTS);
     }
     reply(ctx, out);

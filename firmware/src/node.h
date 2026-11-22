@@ -39,6 +39,9 @@ typedef struct {
     /* Listen in our own slot instead of sending, once in this many frames at random; 0 never. Two
      * radios given one slot send together, and never hear each other otherwise (T-join). */
     uint16_t listen_one_in;
+    /* No send in the GNSS's quiet windows (node_gnss_quiet): for a board whose own sends deafen its
+     * GNSS, the T-Echo's by default (NODE_GNSS_QUIET); QUIET 0|1 on the console. */
+    bool gnss_quiet;
     /* How far this board's crystal may run from true time, in ppm, temperature included: what an
      * aging mark is taken to drift. 0 is 50. A T-Echo ran 102-115 ppm off (07, 2026-11-14). */
     uint16_t drift_ppm;
@@ -236,6 +239,9 @@ bool node_utc_ms(const node_t *n, int64_t now_us, int64_t *utc_ms);
 /* How far our time may be off and still send: the gap between two slots, less what the receivers
  * need, shared by the two senders either side of it. 0 when the slots do not fit the frame. */
 int64_t node_time_budget_us(const node_t *n);
+
+/* Whether a send at utc_us lasting air_us would fall in a quiet window of the GNSS's (node.c). */
+bool node_gnss_quiet(int64_t utc_us, int64_t air_us);
 /* Whether our time is sure enough now for a packet to land in our slot, not a neighbour's: the
  * check every send passes (node.c), for the screen. */
 bool node_time_fits(const node_t *n, int64_t now_us);

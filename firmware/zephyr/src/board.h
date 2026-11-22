@@ -72,6 +72,9 @@
 /* Its clock ran 102-115 ppm off without a fix, the same in three holdovers (07, 2026-11-14), though
  * Meshtastic's board file says it has a 32 kHz crystal and the build asks for it. */
 #define NODE_DRIFT_PPM 150
+/* Its LoRa antenna a centimetre from its GNSS's: sending every 2 s, it lost satellites in minutes and
+ * found none after a cold start in 15 (lab, 2026-11-22). */
+#define NODE_GNSS_QUIET 1
 #endif
 
 /* The Wio Tracker L1 Pro's own, measured on one board, 2026-11-11 and 12 (docs/07): its L76K's RMC,

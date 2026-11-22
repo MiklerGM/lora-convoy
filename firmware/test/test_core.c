@@ -317,6 +317,37 @@ static void test_tx_lead(void) {
     printf("node: a slow radio is handed its packet early, by its start-up\n");
 }
 
+/* The GNSS's quiet windows: one a minute, in turn on GPS's subframes 1-3 and GLONASS's strings 1-4,
+ * by UTC second, from 50 ms before to 150 ms after. A board keeping them sends none there and goes
+ * on in the frame after; one without sends through (lab, 2026-11-22, the T-Echo). */
+static void test_gnss_quiet(void) {
+    const int64_t m0 = UTC0_MS / 60000 * 60000 * 1000; /* 12:00:00, the first minute of its four */
+    const struct { int minute, ms; bool quiet; } rows[] = {
+        {0, 11910, false}, {0, 11920, true}, {0, 15000, true}, {0, 18140, true}, {0, 18160, false},
+        {1, 15000, false}, {1, 19000, true}, {2, 25000, true}, {2, 31000, false},
+        {3, 29000, false}, {3, 37500, true}, {3, 38200, false}, {4, 13000, true}};
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++)
+        assert(node_gnss_quiet(m0 + rows[i].minute * 60 * SEC + rows[i].ms * 1000ll, 38500) == rows[i].quiet);
+
+    uint8_t b[PKT_MAX_LEN];
+    for (int quiet = 0; quiet <= 1; quiet++) {
+        node_config_t c = CFG;
+        c.gnss_quiet = quiet;
+        node_t n;
+        node_init(&n, &c, 12345);
+        int in_window = 0, after = 0;
+        for (int64_t t = T0; t < T0 + 30 * SEC; t += 1000) {
+            tick(&n, t);
+            if (!node_poll_tx(&n, t, b, sizeof(b))) continue;
+            const int64_t ms = (UTC0_MS + (t - T0) / 1000) % 60000; /* its RF's start in the minute */
+            in_window += ms + 39 > 11950 && ms < 18150;
+            after += ms >= 18150 && ms < 20150;
+        }
+        assert(quiet ? in_window == 0 && after == 1 : in_window == 3);
+    }
+    printf("node: no send in the GNSS's quiet windows when kept, and the frame after goes\n");
+}
+
 static void test_node_sends(void) {
     node_t n;
     uint8_t b[PKT_MAX_LEN];
@@ -1559,6 +1590,7 @@ int main(void) {
     test_nmea();
     test_tx_lead();
     test_node_sends();
+    test_gnss_quiet();
     test_node_time();
     test_node_duty();
     test_node_hears();
