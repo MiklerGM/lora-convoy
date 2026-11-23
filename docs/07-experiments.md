@@ -368,6 +368,34 @@ heard from the phone's log (`LOG`), as it was off its cable. Scripts `lab/walk11
   dropped once and linked again within a minute, and the board gave again the six lines the phone
   had missed: the phone's copy has all 483 of the board's lines, none skipped.
 
+### The L1 run down on its cell, 2026-11-21 to 23
+
+Build ebdce26, a group of 10 at 2 s, `POWER 1` (20 dBm), `BEAT 0`: a packet every frame, as riding
+(duty 1.85 %). GNSS on, Bluetooth linked to the owner's phone, the OLED dark from 10 min in, no
+presses; indoors at a window. Off its cable at 4,208 mV, 11-21 22:43:58. The end: its last packet
+the Heltec heard directly, on its cable beside it. The voltage: the board's own `BAT` lines, logged
+as it fell, from the phone's copy of its log (only 11-23's, the earlier days' not in hand).
+
+| `BAT` | Hours in | Left to the last packet |
+|---|---|---|
+| 3,777 mV | 27.9 | 17 h 35 min |
+| 3,622 mV | 33.6 | 11 h 52 min |
+| 3,513 mV | 37.7 | 7 h 42 min |
+| 3,348 mV | 43.4 | 2 h 04 min |
+| 3,234 mV | 44.3 | 1 h 06 min |
+| 3,116 mV | 45.0 | 24 min |
+| 3,012 mV | 45.4 | 1 min |
+
+- **45 h 26 min to the last packet** (11-23 20:10:13), every 2 s throughout: some 44 mA on average,
+  if the cell gives the 2,000 mAh of Seeed's listing. The Heltec heard it to the end and went on
+  hearing the T-Echo after it, so the silence is the L1's.
+- **Its percentage misleads.** It read 87 % 10 h 16 min in, under a quarter of the run; the estimate made
+  from it then was three days.
+- **The last two hours are below 3.35 V**, and the last hour below 3.24 V: a warning at 3.35 V
+  leaves about two hours at this rate.
+- The T-Echo began beside it (99 % to 44 % in 10 h 16 min) but went onto its cable at 11-22 09:22
+  for the GNSS tests, so it has no run down.
+
 ### Earlier
 
 Measurements the documents already rely on:

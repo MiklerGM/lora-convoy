@@ -407,7 +407,8 @@ The button's hold of 3 s still forgets the phone. Still open: the OLED's draw wh
 
 Battery-only nRF52 boards, receive duty cycling, the GNSS in standby; bike power and the dips of an
 engine start ([01](01-goals.md), wishes; E7). **On the cells, 2026-11-21** (every 2 s, GNSS always
-on): the T-Echo (850 mAh) went 99 to 44 % in 10 h 16 min, the L1 (2000 mAh) 100 to 87 %; the
+on): the T-Echo (850 mAh) went 99 to 44 % in 10 h 16 min, the L1 (2000 mAh) 100 to 87 %, yet it ran 45 h 26 min in all, to 3.0 V
+([07](07-experiments.md)); the
 T-Echo's GPS gave out hours before its radio. For a beacon, time to the last usable position
 counts as well as time to the last packet. The T-Echo's GNSS, on the desk: its own sends every 2 s
 keep it from adding satellites indoors, and another board touching it takes them away
