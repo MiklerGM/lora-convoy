@@ -187,20 +187,31 @@ class MainActivity : Activity() {
         }
     }
 
-    /** The newest day's log of the board, to another app: a messenger, mail, a file manager. */
+    /** The board's log, the days picked (the newest ticked), to another app: a messenger, mail, a file manager. */
     private fun shareLog() {
-        val f = BoardLog.newest(java.io.File(filesDir, BoardLog.DIR))
-        if (f == null) {
+        val days = BoardLog.days(java.io.File(filesDir, BoardLog.DIR))
+        if (days.isEmpty()) {
             say("No log yet: it starts with a board, mock or simulated.")
             return
         }
-        val send = Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_STREAM, Uri.parse("content://${RouteProvider.AUTHORITY}/${f.name}"))
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        }
+        val picked = BooleanArray(days.size).also { it[0] = true }
+        val names = days.map { "${it.name.removeSurrounding("convoy-", ".log")}, %.1f MB".format(it.length() / 1e6) }
+        AlertDialog.Builder(this).setTitle("Share log: which days")
+            .setMultiChoiceItems(names.toTypedArray(), picked) { _, i, on -> picked[i] = on }
+            .setPositiveButton("Share") { _, _ -> sendLogs(days.filterIndexed { i, _ -> picked[i] }) }
+            .setNegativeButton("Cancel", null).show()
+    }
+
+    private fun sendLogs(files: List<java.io.File>) {
+        if (files.isEmpty()) return
+        val uris = files.map { Uri.parse("content://${RouteProvider.AUTHORITY}/${it.name}") }
+        val send = if (uris.size == 1) Intent(Intent.ACTION_SEND).putExtra(Intent.EXTRA_STREAM, uris[0])
+        else Intent(Intent.ACTION_SEND_MULTIPLE).putParcelableArrayListExtra(Intent.EXTRA_STREAM, ArrayList(uris))
+        send.type = "text/plain"
+        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         // the riders' positions are in it, in clear
-        startActivity(Intent.createChooser(send, "${f.name}: with the riders' positions"))
+        val what = if (files.size == 1) files[0].name else "${files.size} days of the log"
+        startActivity(Intent.createChooser(send, "$what: with the riders' positions"))
     }
 
     /** What our rider says, through the board: the others' maps show it, and their boards carry it on. */

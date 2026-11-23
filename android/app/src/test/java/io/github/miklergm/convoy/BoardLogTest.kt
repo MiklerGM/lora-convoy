@@ -29,9 +29,10 @@ class BoardLogTest {
         )
         assertFalse(File(dir, "convoy-2026-11-08.log").exists())
         assertTrue(File(dir, "convoy-2026-11-09.log").exists() && File(dir, "notes.txt").exists())
-        // past midnight, the next file; the newest is what Share log sends
+        // past midnight, the next file, and the 9th a week old; Share log offers the days kept, the
+        // newest first and ticked, no other file
         BoardLog(dir).apply { write("STATUS proto=8", at.plusDays(1)); close() }
-        assertEquals("convoy-2026-11-17.log", BoardLog.newest(dir)!!.name)
+        assertEquals(listOf("convoy-2026-11-17.log", "convoy-2026-11-16.log"), BoardLog.days(dir).map { it.name })
         dir.deleteRecursively()
     }
 }

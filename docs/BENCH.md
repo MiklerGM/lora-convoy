@@ -91,7 +91,8 @@ the RIDER lines stop, and their `rssi=` and `snr=` before that. `MODE 7 250` goe
 - The main screen lists the riders as the board knows them: their state, how old their position
   is, and `via` whom when the board has them only from another rider.
 - Forget this board, or the board's button held 3 s: the phone can pair again.
-- Share log: the day's file of everything to and from the board, as `lab/con.py` writes the
+- Share log: the days picked of the week kept (today's ticked), a file a day of everything to and
+  from the board, as `lab/con.py` writes the
   cable's (`HH:MM:SS.mmm` of the phone, `> ` what was sent, `# ` the link), the board's own lines
   among it as `LOG n=… at=… TX …`; a group's key replaced by `<key>`, the riders' positions in
   clear. On a debug build also `adb shell run-as io.github.miklergm.convoy cat files/logs/convoy-<date>.log`.

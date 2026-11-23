@@ -13,7 +13,7 @@ import java.time.format.DateTimeFormatter
  * Everything to and from the board, a day to a file, as lab/con.py writes the cable's: each line
  * after this phone's time, "> " before what was sent, "# " before what happened to the link; so
  * the bench's scripts read either. With LOG (docs/PROTOCOL.md) the board's own console lines come
- * too, as LOG n=.. at=.. <line>. Kept for [KEEP_DAYS] days; Share log hands the newest on.
+ * too, as LOG n=.. at=.. <line>. Kept for [KEEP_DAYS] days; Share log hands on the days picked.
  * A group's key never goes in: a log is for sharing.
  */
 class BoardLog(private val dir: File) {
@@ -62,6 +62,7 @@ class BoardLog(private val dir: File) {
         /** A key as GROUP and KEY carry it. */
         private val KEY = Regex("\\b[0-9a-fA-F]{32}\\b")
 
-        fun newest(dir: File): File? = dir.listFiles()?.filter { NAME.matches(it.name) }?.maxByOrNull { it.name }
+        /** The days kept, the newest first. */
+        fun days(dir: File): List<File> = dir.listFiles()?.filter { NAME.matches(it.name) }?.sortedByDescending { it.name }.orEmpty()
     }
 }
