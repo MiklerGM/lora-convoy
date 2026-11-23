@@ -40,8 +40,9 @@ typedef struct {
      * radios given one slot send together, and never hear each other otherwise (T-join). */
     uint16_t listen_one_in;
     /* No send in the GNSS's quiet windows (node_gnss_quiet): for a board whose own sends deafen its
-     * GNSS, the T-Echo's by default (NODE_GNSS_QUIET); QUIET 0|1 on the console. */
-    bool gnss_quiet;
+     * GNSS, the T-Echo's by default (NODE_GNSS_QUIET); QUIET 0|1 on the console. 2: the same windows
+     * 2 s late, a control for the bench that costs the same sends and clears no whole subframe. */
+    uint8_t gnss_quiet;
     /* How far this board's crystal may run from true time, in ppm, temperature included: what an
      * aging mark is taken to drift. 0 is 50. A T-Echo ran 102-115 ppm off (07, 2026-11-14). */
     uint16_t drift_ppm;

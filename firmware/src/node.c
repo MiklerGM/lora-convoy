@@ -326,7 +326,8 @@ static unsigned choose_passengers(node_t *n, uint32_t sent, int64_t now_us, reco
 
 /* A send each frame, our frames locked to GPS time, lands on the same bits of every satellite's
  * message, and a GNSS a send blanks never reads the orbits: the T-Echo, sending every 2 s, had no
- * fix 15 min after a cold start, and one 4-9 min after going quiet (lab, 2026-11-22). So one window
+ * fix 15-29 min after a cold start, 5 times of 5, and one in 4-9 min sending every 4 min; with these
+ * windows one in 15-26 min, 4 times of 4, each just after subframe 3's (lab, 2026-11-23). So one window
  * a minute with no send, in turn on GPS's subframes 1, 2 and 3 (GPS time is UTC + 18 s, and its
  * frames of five 6 s subframes start at its half minutes: UTC :12-:30) and on GLONASS's strings
  * 1-4, its orbit (its 30 s frames start at UTC's half minutes: :30-:38). Four minutes give a GNSS
@@ -385,8 +386,10 @@ size_t node_poll_tx(node_t *n, int64_t now_us, uint8_t *out, size_t cap) {
         n->tx_unsure++;
         return 0;
     }
-    /* Not in our GNSS's quiet window: what we had to say goes in the frame after it. */
-    if (n->cfg.gnss_quiet && node_gnss_quiet(at, phy_airtime_us(&n->phy, PKT_LEN(n->cfg.passengers)))) return 0;
+    /* Not in our GNSS's quiet window: what we had to say goes in the frame after it. 2 s late (the
+     * control), a window keeps the first send of each subframe 1-3 and of GLONASS's string 1. */
+    const int64_t late_us = n->cfg.gnss_quiet == 2 ? 2000000 : 0;
+    if (n->cfg.gnss_quiet && node_gnss_quiet(at - late_us, phy_airtime_us(&n->phy, PKT_LEN(n->cfg.passengers)))) return 0;
     /* Now and then our slot is for listening: another radio in it is heard then, as a clash. */
     if (n->cfg.listen_one_in && next_random(n) % n->cfg.listen_one_in == 0) {
         n->tx_listened++;

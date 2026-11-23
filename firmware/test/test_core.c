@@ -330,20 +330,26 @@ static void test_gnss_quiet(void) {
         assert(node_gnss_quiet(m0 + rows[i].minute * 60 * SEC + rows[i].ms * 1000ll, 38500) == rows[i].quiet);
 
     uint8_t b[PKT_MAX_LEN];
-    for (int quiet = 0; quiet <= 1; quiet++) {
+    /* QUIET 2, the control: the window 2 s late, as many sends gone, and subframe 1's first kept */
+    for (int quiet = 0; quiet <= 2; quiet++) {
         node_config_t c = CFG;
         c.gnss_quiet = quiet;
+        c.slot = 5, c.slots = 10; /* the T-Echo's: its sends on odd UTC seconds */
         node_t n;
         node_init(&n, &c, 12345);
-        int in_window = 0, after = 0;
+        int in_window = 0, after = 0, late = 0, sent = 0;
         for (int64_t t = T0; t < T0 + 30 * SEC; t += 1000) {
             tick(&n, t);
             if (!node_poll_tx(&n, t, b, sizeof(b))) continue;
             const int64_t ms = (UTC0_MS + (t - T0) / 1000) % 60000; /* its RF's start in the minute */
             in_window += ms + 39 > 11950 && ms < 18150;
             after += ms >= 18150 && ms < 20150;
+            late += ms + 39 > 13950 && ms < 20150;
+            sent++;
         }
-        assert(quiet ? in_window == 0 && after == 1 : in_window == 3);
+        if (quiet == 0) assert(in_window == 3 && sent == 15);
+        if (quiet == 1) assert(in_window == 0 && after == 1 && sent == 12);
+        if (quiet == 2) assert(late == 0 && in_window == 1 && sent == 12);
     }
     printf("node: no send in the GNSS's quiet windows when kept, and the frame after goes\n");
 }
@@ -1447,6 +1453,10 @@ static void test_api(void) {
     assert(strncmp(replies[0], "ERR", 3) == 0 && api.gnss_start == 3);
     ask(&api, "GNSS 1");
     assert(api.gnss_ask == 2 && api.gnss_start == 3);
+    ask(&api, "QUIET 2");
+    assert(strcmp(replies[0], "OK quiet=2") == 0 && n.cfg.gnss_quiet == 2);
+    ask(&api, "QUIET 3");
+    assert(strncmp(replies[0], "ERR", 3) == 0 && n.cfg.gnss_quiet == 2);
     /* SYSTEMS goes to the GNSS as it stands: nothing the L76K has no meaning for is passed on */
     ask(&api, "SYSTEMS 1");
     assert(strcmp(replies[0], "OK systems=1") == 0 && api.gnss_systems == 1);
