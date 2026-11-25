@@ -243,6 +243,8 @@ static bool screen_open(void) {
     if (err == ESP_OK) err = esp_lcd_new_panel_ssd1306(io, &dev_cfg, &panel);
     if (err == ESP_OK) err = esp_lcd_panel_reset(panel);
     if (err == ESP_OK) err = esp_lcd_panel_init(panel);
+    /* turned round, as the Heltec's case holds it [owner, 2026-11-25] */
+    if (err == ESP_OK) err = esp_lcd_panel_mirror(panel, true, true);
     if (err == ESP_OK) err = esp_lcd_panel_disp_on_off(panel, true);
     if (err != ESP_OK) {
         ESP_LOGW(TAG, "screen: %s", esp_err_to_name(err));

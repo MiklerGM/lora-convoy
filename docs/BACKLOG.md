@@ -391,9 +391,11 @@ the battery, a bolt by it while it charges [owner] (the nRF52840 boards know USB
 VBUS detector; "USB" alone where the divider sees USB and not the cell, as the T-Echo's does); the
 rider's slot and state; on air or silent, and the satellites; riders heard
 in the last minute, or another rider's call for help or to stop in their place. The e-paper adds
-the riders known, how long since and through whom. Nothing changes by the second, so the e-paper
-redraws, in part, at most once a minute. Seen right on the L1 and the T-Echo (turned 180°); the
-Heltec's reads along the board, to be judged in its case.
+the riders known, how long since and through whom. The satellites and the ages did change by the
+second [owner's suspicion, 2026-11-25: the T-Echo's fix or its count 95 times in 70 min, each a
+redraw]; since, they wait for the clock's minute, and the e-paper redraws, in part, about once a
+minute, at once for a state, a call for help or a press. Seen right on the L1 and the T-Echo
+(turned 180°); the Heltec's turned round for its case [owner, 2026-11-25].
 
 **Dark and lit, 2026-11-21**, after Meshtastic's (`src/PowerFSM.cpp`, `src/graphics/Screen.cpp`):
 an OLED goes dark 10 minutes after the board starts or its button is pressed, its controller's own
