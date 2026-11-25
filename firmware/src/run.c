@@ -456,9 +456,9 @@ static void radio_task(void *arg) {
     }
 }
 
-/* ---- the screen: redrawn when what it says has changed --------------------------- */
+/* ---- the screen: redrawn when what it says has changed, as screen_due says or now ---- */
 
-static void screen_update(int battery_mv) {
+static void screen_update(int battery_mv, bool now) {
     static screen_text_t text, shown;
     static uint8_t buf[SCREEN_BYTES];
     static bool any;
@@ -468,7 +468,7 @@ static void screen_update(int battery_mv) {
     port_mutex_lock(s_lock);
     screen_text(&s_node, port_uptime_us(), phone, battery_mv, usb, s_api.zone_min, text);
     port_mutex_give(s_lock);
-    if (any && memcmp(text, shown, sizeof(text)) == 0) return;
+    if (any && (memcmp(text, shown, sizeof(text)) == 0 || (!now && !screen_due(shown, text)))) return;
     any = true;
     memcpy(shown, text, sizeof(text));
     screen_draw((const char (*)[SCREEN_COLS + 1])text, buf, w, h);
@@ -511,7 +511,7 @@ static void service_task(void *arg) {
                 }
                 if (!mv) battery_mv = 0;
             }
-            if (!dark) screen_update(battery_mv);
+            if (!dark) screen_update(battery_mv, false);
             if (!dark && port_uptime_us() >= lit_until && port_screen_light(false)) {
                 dark = true;
                 LOGI(TAG, "screen dark until the button");
@@ -547,11 +547,12 @@ static void service_task(void *arg) {
         const bool down = port_button_down();
         if (down) {
             held_ms += 100;
-            /* a press lights the screen, drawn first so that it wakes on the present */
+            /* a press lights the screen, drawn first so that it wakes on the present: the e-paper's
+             * too, with the satellites and ages that waited for the minute */
             if (held_ms == 100) {
                 lit_until = port_uptime_us() + SCREEN_LIT_US;
+                screen_update(battery_mv, true);
                 if (dark) {
-                    screen_update(battery_mv);
                     dark = !port_screen_light(true);
                     LOGI(TAG, "screen lit by the button");
                 }

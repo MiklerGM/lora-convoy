@@ -18,8 +18,9 @@
  *                    call for help (R3 SOS) or to stop, which matters more
  *   R4 now via R6    each rider known, how long since, its state, who told: the e-paper's only
  *
- * Nothing in them changes by the second, so an e-paper redraws at most once a minute, for the
- * clock, unless something else has changed.
+ * The satellites and the riders' ages move by the second, so they wait for the clock's minute
+ * (screen_due): an e-paper redraws about once a minute, and at once for a state, a call for help or
+ * a press of the button.
  */
 #define SCREEN_LINES 12
 #define SCREEN_COLS 20
@@ -34,6 +35,12 @@ typedef char screen_text_t[SCREEN_LINES][SCREEN_COLS + 1];
  * zone_min the local time's offset from UTC. */
 #define SCREEN_USB_MV 4400
 void screen_text(const node_t *n, int64_t now_us, bool phone, int battery_mv, bool usb, int zone_min, screen_text_t out);
+
+/* Whether a screen showing shown is redrawn for text: for the clock's minute, the phone or the battery
+ * (line 0), our state (1), a call for help, a stop or the riders heard (3), the rest coming along;
+ * not for the satellites in the fix (2) or a rider's age (4 on) alone, which move by the second:
+ * the T-Echo's fix or its count changed 95 times in 70 min (2026-11-23), each an e-paper's redraw. */
+bool screen_due(const screen_text_t shown, const screen_text_t text);
 
 /* In a line of text, a charging cell's mark, drawn as a bolt: not a letter of the font. */
 #define SCREEN_CHARGING '\x7f'

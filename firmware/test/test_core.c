@@ -1568,6 +1568,30 @@ static void test_screen_text(void) {
     printf("screen: the time where the phone is, the battery, sending or silent, help before a stop\n");
 }
 
+/* An e-paper is not redrawn by the second: the satellites in the fix and a rider's age wait for the
+ * clock's minute, while the minute, our state and a call for help are drawn at once. */
+static void test_screen_due(void) {
+    node_t n;
+    node_init(&n, &CFG, 12345);
+    const int64_t t = T0 + 5 * SEC;
+    for (int64_t s = T0; s <= t; s += SEC) tick(&n, s);
+    n.riders[0] = (rider_t){.known = true, .via = 0, .rec_us = t - 119 * SEC};
+    screen_text_t shown, text;
+    screen_text(&n, t, false, 3845, false, 0, shown);
+    n.fix.sats++;
+    screen_text(&n, t + 2 * SEC, false, 3845, false, 0, text); /* another satellite, R1 1m -> 2m */
+    assert(strcmp(shown[2], text[2]) && strcmp(shown[4], text[4]) && !screen_due(shown, text));
+    screen_text(&n, t + 60 * SEC, false, 3845, false, 0, text);
+    assert(screen_due(shown, text));
+    n.state = STATE_STOP_SOON;
+    screen_text(&n, t + 2 * SEC, false, 3845, false, 0, text);
+    assert(screen_due(shown, text));
+    n.state = STATE_NORMAL, n.riders[0].rec.state = STATE_HELP;
+    screen_text(&n, t + 2 * SEC, false, 3845, false, 0, text);
+    assert(screen_due(shown, text));
+    printf("screen: the satellites and ages wait for the minute; a state or a call for help does not\n");
+}
+
 /* A letter where it belongs in the page layout the OLEDs take, and nothing past the screen's edge:
  * 12 letters and 4 lines on 128 x 64; 13 and 8 of the larger ones on 200 x 200. */
 static void test_screen_draw(void) {
@@ -1614,6 +1638,7 @@ int main(void) {
     test_api();
     test_api_log();
     test_screen_text();
+    test_screen_due();
     test_screen_draw();
     return 0;
 }

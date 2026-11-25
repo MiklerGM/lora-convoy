@@ -104,6 +104,10 @@ void screen_text(const node_t *n, int64_t now_us, bool phone, int battery_mv, bo
     }
 }
 
+bool screen_due(const screen_text_t shown, const screen_text_t text) {
+    return strcmp(shown[0], text[0]) || strcmp(shown[1], text[1]) || strcmp(shown[3], text[3]);
+}
+
 /* The charging mark, ours, in the fonts' layout and height: a bolt over the digits' rows. */
 const uint8_t screen_bolt[20] = {0x00, 0x00, 0x00, 0x00, 0x40, 0x1c, 0x60, 0x0e, 0x70, 0x07,
                                  0xf8, 0x03, 0xdc, 0x01, 0xcc, 0x00, 0x44, 0x00, 0x00, 0x00};
