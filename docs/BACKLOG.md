@@ -398,7 +398,8 @@ minute, at once for a state, a call for help or a press. Seen right on the L1 an
 (turned 180°); the Heltec's turned round for its case [owner, 2026-11-25].
 
 **Dark and lit, 2026-11-21**, after Meshtastic's (`src/PowerFSM.cpp`, `src/graphics/Screen.cpp`):
-an OLED goes dark 10 minutes after the board starts or its button is pressed, its controller's own
+an OLED goes dark 30 s after the board starts or its button is pressed (Meshtastic's 10 min until
+2026-11-26, when the owner found the Heltec's lit on the desk for no one), its controller's own
 display off, and a press lights it [owner: the button only; little happens unasked that a rider
 would look at, and a screen woken for it would spend the battery unseen]. Meshtastic wakes it for a
 text message, pairing and power too. The e-paper is never dark, needing no power to keep its

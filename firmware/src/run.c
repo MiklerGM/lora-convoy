@@ -477,11 +477,11 @@ static void screen_update(int battery_mv, bool now) {
 
 /* ---- the button, Bluetooth's health, and the status the phone gets unasked --------- */
 
-/* The screen is lit this long after start or a press of the button, then dark until the next press:
- * Meshtastic's default, and only the button wakes it [owner, 2026-11-21]: little happens unasked that
- * a rider would look at, and a screen woken for it would mostly spend the battery unseen. An e-paper
- * is never dark (port_screen_light). */
-#define SCREEN_LIT_US (10 * 60 * 1000000LL)
+/* The screen is lit this long after start or a press of the button, then dark until the next press
+ * [owner, 2026-11-26: 30 s, not Meshtastic's 10 min, the Heltec's lit on the desk for no one]. Only the
+ * button wakes it [owner, 2026-11-21]: little happens unasked that a rider would look at, and a screen
+ * woken for it would mostly spend the battery unseen. An e-paper is never dark (port_screen_light). */
+#define SCREEN_LIT_US (30 * 1000000LL)
 
 static void service_task(void *arg) {
     (void)arg;
