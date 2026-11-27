@@ -395,7 +395,8 @@ the riders known, how long since and through whom. The satellites and the ages d
 second [owner's suspicion, 2026-11-25: the T-Echo's fix or its count 95 times in 70 min, each a
 redraw]; since, they wait for the clock's minute, and the e-paper redraws, in part, about once a
 minute, at once for a state, a call for help or a press. Seen right on the L1 and the T-Echo
-(turned 180°); the Heltec's turned round for its case [owner, 2026-11-25].
+(turned 180°); the Heltec's turned round for its case [owner, 2026-11-25], and seen right in it
+[owner, 2026-11-26].
 
 **Dark and lit, 2026-11-21**, after Meshtastic's (`src/PowerFSM.cpp`, `src/graphics/Screen.cpp`):
 an OLED goes dark 30 s after the board starts or its button is pressed (Meshtastic's 10 min until
