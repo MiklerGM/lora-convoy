@@ -69,6 +69,12 @@
 #define PIN_GNSS_WAKE (1 * 32 + 2)
 #define PIN_GNSS_RESET (1 * 32 + 5)
 #define PIN_GNSS_PPS (1 * 32 + 4)
+/* The e-paper's lines as t_echo.dts has them, let go as the board switches off (Meshtastic's
+ * variant_shutdown). */
+#define PIN_EPD_CS (0 * 32 + 30)
+#define PIN_EPD_DC (0 * 32 + 28)
+#define PIN_EPD_RES (0 * 32 + 2)
+#define PIN_EPD_BUSY (0 * 32 + 3)
 /* Its clock ran 102-115 ppm off without a fix, the same in three holdovers (07, 2026-11-14), though
  * Meshtastic's board file says it has a 32 kHz crystal and the build asks for it. */
 #define NODE_DRIFT_PPM 150

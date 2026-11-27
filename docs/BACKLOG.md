@@ -405,7 +405,10 @@ display off, and a press lights it [owner: the button only; little happens unask
 would look at, and a screen woken for it would spend the battery unseen]. Meshtastic wakes it for a
 text message, pairing and power too. The e-paper is never dark, needing no power to keep its
 picture; each 20th redraw is whole, as Meshtastic's T-Echo, to clear what the partial ones leave.
-The button's hold of 3 s still forgets the phone. Still open: the OLED's draw while lit, measured.
+**One button, one hold, 2026-11-25** [owner], on all three boards while they run: a press lights the
+screen; held 3 s the screen asks, and letting go switches the board off (T-power); held on to 10 s
+the paired phone is forgotten instead, and the board stays on. Double and triple presses were
+weighed and left: a hold needs no timing. Still open: the OLED's draw while lit, measured.
 
 ### T-power: power
 
@@ -422,6 +425,10 @@ to GPS time, hit the same bits of every satellite's message so the orbits never 
 GNSS's quiet windows, one a minute ([PROTOCOL](PROTOCOL.md) `QUIET`), the T-Echo's by default;
 on trial on the desk. Open: whether the L1 or the Heltec need them, and whether neighbours a few
 metres off do any harm (then a window the whole group keeps).
+
+**Off, 2026-11-25** [owner]: the button's hold (T-board-ui) switches a board off: the radio asleep,
+the GNSS and screen off, then the nRF52s in System OFF, the Heltec in deep sleep with its
+GNSS's and screen's power cut; the button starts it again. Open: the current while off, measured.
 
 ### T-ledger: exporting the duty ledger
 

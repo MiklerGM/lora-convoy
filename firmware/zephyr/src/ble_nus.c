@@ -187,7 +187,7 @@ static enum bt_security_err on_pairing_accept(struct bt_conn *conn,
     (void)feat;
     if (s_clear_in_progress || s_restart_pending || s_store_indeterminate ||
         s_owner_unverified || bonds_of(NULL).count > 0) {
-        LOGW(TAG, "repeat pairing refused; use authenticated FORGET or hold the button 3 s");
+        LOGW(TAG, "repeat pairing refused; use authenticated FORGET or hold the button 10 s");
         return BT_SECURITY_ERR_PAIR_NOT_ALLOWED;
     }
     return BT_SECURITY_ERR_SUCCESS;
@@ -723,7 +723,7 @@ void ble_nus_init(ble_nus_line_cb on_line, ble_nus_revoke_cb on_revoke,
     if (s_scan.owners != loaded) {
         s_owner_unverified = true;
         LOGE(TAG, "bond store unverified (%d stored, %d loaded): no new phone until the button "
-             "is held 3 s", s_scan.owners, loaded);
+             "is held 10 s", s_scan.owners, loaded);
     }
 
     /*

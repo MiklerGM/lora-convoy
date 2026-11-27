@@ -48,6 +48,7 @@ bool port_setup_load(void *buf, size_t len);
 bool port_setup_save(const void *buf, size_t len);
 
 bool port_button_down(void);
+void port_power_off(void);
 bool port_screen_size(int *w, int *h);
 void port_screen_show(const uint8_t *buf);
 bool port_screen_light(bool on);
@@ -71,6 +72,8 @@ int64_t port_radio_irq_us(void);
 
 uint32_t port_random(void);
 size_t port_device_id(uint8_t *out, size_t cap);
+
+#define PIN_VEXT 36 /* low powers the OLED, and the radio's front end */
 
 static inline void port_pin_output(int pin) {
     gpio_config_t c = {.pin_bit_mask = 1ULL << pin, .mode = GPIO_MODE_OUTPUT};

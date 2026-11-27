@@ -1568,6 +1568,31 @@ static void test_screen_text(void) {
     printf("screen: the time where the phone is, the battery, sending or silent, help before a stop\n");
 }
 
+/* The button held ms and let go: what it asked on the way, and what letting go does. */
+static button_act_t hold(uint32_t ms, int *asks, int *forgets) {
+    uint32_t held = 0;
+    *asks = *forgets = 0;
+    assert(api_button(&held, true, 100) == BUTTON_PRESS);
+    for (uint32_t t = 200; t <= ms; t += 100) {
+        const button_act_t a = api_button(&held, true, 100);
+        assert(a == BUTTON_NONE || a == BUTTON_ASK_OFF || a == BUTTON_FORGET);
+        *asks += a == BUTTON_ASK_OFF, *forgets += a == BUTTON_FORGET;
+    }
+    return api_button(&held, false, 100);
+}
+
+/* One hold on every board [owner, 2026-11-25]: a press only lights the screen; 3 s asks, and letting
+ * go switches off; held on to 10 s, the phone is forgotten instead and the board stays on. */
+static void test_button(void) {
+    int asks, forgets;
+    assert(hold(2900, &asks, &forgets) == BUTTON_NONE && !asks && !forgets);
+    assert(hold(3000, &asks, &forgets) == BUTTON_OFF && asks == 1 && !forgets);
+    assert(hold(9900, &asks, &forgets) == BUTTON_OFF && asks == 1 && !forgets);
+    assert(hold(10000, &asks, &forgets) == BUTTON_BACK && asks == 1 && forgets == 1);
+    assert(hold(60000, &asks, &forgets) == BUTTON_BACK && asks == 1 && forgets == 1);
+    printf("button: a press lights, 3 s and let go switches off, 10 s forgets the phone instead\n");
+}
+
 /* An e-paper is not redrawn by the second: the satellites in the fix and a rider's age wait for the
  * clock's minute, while the minute, our state and a call for help are drawn at once. */
 static void test_screen_due(void) {
@@ -1639,6 +1664,7 @@ int main(void) {
     test_api_log();
     test_screen_text();
     test_screen_due();
+    test_button();
     test_screen_draw();
     return 0;
 }

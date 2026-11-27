@@ -90,7 +90,8 @@ the RIDER lines stop, and their `rssi=` and `snr=` before that. `MODE 7 250` goe
 - Your state: a list of the five; beside it how many riders known have it, `1/2`, or `✓` for all.
 - The main screen lists the riders as the board knows them: their state, how old their position
   is, and `via` whom when the board has them only from another rider.
-- Forget this board, or the board's button held 3 s: the phone can pair again.
+- Forget this board, or the board's button held 10 s: the phone can pair again. Held 3 s and let
+  go, the board switches off; a press starts it again.
 - Share log: the days picked of the week kept (today's ticked), a file a day of everything to and
   from the board, as `lab/con.py` writes the
   cable's (`HH:MM:SS.mmm` of the phone, `> ` what was sent, `# ` the link), the board's own lines

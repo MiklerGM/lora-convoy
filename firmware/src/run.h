@@ -13,9 +13,6 @@ void run_start(const char *board, const char *reset);
 #define RESTART_NOTE_MAGIC 0x5E70C000u
 enum { RESTART_FOR_BLE = 1, RESTART_FOR_BOND = 2 };
 
-/* Hold the board's button this long to forget the paired phone. */
-#define PAIR_HOLD_MS 3000
-
 /* Why the board last started, as status lines report it in reset=: ble_stuck and bond_reset as
  * well as the chip's own causes. Call once, at startup: a restart note is consumed by reading it. */
 const char *run_reset_name(void);

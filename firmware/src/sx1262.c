@@ -14,6 +14,7 @@
 /* ---- chip constants ------------------------------------------------------ */
 
 #define CMD_SET_STANDBY          0x80
+#define CMD_SET_SLEEP            0x84
 #define CMD_SET_TX               0x83
 #define CMD_SET_RX               0x82
 #define CMD_SET_RF_FREQUENCY     0x86
@@ -540,3 +541,16 @@ size_t radio_receive(uint8_t *out, size_t cap, uint32_t wait_ms, int *rssi_dbm, 
 }
 
 int radio_tx_dbm(uint8_t level) { return TX_DBM[level & 3]; }
+
+bool radio_sleep(void) {
+    if (!bus_lock()) return false;
+    /* Cold: nothing kept, as the board starts again when woken. BUSY stays high while it sleeps, so
+     * no wait after, as xfer would. */
+    const uint8_t tx[2] = {CMD_SET_SLEEP, 0x00};
+    uint8_t rx[2];
+    const bool ok = wait_busy(100) && port_radio_spi_xfer(tx, rx, sizeof(tx));
+    s_in_rx = false;
+    s_applied = false;
+    bus_unlock();
+    return ok;
+}

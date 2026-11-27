@@ -22,6 +22,9 @@ bool radio_apply(const phy_t *phy, uint8_t power_level);
  * reset itself comes back with its default sync word. */
 bool radio_verify(void);
 
+/* Asleep, as the board switches off: the chip draws next to nothing until it is reset. */
+bool radio_sleep(void);
+
 /* Sends one packet and waits for it to leave; then listens again. *done_us gets its TxDone as
  * DIO1's interrupt stamped it, or 0 when no edge came after the flags were cleared (E0). */
 bool radio_send(const uint8_t *data, size_t len, int64_t *done_us);

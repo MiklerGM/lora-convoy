@@ -72,6 +72,7 @@ int64_t port_radio_irq_us(void) { return s_dio1_us; }
 
 /* ---- the chip ---------------------------------------------------------------- */
 
+#define MODE_SLEEP 0
 #define MODE_STANDBY 2
 #define MODE_RX 5
 
@@ -119,6 +120,7 @@ static int spi_device_polling_transmit(spi_device_handle_t spi, spi_transaction_
             if (!chip.dio1_dead && (chip.dio1_mask & IRQ_TX_DONE)) s_dio1_us = s_now_us + 777;
             break;
         case CMD_SET_STANDBY: chip.mode = MODE_STANDBY; break;
+        case CMD_SET_SLEEP: chip.mode = MODE_SLEEP; break;
         case CMD_SET_RX: chip.mode = MODE_RX; break;
         case CMD_GET_IRQ_STATUS: rx[3] = IRQ_TX_DONE; break;
     }
@@ -205,5 +207,9 @@ int main(void) {
     chip.regs[REG_LORA_SYNC_MSB + 1] = 0x24;
     assert(!radio_verify());
     printf("sx1262: a chip back at its defaults is noticed\n");
+
+    /* Switched off, the chip sleeps rather than listens, and is not called healthy. */
+    assert(radio_apply(&PHY_V0, 3) && radio_sleep() && chip.mode == MODE_SLEEP && !radio_verify());
+    printf("sx1262: switched off, it sleeps\n");
     return 0;
 }

@@ -49,6 +49,8 @@
  *   bool    port_setup_save(const void *buf, size_t len) the group's key, the slot, the interval
  *
  *   bool    port_button_down(void)              the board's one button, held
+ *   void    port_power_off(void)                the board off, what it carries unpowered or asleep;
+ *                                               its button starts it again, as at power-up. Never returns
  *
  *   bool    port_screen_size(int *w, int *h)    the screen's pixels; false on a board without one
  *   void    port_screen_show(const uint8_t *buf) a picture as screen_draw makes it for that size

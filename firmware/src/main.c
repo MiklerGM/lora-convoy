@@ -2,6 +2,7 @@
  * LoRa Convoy on the Heltec WiFi LoRa 32 V4.3 (ESP-IDF): storage, the button and the GNSS kit's
  * power and control lines, then the same firmware as every board (run.c).
  */
+#include "driver/rtc_io.h"
 #include "port.h"
 #include "run.h"
 
@@ -15,6 +16,13 @@ static void erase_nvs(void) { ESP_ERROR_CHECK(nvs_flash_erase()); }
 void app_main(void) {
     const char *reset = run_reset_name();
     const int watch = port_wdt_watch();
+    /* What port_power_off held through deep sleep let go, and BOOT, an RTC pad for waking, a GPIO again */
+    gpio_deep_sleep_hold_dis();
+    gpio_hold_dis((gpio_num_t)PIN_VEXT);
+#ifdef PIN_GNSS_EN
+    gpio_hold_dis((gpio_num_t)PIN_GNSS_EN);
+#endif
+    rtc_gpio_deinit((gpio_num_t)PIN_PAIR_BUTTON);
     gpio_config_t button = {
         .pin_bit_mask = 1ULL << PIN_PAIR_BUTTON,
         .mode = GPIO_MODE_INPUT,

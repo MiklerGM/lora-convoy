@@ -104,3 +104,13 @@ int api_status(const api_t *api, int64_t now_us, char *buf, size_t cap);
  * between them. True when the mode asked for changed: the caller applies the radio, as after MODE.
  * Nothing without a time. The caller holds the node's lock. */
 bool api_tour(api_t *api, int64_t now_us);
+
+/* The board's one button, as the hand on it asks [owner, 2026-11-25]: a press lights the screen; held
+ * BUTTON_OFF_MS the screen asks to let go, and letting go switches the board off; held on to
+ * BUTTON_FORGET_MS the paired phone is forgotten instead, and letting go then only takes the question
+ * away. One gesture on every board, while it runs: a hold as it starts would meet the bootloader. The
+ * caller ticks it every tick_ms with whether the button is down; *held_ms is its own. */
+#define BUTTON_OFF_MS 3000
+#define BUTTON_FORGET_MS 10000
+typedef enum { BUTTON_NONE, BUTTON_PRESS, BUTTON_ASK_OFF, BUTTON_FORGET, BUTTON_OFF, BUTTON_BACK } button_act_t;
+button_act_t api_button(uint32_t *held_ms, bool down, uint32_t tick_ms);

@@ -91,6 +91,8 @@ static atomic_bool s_reapply = ATOMIC_VAR_INIT(false);
 /* Our state newly carried by another rider: the status goes to the phone now, not in up to 10 s (D16). */
 static atomic_bool s_status_now = ATOMIC_VAR_INIT(false);
 static atomic_bool s_restart_after_bond_clear = ATOMIC_VAR_INIT(false);
+/* Switching off (the button): the radio task puts the radio to sleep, says so, and stops. */
+static atomic_bool s_off = ATOMIC_VAR_INIT(false), s_radio_asleep = ATOMIC_VAR_INIT(false);
 static const char *s_reset = "other";
 
 /* Console lines start with a word a bench script can look for: TX, RX, RIDER, STATUS, GNSS. */
@@ -118,11 +120,11 @@ const char *run_reset_name(void) {
 
 void run_erase_when_asked(const char *why, int watch, void (*erase)(void)) {
     int held_ms = 0, quiet_ms = 0;
-    while (held_ms < PAIR_HOLD_MS) {
+    while (held_ms < BUTTON_FORGET_MS) {
         port_wdt_feed(watch);
         if (quiet_ms == 0) {
             LOGE(TAG, "storage will not open (%s): bluetooth stays off until the button is held for %d s, "
-                 "which erases it and forgets the paired phone", why, PAIR_HOLD_MS / 1000);
+                 "which erases it and forgets the paired phone", why, BUTTON_FORGET_MS / 1000);
         }
         quiet_ms = (quiet_ms + 100) % 10000;
         held_ms = port_button_down() ? held_ms + 100 : 0;
@@ -130,7 +132,7 @@ void run_erase_when_asked(const char *why, int watch, void (*erase)(void)) {
     }
     LOGW(TAG, "button held - erasing storage");
     erase();
-    /* Released before the button task starts, which would read the same hold as a FORGET. */
+    /* Released before the button task starts, which would read the same hold as a FORGET or an OFF. */
     while (port_button_down()) {
         port_wdt_feed(watch);
         port_sleep_ms(100);
@@ -381,6 +383,11 @@ static void radio_task(void *arg) {
     static char rider_lines[1 + PKT_PASSENGERS_MAX][API_LINE];
     for (;;) {
         port_wdt_feed(watch);
+        if (atomic_load(&s_off)) {
+            if (!radio_sleep()) LOGW(TAG, "radio: no sleep");
+            atomic_store(&s_radio_asleep, true);
+            for (;;) port_sleep_ms(1000);
+        }
         uint8_t buf[256];
         int rssi = 0, snr = 0;
         /* Listening until shortly before our slot, at most 20 ms at a time. */
@@ -458,21 +465,51 @@ static void radio_task(void *arg) {
 
 /* ---- the screen: redrawn when what it says has changed, as screen_due says or now ---- */
 
-static void screen_update(int battery_mv, bool now) {
-    static screen_text_t text, shown;
+static screen_text_t s_shown;
+static bool s_shown_any;
+
+static void screen_show(const screen_text_t text) {
     static uint8_t buf[SCREEN_BYTES];
-    static bool any;
     int w, h;
     if (!port_screen_size(&w, &h) || w * h / 8 > SCREEN_BYTES) return;
+    screen_draw(text, buf, w, h);
+    port_screen_show(buf);
+}
+
+static void screen_update(int battery_mv, bool now) {
+    static screen_text_t text;
     const bool phone = ble_nus_connected(), usb = port_usb_power();
     port_mutex_lock(s_lock);
     screen_text(&s_node, port_uptime_us(), phone, battery_mv, usb, s_api.zone_min, text);
     port_mutex_give(s_lock);
-    if (any && (memcmp(text, shown, sizeof(text)) == 0 || (!now && !screen_due(shown, text)))) return;
-    any = true;
-    memcpy(shown, text, sizeof(text));
-    screen_draw((const char (*)[SCREEN_COLS + 1])text, buf, w, h);
-    port_screen_show(buf);
+    if (s_shown_any && (memcmp(text, s_shown, sizeof(text)) == 0 || (!now && !screen_due(s_shown, text)))) return;
+    s_shown_any = true;
+    memcpy(s_shown, text, sizeof(text));
+    screen_show((const char (*)[SCREEN_COLS + 1])text);
+}
+
+/* What the button is about to do, in place of the rest until it is let go; screen_update then
+ * draws everything anew. */
+static void screen_say(const char *a, const char *b, const char *c) {
+    static screen_text_t text;
+    memset(text, 0, sizeof(text));
+    snprintf(text[0], sizeof(text[0]), "%s", a);
+    snprintf(text[1], sizeof(text[1]), "%s", b);
+    snprintf(text[2], sizeof(text[2]), "%s", c);
+    s_shown_any = false;
+    screen_show((const char (*)[SCREEN_COLS + 1])text);
+}
+
+/* The button let go after BUTTON_OFF_MS: the screen says so last (an e-paper keeps it while off),
+ * the radio asleep, the GNSS and the screen off, then the board; its button starts it again. */
+static void switch_off(void) {
+    note("OFF by the button");
+    screen_say("OFF", "Press to", "switch on");
+    atomic_store(&s_off, true);
+    for (int i = 0; i < 40 && !atomic_load(&s_radio_asleep); i++) port_sleep_ms(50);
+    gnss_power(false);
+    port_screen_light(false);
+    port_power_off();
 }
 
 /* ---- the button, Bluetooth's health, and the status the phone gets unasked --------- */
@@ -486,8 +523,9 @@ static void screen_update(int battery_mv, bool now) {
 static void service_task(void *arg) {
     (void)arg;
     const int watch = port_wdt_watch();
-    int held_ms = 0, tick_ms = 0, status_ms = 0, battery_s = 0, battery_mv = 0;
-    bool fired = false, dark = false;
+    int tick_ms = 0, status_ms = 0, battery_s = 0, battery_mv = 0;
+    uint32_t held_ms = 0;
+    bool dark = false, asking = false;
     int64_t lit_until = port_uptime_us() + SCREEN_LIT_US;
     char text[API_LINE];
     for (;;) {
@@ -511,7 +549,7 @@ static void service_task(void *arg) {
                 }
                 if (!mv) battery_mv = 0;
             }
-            if (!dark) screen_update(battery_mv, false);
+            if (!dark && !asking) screen_update(battery_mv, false);
             if (!dark && port_uptime_us() >= lit_until && port_screen_light(false)) {
                 dark = true;
                 LOGI(TAG, "screen dark until the button");
@@ -545,26 +583,35 @@ static void service_task(void *arg) {
             }
         }
         const bool down = port_button_down();
-        if (down) {
-            held_ms += 100;
-            /* a press lights the screen, drawn first so that it wakes on the present: the e-paper's
-             * too, with the satellites and ages that waited for the minute */
-            if (held_ms == 100) {
+        switch (api_button(&held_ms, down, 100)) {
+            case BUTTON_PRESS:
+                /* a press lights the screen, drawn first so that it wakes on the present: the
+                 * e-paper's too, with the satellites and ages that waited for the minute */
                 lit_until = port_uptime_us() + SCREEN_LIT_US;
                 screen_update(battery_mv, true);
                 if (dark) {
                     dark = !port_screen_light(true);
                     LOGI(TAG, "screen lit by the button");
                 }
-            }
-            if (held_ms >= PAIR_HOLD_MS && !fired) {
-                fired = true; /* once per press */
+                break;
+            case BUTTON_ASK_OFF:
+                asking = true;
+                screen_say("Let go: OFF", "Hold 10 s:", "forget phone");
+                break;
+            case BUTTON_FORGET:
                 LOGW(TAG, "button held - forgetting the paired phone");
                 if (!ble_nus_request_forget_bonds()) LOGE(TAG, "the reset could not be scheduled");
-            }
-        } else {
-            held_ms = 0;
-            fired = false;
+                screen_say("Phone", "forgotten", "");
+                break;
+            case BUTTON_BACK:
+                asking = false;
+                screen_update(battery_mv, true);
+                break;
+            case BUTTON_OFF:
+                switch_off();
+                break;
+            default:
+                break;
         }
         if (!down && atomic_load(&s_restart_after_bond_clear)) {
             /* The restart also clears the controller's resolving list. FORGOTTEN gets time to

@@ -287,3 +287,16 @@ bool api_tour(api_t *api, int64_t now_us) {
     phy->bw_hz = STOP[i].bw_hz;
     return true;
 }
+
+button_act_t api_button(uint32_t *held_ms, bool down, uint32_t tick_ms) {
+    const uint32_t was = *held_ms;
+    if (!down) {
+        *held_ms = 0;
+        return was >= BUTTON_FORGET_MS ? BUTTON_BACK : was >= BUTTON_OFF_MS ? BUTTON_OFF : BUTTON_NONE;
+    }
+    *held_ms = was + tick_ms;
+    if (was == 0) return BUTTON_PRESS;
+    if (was < BUTTON_OFF_MS && *held_ms >= BUTTON_OFF_MS) return BUTTON_ASK_OFF;
+    if (was < BUTTON_FORGET_MS && *held_ms >= BUTTON_FORGET_MS) return BUTTON_FORGET;
+    return BUTTON_NONE;
+}

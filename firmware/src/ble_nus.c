@@ -363,7 +363,7 @@ static int on_gap(struct ble_gap_event *event, void *arg) {
             /* Just Works authenticates no human. Automatically replacing an existing key here
              * lets a peer that presents the owner's identity address erase the real owner and
              * claim the board. Only encrypted FORGET or the physical runtime button may do so. */
-            ESP_LOGW(TAG, "repeat pairing refused; use authenticated FORGET or hold BOOT 3 s");
+            ESP_LOGW(TAG, "repeat pairing refused; use authenticated FORGET or hold BOOT 10 s");
             return BLE_GAP_REPEAT_PAIRING_IGNORE;
         }
         case BLE_GAP_EVENT_MTU:

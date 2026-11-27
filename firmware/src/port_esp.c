@@ -211,7 +211,6 @@ size_t port_device_id(uint8_t *out, size_t cap) {
 #include "esp_lcd_panel_ssd1306.h"
 #include "esp_lcd_panel_vendor.h"
 
-#define PIN_VEXT 36       /* low powers the OLED */
 #define PIN_OLED_SDA 17
 #define PIN_OLED_SCL 18
 #define PIN_OLED_RST 21
@@ -297,4 +296,25 @@ int port_battery_mv(void) {
     port_pin_set(PIN_ADC_CTRL, 0);
     /* the divider, 4.9, and Meshtastic's 4.5% for this board (ADC_MULTIPLIER) */
     return ok ? mv * 4900 * 1045 / 1000000 : 0;
+}
+
+/* ---- off ---------------------------------------------------------------------------- */
+
+#include "driver/rtc_io.h"
+#include "esp_sleep.h"
+
+/* Deep sleep: the OLED and the radio's front end unpowered (Vext high) and the GNSS kit's switch
+ * open (run.c's gnss_power), both held so through it; BOOT, pulled up, wakes it into a fresh start.
+ * main.c lets the held pins go. */
+void port_power_off(void) {
+    port_pin_set(PIN_VEXT, 1);
+    gpio_hold_en((gpio_num_t)PIN_VEXT);
+#ifdef PIN_GNSS_EN
+    gpio_hold_en((gpio_num_t)PIN_GNSS_EN);
+#endif
+    gpio_deep_sleep_hold_en();
+    esp_sleep_enable_ext0_wakeup((gpio_num_t)PIN_PAIR_BUTTON, 0);
+    rtc_gpio_pullup_en((gpio_num_t)PIN_PAIR_BUTTON);
+    rtc_gpio_pulldown_dis((gpio_num_t)PIN_PAIR_BUTTON);
+    esp_deep_sleep_start();
 }

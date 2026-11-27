@@ -14,6 +14,7 @@
 #include <zephyr/logging/log.h>
 #include <zephyr/random/random.h>
 #include <zephyr/settings/settings.h>
+#include <zephyr/sys/poweroff.h>
 #include <zephyr/sys/reboot.h>
 #include <zephyr/sys/ring_buffer.h>
 #include <zephyr/task_wdt/task_wdt.h>
@@ -204,6 +205,27 @@ bool port_button_down(void) {
         ready = gpio_pin_configure_dt(&s_button, GPIO_INPUT) == 0;
     }
     return ready && gpio_pin_get_dt(&s_button) == 1;
+}
+
+/* System OFF, the button set to wake it into a fresh start. The T-Echo's peripherals lose their
+ * power: its e-paper, done drawing, keeps the last picture, and its lines are let go first so nothing
+ * leaks into it (Meshtastic's variant_shutdown). Elsewhere run.c has put them to sleep. The
+ * bootloader would take the button held as it wakes for a call to it: Adafruit's DFU_MAGIC_SKIP
+ * tells it not to look, as Meshtastic's cpuDeepSleep does. */
+void port_power_off(void) {
+#ifdef PIN_POWER_EN
+    for (int i = 0; i < 300 && port_pin_get(PIN_EPD_BUSY); i++) k_msleep(10);
+    port_pin_input(PIN_EPD_CS);
+    port_pin_input(PIN_EPD_DC);
+    port_pin_input(PIN_EPD_RES);
+    port_pin_input(PIN_EPD_BUSY);
+    port_pin_set(PIN_POWER_EN, 0);
+    port_pin_input(PIN_POWER_EN);
+#endif
+    nrf_power_gpregret_set(NRF_POWER, 0, 0x6d);
+    gpio_pin_configure_dt(&s_button, GPIO_INPUT);
+    gpio_pin_interrupt_configure_dt(&s_button, GPIO_INT_LEVEL_ACTIVE);
+    sys_poweroff();
 }
 
 /* ---- the radio's bus -------------------------------------------------------- */
