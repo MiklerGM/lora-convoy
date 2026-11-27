@@ -52,10 +52,11 @@ void screen_text(const node_t *n, int64_t now_us, bool phone, int battery_mv, bo
         const long long m = ((utc / 60000000 + zone_min) % 1440 + 1440) % 1440;
         snprintf(clock, sizeof(clock), "%02lld:%02lld", m / 60, m % 60);
     }
-    /* Under 2.5 V there is no cell: a Heltec without one reads its divider's noise. Over 4.4 V, more
-     * than a cell gives, the divider sees USB, not the cell (the T-Echo's, through a diode, 4.74 V),
-     * so there is no charge to tell. On USB a cell under full is marked charging; at full the mark
-     * goes, which is all its voltage says: no charger on these boards tells the chip it is done. */
+    /* Under 2.5 V there is no cell, or no reading. Over 4.4 V, more than a cell gives, the divider
+     * sees USB, not the cell (the T-Echo's, through a diode, 4.74 V; the Heltec's charger with no cell,
+     * 4.36 to 4.44 V), so there is no charge to tell. On USB a cell under full is marked charging; at
+     * full the mark goes, which is all its voltage says: no charger on these boards tells the chip it
+     * is done. */
     if (battery_mv > SCREEN_USB_MV || (usb && battery_mv < 2500)) {
         snprintf(battery, sizeof(battery), "USB");
     } else if (battery_mv >= 2500) {

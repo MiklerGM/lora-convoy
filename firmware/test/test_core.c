@@ -1541,7 +1541,7 @@ static void test_screen_text(void) {
     screen_text(&n, t, true, 3000, false, 0, text);
     assert(!strcmp(text[3], "R1 STOP") && !strcmp(text[0], "12:00 BT  0%"));
     n.riders[0].rec.state = STATE_NORMAL;
-    screen_text(&n, t, true, 57, false, 0, text); /* a Heltec with no cell */
+    screen_text(&n, t, true, 57, false, 0, text); /* no cell */
     assert(!strcmp(text[3], "riders 1/3") && !strcmp(text[0], "12:00 BT"));
     /* a cell nearly empty asks for a charge where the riders heard were; charging, it does not */
     screen_text(&n, t, false, 3300, false, 0, text);
@@ -1574,7 +1574,7 @@ static void test_screen_text(void) {
 }
 
 /* Off on an empty cell [owner, 2026-11-26], never on the cable, where a charging cell reads low, nor
- * on a Heltec with no cell, its divider's noise. */
+ * with no cell. */
 static void test_battery_empty(void) {
     static const struct { int mv; bool usb, off; } rows[] = {
         {BATTERY_EMPTY_MV - 1, false, true}, {BATTERY_EMPTY_MV, false, false},

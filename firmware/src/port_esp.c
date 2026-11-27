@@ -294,8 +294,9 @@ int port_battery_mv(void) {
     int raw = 0, mv = 0;
     const bool ok = adc_oneshot_read(adc, BATTERY_CHANNEL, &raw) == ESP_OK && adc_cali_raw_to_voltage(cali, raw, &mv) == ESP_OK;
     port_pin_set(PIN_ADC_CTRL, 0);
-    /* the divider, 4.9, and Meshtastic's 4.5% for this board (ADC_MULTIPLIER) */
-    return ok ? mv * 4900 * 1045 / 1000000 : 0;
+    /* the divider, 4.9, and Meshtastic's 4.5% for this board (ADC_MULTIPLIER); in 64 bits, as in 32 the
+     * product passed 2^31 above 2.15 V and a charged cell read some hundred mV below zero [2026-11-27] */
+    return ok ? (int)((int64_t)mv * 4900 * 1045 / 1000000) : 0;
 }
 
 /* ---- off ---------------------------------------------------------------------------- */
