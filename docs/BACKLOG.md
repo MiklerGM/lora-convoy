@@ -407,8 +407,10 @@ text message, pairing and power too. The e-paper is never dark, needing no power
 picture; each 20th redraw is whole, as Meshtastic's T-Echo, to clear what the partial ones leave.
 **One button, one hold, 2026-11-25** [owner], on all three boards while they run: a press lights the
 screen; held 3 s the screen asks, and letting go switches the board off (T-power); held on to 10 s
-the paired phone is forgotten instead, and the board stays on. Double and triple presses were
-weighed and left: a hold needs no timing. Still open: the OLED's draw while lit, measured.
+the paired phone is forgotten instead, and the board stays on. The T-Echo's touch pad lights its
+screen 15 s and draws it anew (held 200 ms, as Meshtastic's, since its own sends flick the pad).
+Double and triple presses were weighed and left: a hold needs no timing. Still open: the OLED's
+draw while lit, measured.
 
 ### T-power: power
 
@@ -427,7 +429,7 @@ on trial on the desk. Open: whether the L1 or the Heltec need them, and whether 
 metres off do any harm (then a window the whole group keeps).
 
 **Off, 2026-11-25** [owner]: the button's hold (T-board-ui) switches a board off: the radio asleep,
-the GNSS and screen off, then the nRF52s in System OFF, the Heltec in deep sleep with its
+the GNSS, screen and light off, then the nRF52s in System OFF, the Heltec in deep sleep with its
 GNSS's and screen's power cut; the button starts it again. Open: the current while off, measured.
 
 ### T-ledger: exporting the duty ledger

@@ -318,3 +318,6 @@ void port_power_off(void) {
     rtc_gpio_pulldown_dis((gpio_num_t)PIN_PAIR_BUTTON);
     esp_deep_sleep_start();
 }
+
+bool port_touch_down(void) { return false; }
+void port_backlight(bool on) { (void)on; }

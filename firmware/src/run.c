@@ -508,6 +508,7 @@ static void switch_off(void) {
     atomic_store(&s_off, true);
     for (int i = 0; i < 40 && !atomic_load(&s_radio_asleep); i++) port_sleep_ms(50);
     gnss_power(false);
+    port_backlight(false);
     port_screen_light(false);
     port_power_off();
 }
@@ -519,14 +520,16 @@ static void switch_off(void) {
  * button wakes it [owner, 2026-11-21]: little happens unasked that a rider would look at, and a screen
  * woken for it would mostly spend the battery unseen. An e-paper is never dark (port_screen_light). */
 #define SCREEN_LIT_US (30 * 1000000LL)
+/* The T-Echo's screen light, after a touch of its pad [owner, 2026-11-25]. */
+#define SCREEN_LIGHT_US (15 * 1000000LL)
 
 static void service_task(void *arg) {
     (void)arg;
     const int watch = port_wdt_watch();
-    int tick_ms = 0, status_ms = 0, battery_s = 0, battery_mv = 0;
+    int tick_ms = 0, status_ms = 0, battery_s = 0, battery_mv = 0, touch_ms = 0;
     uint32_t held_ms = 0;
     bool dark = false, asking = false;
-    int64_t lit_until = port_uptime_us() + SCREEN_LIT_US;
+    int64_t lit_until = port_uptime_us() + SCREEN_LIT_US, light_until = 0;
     char text[API_LINE];
     for (;;) {
         port_wdt_feed(watch);
@@ -612,6 +615,18 @@ static void service_task(void *arg) {
                 break;
             default:
                 break;
+        }
+        /* The T-Echo's touch pad: its screen's light a while, and the screen drawn anew. Held two
+         * ticks, as Meshtastic waits 200 ms: the board's own sending can flick it (touchQuirk). */
+        touch_ms = port_touch_down() ? touch_ms + 100 : 0;
+        if (touch_ms == 200) {
+            light_until = port_uptime_us() + SCREEN_LIGHT_US;
+            port_backlight(true);
+            screen_update(battery_mv, true);
+        }
+        if (light_until && port_uptime_us() >= light_until) {
+            light_until = 0;
+            port_backlight(false);
         }
         if (!down && atomic_load(&s_restart_after_bond_clear)) {
             /* The restart also clears the controller's resolving list. FORGOTTEN gets time to

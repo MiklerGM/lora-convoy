@@ -49,6 +49,8 @@ bool port_setup_save(const void *buf, size_t len);
 
 bool port_button_down(void);
 void port_power_off(void);
+bool port_touch_down(void);
+void port_backlight(bool on);
 bool port_screen_size(int *w, int *h);
 void port_screen_show(const uint8_t *buf);
 bool port_screen_light(bool on);

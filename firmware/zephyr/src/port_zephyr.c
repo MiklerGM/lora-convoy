@@ -228,6 +228,23 @@ void port_power_off(void) {
     sys_poweroff();
 }
 
+#ifdef PIN_TOUCH
+bool port_touch_down(void) {
+    static bool ready;
+    if (!ready) ready = gpio_pin_configure(pin_port(PIN_TOUCH), PIN_TOUCH % 32, GPIO_INPUT | GPIO_PULL_UP) == 0;
+    return ready && port_pin_get(PIN_TOUCH) == 0;
+}
+
+void port_backlight(bool on) {
+    static bool ready;
+    if (!ready) port_pin_output(PIN_BACKLIGHT), ready = true;
+    port_pin_set(PIN_BACKLIGHT, on);
+}
+#else
+bool port_touch_down(void) { return false; }
+void port_backlight(bool on) { (void)on; }
+#endif
+
 /* ---- the radio's bus -------------------------------------------------------- */
 
 static struct spi_dt_spec s_spi =
