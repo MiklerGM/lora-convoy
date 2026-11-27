@@ -500,11 +500,12 @@ static void screen_say(const char *a, const char *b, const char *c) {
     screen_show((const char (*)[SCREEN_COLS + 1])text);
 }
 
-/* The button let go after BUTTON_OFF_MS: the screen says so last (an e-paper keeps it while off),
- * the radio asleep, the GNSS and the screen off, then the board; its button starts it again. */
-static void switch_off(void) {
-    note("OFF by the button");
-    screen_say("OFF", "Press to", "switch on");
+/* The button let go after BUTTON_OFF_MS, or the cell empty: the screen says why last (an e-paper
+ * keeps it while off), the radio asleep, the GNSS and the screen off, then the board; its button
+ * starts it again. */
+static void switch_off(const char *why, const char *a, const char *b, const char *c) {
+    note(why);
+    screen_say(a, b, c);
     atomic_store(&s_off, true);
     for (int i = 0; i < 40 && !atomic_load(&s_radio_asleep); i++) port_sleep_ms(50);
     gnss_power(false);
@@ -526,7 +527,7 @@ static void switch_off(void) {
 static void service_task(void *arg) {
     (void)arg;
     const int watch = port_wdt_watch();
-    int tick_ms = 0, status_ms = 0, battery_s = 0, battery_mv = 0, touch_ms = 0;
+    int tick_ms = 0, status_ms = 0, battery_s = 0, battery_mv = 0, touch_ms = 0, empty = 0;
     uint32_t held_ms = 0;
     bool dark = false, asking = false;
     int64_t lit_until = port_uptime_us() + SCREEN_LIT_US, light_until = 0;
@@ -551,6 +552,12 @@ static void service_task(void *arg) {
                     battery_mv = mv;
                 }
                 if (!mv) battery_mv = 0;
+                /* twice running, so one reading under a send's load does not switch it off */
+                empty = screen_battery_below(mv, port_usb_power(), BATTERY_EMPTY_MV) ? empty + 1 : 0;
+                if (empty >= 2) {
+                    snprintf(text, sizeof(text), "OFF: battery empty, %d mV", mv);
+                    switch_off(text, "Battery", "empty:", "charge me");
+                }
             }
             if (!dark && !asking) screen_update(battery_mv, false);
             if (!dark && port_uptime_us() >= lit_until && port_screen_light(false)) {
@@ -611,7 +618,7 @@ static void service_task(void *arg) {
                 screen_update(battery_mv, true);
                 break;
             case BUTTON_OFF:
-                switch_off();
+                switch_off("OFF by the button", "OFF", "Press to", "switch on");
                 break;
             default:
                 break;

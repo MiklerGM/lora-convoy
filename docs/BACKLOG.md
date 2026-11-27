@@ -430,7 +430,13 @@ metres off do any harm (then a window the whole group keeps).
 
 **Off, 2026-11-25** [owner]: the button's hold (T-board-ui) switches a board off: the radio asleep,
 the GNSS, screen and light off, then the nRF52s in System OFF, the Heltec in deep sleep with its
-GNSS's and screen's power cut; the button starts it again. Open: the current while off, measured.
+GNSS's and screen's power cut; the button starts it again. **And on an empty cell, 2026-11-26**
+[owner]: below 3.35 V the screen asks "charge me" where the riders heard were; below 3.2 V twice
+running (10 s apart) the board goes off by itself; never on USB, nor with no cell. Why: the T-Echo,
+taken out half charged on 2026-11-25, sent every 2 s for 6 h 46 min, then browned out and started
+again by itself 38 times in 4 h, a minute or so on air each time, its riders seeing it come and go;
+the L1, on 11-23, went at full rate to its last packet. Open: the T-Echo's own bottom (it logs no
+voltage off its cable, so 3.2 V is a guess with margin), and the current while off, measured.
 
 ### T-ledger: exporting the duty ledger
 

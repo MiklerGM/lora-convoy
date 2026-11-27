@@ -42,6 +42,8 @@ int screen_battery_pct(int mv) {
     return 0;
 }
 
+bool screen_battery_below(int battery_mv, bool usb, int mv) { return !usb && battery_mv >= 2500 && battery_mv < mv; }
+
 void screen_text(const node_t *n, int64_t now_us, bool phone, int battery_mv, bool usb, int zone_min, screen_text_t out) {
     memset(out, 0, sizeof(screen_text_t));
     char clock[16] = "--:--", battery[16] = "";
@@ -88,6 +90,8 @@ void screen_text(const node_t *n, int64_t now_us, bool phone, int battery_mv, bo
     }
     if (alarm >= 0) {
         put(out[3], "R%d %s", alarm + 1, tag(n->riders[alarm].rec.state));
+    } else if (screen_battery_below(battery_mv, usb, BATTERY_LOW_MV)) {
+        put(out[3], "charge me");
     } else {
         put(out[3], "riders %d/%u", near, n->cfg.slots ? n->cfg.slots - 1u : 0u);
     }

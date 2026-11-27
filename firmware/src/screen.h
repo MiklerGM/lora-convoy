@@ -15,7 +15,8 @@
  *   R5/10 SOS        who we are in the group, and the state we say if not riding
  *   on air 8sat      whether the board sends (its time fits the slot) or is silent, and its fix
  *   riders 2/9       others heard in the last minute, of those in the group; or another rider's
- *                    call for help (R3 SOS) or to stop, which matters more
+ *                    call for help (R3 SOS) or to stop, which matters more; else "charge me" for
+ *                    a cell nearly empty
  *   R4 now via R6    each rider known, how long since, its state, who told: the e-paper's only
  *
  * The satellites and the riders' ages move by the second, so they wait for the clock's minute
@@ -48,6 +49,16 @@ extern const uint8_t screen_bolt[20], screen_bolt_large[45];
 
 /* A lithium cell's charge from its voltage, roughly: it reads high while charging or under no load. */
 int screen_battery_pct(int mv);
+
+/* A cell read below mv, on a board with one and off USB [owner, 2026-11-26]. Below BATTERY_LOW_MV the
+ * screen asks for a charge where the riders heard were; below BATTERY_EMPTY_MV the board goes off
+ * (run.c) before the cell browns it out: the T-Echo, out half charged on 2026-11-25, browned out and
+ * started again 38 times in 4 h, its riders seeing it come and go. The L1, every 2 s, had some 2 h
+ * left at 3.35 V and 1 h at 3.23 V (07-experiments). ponytail: the T-Echo's own bottom is unmeasured;
+ * 3.2 V leaves its smaller cell a margin, tune it when a run-down of it is logged. */
+#define BATTERY_LOW_MV 3350
+#define BATTERY_EMPTY_MV 3200
+bool screen_battery_below(int battery_mv, bool usb, int mv);
 
 /* Into buf, w * h / 8 bytes, h a multiple of 8: a byte for eight rows of one column, the top row in
  * its low bit, a band of eight rows across the screen after another (an SSD1306's pages). A 1 is the

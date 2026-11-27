@@ -1543,6 +1543,11 @@ static void test_screen_text(void) {
     n.riders[0].rec.state = STATE_NORMAL;
     screen_text(&n, t, true, 57, false, 0, text); /* a Heltec with no cell */
     assert(!strcmp(text[3], "riders 1/3") && !strcmp(text[0], "12:00 BT"));
+    /* a cell nearly empty asks for a charge where the riders heard were; charging, it does not */
+    screen_text(&n, t, false, 3300, false, 0, text);
+    assert(!strcmp(text[3], "charge me") && !strcmp(text[0], "12:00    10%"));
+    screen_text(&n, t, false, 3300, true, 0, text);
+    assert(!strcmp(text[3], "riders 1/3"));
     screen_text(&n, t, false, 4742, false, 0, text); /* a T-Echo on its cable */
     assert(!strcmp(text[0], "12:00    USB"));
     /* the chip says USB: a cell under full marked charging, a full one not, none or the T-Echo's USB */
@@ -1566,6 +1571,18 @@ static void test_screen_text(void) {
     screen_text(&n, t, false, 0, false, 0, text);
     assert(!strcmp(text[0], "--:--") && !strcmp(text[1], "no group") && !strcmp(text[2], "silent nofix"));
     printf("screen: the time where the phone is, the battery, sending or silent, help before a stop\n");
+}
+
+/* Off on an empty cell [owner, 2026-11-26], never on the cable, where a charging cell reads low, nor
+ * on a Heltec with no cell, its divider's noise. */
+static void test_battery_empty(void) {
+    static const struct { int mv; bool usb, off; } rows[] = {
+        {BATTERY_EMPTY_MV - 1, false, true}, {BATTERY_EMPTY_MV, false, false},
+        {BATTERY_EMPTY_MV - 1, true, false}, {57, false, false}};
+    for (size_t i = 0; i < sizeof(rows) / sizeof(rows[0]); i++) {
+        assert(screen_battery_below(rows[i].mv, rows[i].usb, BATTERY_EMPTY_MV) == rows[i].off);
+    }
+    printf("battery: off when empty, not on the cable, not with no cell\n");
 }
 
 /* The button held ms and let go: what it asked on the way, and what letting go does. */
@@ -1665,6 +1682,7 @@ int main(void) {
     test_screen_text();
     test_screen_due();
     test_button();
+    test_battery_empty();
     test_screen_draw();
     return 0;
 }
