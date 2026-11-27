@@ -431,8 +431,9 @@ metres off do any harm (then a window the whole group keeps).
 **Off, 2026-11-25** [owner]: the button's hold (T-board-ui) switches a board off: the radio asleep,
 the GNSS, screen and light off, then the nRF52s in System OFF, the Heltec in deep sleep with its
 GNSS's and screen's power cut; the button starts it again. The L1 has a power switch of its own
-besides [owner, 2026-11-27]; the hold switches it off too, one habit on every board, and what its
-switch cuts (the cell only, or USB too) is not yet looked at. **And on an empty cell, 2026-11-26**
+besides [owner, 2026-11-27]; the hold switches it off too, one habit on every board. Both tried on
+the L1 on its cable, 2026-11-27: the hold's off woke by the button (reset=other); the switch cuts
+USB too, and the board starts again with reset=pin. **And on an empty cell, 2026-11-26**
 [owner]: below 3.35 V the screen asks "charge me" where the riders heard were; below 3.2 V twice
 running (10 s apart) the board goes off by itself; never on USB, nor with no cell. Why: the T-Echo,
 taken out half charged on 2026-11-25, sent every 2 s for 6 h 46 min, then browned out and started
